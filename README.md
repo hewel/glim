@@ -1,24 +1,42 @@
-# glim
+# LAN Share IM
 
-[![Package Version](https://img.shields.io/hexpm/v/glim)](https://hex.pm/packages/glim)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/glim/)
+Experimental local-network instant messaging and file sharing service in Gleam.
 
-```sh
-gleam add glim@1
-```
-```gleam
-import glim
-
-pub fn main() -> Nil {
-  // TODO: An example of the project in use
-}
-```
-
-Further documentation can be found at <https://hexdocs.pm/glim>.
-
-## Development
+## Run
 
 ```sh
-gleam run   # Run the project
-gleam test  # Run the tests
+gleam run
 ```
+
+Open <http://localhost:8080> in a browser.
+
+## WebSocket Endpoint
+
+`ws://localhost:8080/ws`
+
+This slice supports only `peer.hello` → `peer.list`. Send a JSON message:
+
+```json
+{"type":"peer.hello","device_id":"device_abc","display_name":"Zed"}
+```
+
+The server replies with:
+
+```json
+{"type":"peer.list","peers":[{"id":"device_abc","display_name":"Zed"}]}
+```
+
+## Test
+
+```sh
+gleam test
+```
+
+## Known Limitations (Current Slice)
+
+- No shared room presence. Each connection sees only itself.
+- No text messages between peers.
+- No file offers or file transfers.
+- No upload or download endpoints.
+- No persistence across server restarts.
+- No LAN auto-discovery.
