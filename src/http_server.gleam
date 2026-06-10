@@ -1,12 +1,15 @@
 import gleam/bytes_tree
+import gleam/erlang/process
 import gleam/http/request
 import gleam/http/response
 import gleam/option
 import mist
+import room
 import websocket
 
 pub fn handle_request(
   req: request.Request(mist.Connection),
+  room: process.Subject(room.Message),
 ) -> response.Response(mist.ResponseData) {
   case request.path_segments(req) {
     [] ->
@@ -21,7 +24,7 @@ pub fn handle_request(
     ["ws"] ->
       mist.websocket(
         request: req,
-        on_init: websocket.init,
+        on_init: websocket.init(room),
         on_close: websocket.on_close,
         handler: websocket.handle_message,
       )

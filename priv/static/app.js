@@ -21,6 +21,33 @@
   var logEl = document.getElementById("log");
 
   var ws = null;
+  function findPeerItem(deviceId) {
+    var items = peersEl.querySelectorAll("li");
+    for (var i = 0; i < items.length; i += 1) {
+      if (items[i].dataset.deviceId === deviceId) {
+        return items[i];
+      }
+    }
+    return null;
+  }
+
+  function renderPeer(peer) {
+    var li = findPeerItem(peer.id);
+    if (!li) {
+      li = document.createElement("li");
+      peersEl.appendChild(li);
+    }
+    li.dataset.deviceId = peer.id;
+    li.textContent = peer.display_name + " (" + peer.id + ")";
+  }
+
+  function removePeer(deviceId) {
+    var li = findPeerItem(deviceId);
+    if (li) {
+      li.remove();
+    }
+  }
+
 
   connectButton.addEventListener("click", function () {
     displayName = nameInput.value.trim() || "Glim Peer";
@@ -51,11 +78,11 @@
         var data = JSON.parse(event.data);
         if (data.type === "peer.list") {
           peersEl.innerHTML = "";
-          data.peers.forEach(function (peer) {
-            var li = document.createElement("li");
-            li.textContent = peer.display_name + " (" + peer.id + ")";
-            peersEl.appendChild(li);
-          });
+          data.peers.forEach(renderPeer);
+        } else if (data.type === "peer.joined") {
+          renderPeer(data.peer);
+        } else if (data.type === "peer.left") {
+          removePeer(data.device_id);
         }
       } catch (e) {
         logEl.textContent += "Unable to parse server event\n";

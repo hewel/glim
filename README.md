@@ -8,13 +8,13 @@ Experimental local-network instant messaging and file sharing service in Gleam.
 gleam run
 ```
 
-Open <http://localhost:8080> in a browser.
+Open <http://localhost:9143> in a browser.
 
 ## WebSocket Endpoint
 
-`ws://localhost:8080/ws`
+`ws://localhost:9143/ws`
 
-This slice supports only `peer.hello` → `peer.list`. Send a JSON message:
+This slice supports `peer.hello`, full `peer.list`, `peer.joined`, and `peer.left` presence events. Send a JSON message:
 
 ```json
 {"type":"peer.hello","device_id":"device_abc","display_name":"Zed"}
@@ -34,7 +34,6 @@ gleam test
 
 ## Known Limitations (Current Slice)
 
-- No shared room presence. Each connection sees only itself.
 - No text messages between peers.
 - No file offers or file transfers.
 - No upload or download endpoints.

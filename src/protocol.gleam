@@ -63,20 +63,36 @@ fn decode_peer_hello(input: String) -> Result(ClientEvent, DecodeError) {
 }
 
 pub fn encode_peer_list(peers: List(Peer)) -> String {
-  let encoded_peers =
-    peers
-    |> list.map(fn(peer) {
-      json.object([
-        #("id", json.string(peer.id)),
-        #("display_name", json.string(peer.display_name)),
-      ])
-    })
+  let encoded_peers = peers |> list.map(encode_peer_object)
 
   json.object([
     #("type", json.string("peer.list")),
     #("peers", json.preprocessed_array(encoded_peers)),
   ])
   |> json.to_string
+}
+
+pub fn encode_peer_joined(peer: Peer) -> String {
+  json.object([
+    #("type", json.string("peer.joined")),
+    #("peer", encode_peer_object(peer)),
+  ])
+  |> json.to_string
+}
+
+pub fn encode_peer_left(device_id: String) -> String {
+  json.object([
+    #("type", json.string("peer.left")),
+    #("device_id", json.string(device_id)),
+  ])
+  |> json.to_string
+}
+
+fn encode_peer_object(peer: Peer) -> json.Json {
+  json.object([
+    #("id", json.string(peer.id)),
+    #("display_name", json.string(peer.display_name)),
+  ])
 }
 
 pub fn encode_error(code: String, message: String) -> String {

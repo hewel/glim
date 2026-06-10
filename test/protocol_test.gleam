@@ -49,3 +49,22 @@ pub fn encode_peer_list_contains_fields_test() {
   let assert True = string.contains(json, "\"id\":\"device_abc\"")
   let assert True = string.contains(json, "\"display_name\":\"Zed\"")
 }
+
+pub fn encode_peer_joined_contains_fields_test() {
+  let json =
+    protocol.encode_peer_joined(protocol.Peer(
+      id: "device_abc",
+      display_name: "Zed",
+    ))
+
+  let assert True = string.contains(json, "\"type\":\"peer.joined\"")
+  let assert True = string.contains(json, "\"id\":\"device_abc\"")
+  let assert True = string.contains(json, "\"display_name\":\"Zed\"")
+}
+
+pub fn encode_peer_left_contains_fields_test() {
+  let json = protocol.encode_peer_left("device_abc")
+
+  let assert True = string.contains(json, "\"type\":\"peer.left\"")
+  let assert True = string.contains(json, "\"device_id\":\"device_abc\"")
+}
