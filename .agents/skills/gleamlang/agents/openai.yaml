@@ -1,0 +1,4 @@
+interface:
+  display_name: "Gleam"
+  short_description: "Code Gleam with idiomatic patterns"
+  default_prompt: "Use $gleamlang to implement or review Gleam code idiomatically."
