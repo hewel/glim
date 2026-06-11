@@ -57,3 +57,6 @@ fn do_connect(
 fn do_send(_payload: String, _on_error: fn() -> Nil) -> Nil {
   Nil
 }
+
+@external(javascript, "./ffi.mjs", "formatTime")
+pub fn format_time(ms: Int) -> String

@@ -28,7 +28,8 @@ outdir = "../priv/static"
 
 [tools.lustre.html]
 stylesheets = [
-  { href = "/client.css" }
+  { href = "https://fonts.googleapis.com/css2?family=Geist:wght@400;500;700&family=Inter:wght@400;500;700&family=JetBrains+Mono:wght@400;500;700&display=swap" },
+  { href = "https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" },
 ]
 title = "LAN Share IM"
 body = "<main id=\"app\"></main>"
