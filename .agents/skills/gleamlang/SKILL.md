@@ -33,7 +33,7 @@ description: Use when you needs to write, edit, review, debug, test, or explain 
 - Use the builder pattern for records with many optional settings. Let `new` establish required values and defaults, then add small pipeline-friendly update functions.
 - For HTTP clients, prefer sans-IO APIs: create one function that builds a request and another that parses a response, leaving transport to the caller.
 - Keep list algorithms aware that lists are immutable singly linked lists. Prefer prepending, pattern matching, `gleam/list` functions, or another data structure for indexed access.
-- Prefer `gleam/result.try`, `result.map`, pipelines, and `use <-` for chains of fallible operations.
+- Prefer `gleam/result.try`, `result.map`, `result.map_error`, pipelines, and `use <-` for linear `Result` workflows such as JSON validation, payload decoding, and dispatch. Avoid nested `case` expressions when each step only maps or forwards `Ok` and `Error`.
 - Use FFI sparingly. Provide precise external types and annotations; do not use `gleam/dynamic.Dynamic` to stand in for a more specific foreign type.
 
 ## References
