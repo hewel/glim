@@ -1,18 +1,19 @@
 import browser
 import chat
 import gleam/dict
-import gleam/int
 import gleam/list
 import gleam/option
 import gleam/result
 import gleam/string
 import lustre
-import lustre/attribute
 import lustre/effect.{type Effect}
-import lustre/element.{type Element, element}
-import lustre/element/html
-import lustre/event
+import lustre/element.{type Element}
 import shared/protocol as shared_protocol
+import ui/chat_panel
+import ui/log_drawer
+import ui/shell
+import ui/sidebar
+import ui/transfer_queue
 
 pub fn main() -> Nil {
   let app = lustre.application(init, update, view)
@@ -96,21 +97,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
       effect.none(),
     )
 
-    UserClickedConnect -> {
-      let name = normalized_display_name(model.display_name)
-      let hello_json = shared_protocol.encode_peer_hello(model.device_id, name)
-      #(
-        Model(..model, display_name: name),
-        browser.connect(
-          name,
-          hello_json,
-          WebSocketOpened,
-          WebSocketClosed,
-          WebSocketFailed,
-          WebSocketReceived,
-        ),
-      )
-    }
+    UserClickedConnect -> connect(model)
 
     UserSelectedPeer(peer_id) -> #(
       Model(
@@ -164,6 +151,23 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
 
     WebSocketReceived(raw:) -> handle_server_event(model, raw)
   }
+}
+
+fn connect(model: Model) -> #(Model, Effect(Message)) {
+  let name = normalized_display_name(model.display_name)
+  let hello_json = shared_protocol.encode_peer_hello(model.device_id, name)
+
+  #(
+    Model(..model, display_name: name),
+    browser.connect(
+      name,
+      hello_json,
+      WebSocketOpened,
+      WebSocketClosed,
+      WebSocketFailed,
+      WebSocketReceived,
+    ),
+  )
 }
 
 fn handle_server_event(model: Model, raw: String) -> #(Model, Effect(Message)) {
@@ -342,13 +346,6 @@ fn update_selected_draft(model: Model, body: String) -> Model {
   }
 }
 
-fn draft_for_selected_peer(model: Model) -> String {
-  case model.selected_peer_id {
-    option.Some(peer_id) -> draft_for_peer(model, peer_id)
-    option.None -> ""
-  }
-}
-
 fn draft_for_peer(model: Model, peer_id: String) -> String {
   case dict.get(model.message_drafts, peer_id) {
     Ok(body) -> body
@@ -400,127 +397,22 @@ fn normalized_display_name(display_name: String) -> String {
 }
 
 fn view(model: Model) -> Element(Message) {
-  let is_peer_selected = case model.selected_peer_id {
-    option.Some(_) -> True
-    option.None -> False
-  }
-
-  let sidebar_class = case is_peer_selected {
-    True ->
-      "w-[300px] h-full bg-[#f3f1fb]/95 border-r border-outline-variant/60 hidden md:flex flex-col shrink-0"
-    False ->
-      "w-full md:w-[300px] h-full bg-[#f3f1fb]/95 border-r border-outline-variant/60 flex flex-col shrink-0"
-  }
-
-  let chat_class = case is_peer_selected {
-    True -> "flex-1 flex flex-col bg-[#fbf9ff] min-w-0"
-    False -> "flex-1 flex flex-col bg-[#fbf9ff] min-w-0 hidden md:flex"
-  }
-
-  html.div(
-    [
-      attribute.class(
-        "h-screen w-screen flex flex-col bg-[#f8f5ff] text-on-background font-body-md grid-bg overflow-hidden antialiased",
-      ),
-    ],
-    [
-      html.header(
-        [
-          attribute.class(
-            "w-full h-16 bg-[#fbf9ff]/95 border-b border-outline-variant/60 shadow-[0_1px_12px_rgba(31,24,64,0.06)] flex items-center justify-between px-6 z-50",
-          ),
-        ],
-        [
-          html.div([attribute.class("flex items-center gap-5")], [
-            html.span(
-              [
-                attribute.class(
-                  "font-headline-md text-[25px] font-bold text-primary tracking-tight",
-                ),
-              ],
-              [html.text("Glim")],
-            ),
-            html.button(
-              [
-                attribute.type_("button"),
-                attribute.class(
-                  "flex items-center gap-2 bg-[#efecfb] rounded-full px-4 py-2 border border-outline-variant/70 shadow-inner hover:border-primary/40 transition-colors",
-                ),
-                event.on_click(UserClickedConnect),
-              ],
-              [
-                html.span(
-                  [
-                    attribute.class(
-                      "material-symbols-outlined text-tertiary text-[18px]",
-                    ),
-                  ],
-                  [html.text("sensors")],
-                ),
-                html.span(
-                  [
-                    attribute.class(
-                      "font-mono-label text-mono-label uppercase tracking-widest text-on-surface-variant",
-                    ),
-                  ],
-                  [html.text(top_mesh_action_label(model.status))],
-                ),
-              ],
-            ),
-          ]),
-          html.div(
-            [attribute.class("flex items-center gap-5 text-on-surface")],
-            [
-              view_top_icon("settings_input_antenna"),
-              view_top_icon("code_blocks"),
-              view_top_icon("lan"),
-              html.div(
-                [
-                  attribute.class(
-                    "h-10 w-10 rounded-full bg-[#121826] border border-primary/30 flex items-center justify-center text-primary shadow-sm",
-                  ),
-                  attribute.title("Logged in as: " <> model.display_name),
-                ],
-                [
-                  html.span(
-                    [attribute.class("material-symbols-outlined text-[20px]")],
-                    [html.text("badge")],
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
-      ),
-      html.div([attribute.class("flex h-[calc(100vh-64px)] overflow-hidden")], [
-        html.aside([attribute.class(sidebar_class)], [
-          view_sidebar(model),
-        ]),
-        html.main([attribute.class(chat_class)], [view_chat(model)]),
-        view_transfer_queue(model),
-      ]),
-      view_log_drawer(model),
-    ],
-  )
+  shell.view(shell.Props(
+    is_peer_selected: option.is_some(model.selected_peer_id),
+    display_name: model.display_name,
+    mesh_action_label: top_mesh_action_label(model.status),
+    on_connect: UserClickedConnect,
+    sidebar: sidebar.view(sidebar_props(model)),
+    chat: chat_panel.view(chat_panel_props(model)),
+    transfer_queue: transfer_queue.view(),
+    log_drawer: log_drawer.view(log_drawer.Props(
+      log: model.log,
+      on_clear: UserClickedClearLog,
+    )),
+  ))
 }
 
-fn view_top_icon(icon: String) -> Element(Message) {
-  html.button(
-    [
-      attribute.type_("button"),
-      attribute.class(
-        "hidden sm:flex h-10 w-10 items-center justify-center rounded-xl text-on-surface hover:bg-[#efecfb] transition-colors",
-      ),
-    ],
-    [
-      html.span([attribute.class("material-symbols-outlined text-[22px]")], [
-        html.text(icon),
-      ]),
-    ],
-  )
-}
-
-fn view_sidebar(model: Model) -> Element(Message) {
+fn sidebar_props(model: Model) -> sidebar.Props(Message) {
   let active_peer_count =
     model.peers
     |> list.filter(fn(peer) { peer.id != model.device_id })
@@ -531,152 +423,175 @@ fn view_sidebar(model: Model) -> Element(Message) {
     |> dict.values
     |> list.fold(0, fn(total, count) { total + count })
 
-  html.div([attribute.class("flex h-full min-h-0 flex-col")], [
-    html.div([attribute.class("flex-1 min-h-0 overflow-y-auto px-5 py-6")], [
-      html.div([attribute.class("mb-9 flex items-center gap-4")], [
-        html.div(
-          [
-            attribute.class(
-              "h-12 w-12 rounded-full bg-primary text-on-primary shadow-sm flex items-center justify-center shrink-0",
-            ),
-          ],
-          [
-            html.span(
-              [attribute.class("material-symbols-outlined text-[30px]")],
-              [html.text("hub")],
-            ),
-          ],
-        ),
-        html.div([attribute.class("min-w-0")], [
-          html.h1(
-            [attribute.class("font-headline-md text-[22px] text-on-surface")],
-            [html.text("Local Mesh")],
-          ),
-          html.div([attribute.class("flex items-center gap-1.5")], [
-            html.span(
-              [attribute.class("h-1.5 w-1.5 rounded-full bg-tertiary")],
-              [],
-            ),
-            html.span(
-              [
-                attribute.class(
-                  "font-mono-label text-[11px] text-tertiary tracking-widest",
-                ),
-              ],
-              [html.text(mesh_status_label(model.status))],
-            ),
-          ]),
-        ]),
-      ]),
-      html.nav([attribute.class("space-y-3")], [
-        view_nav_item(
-          "groups",
-          "Peers",
-          False,
-          int.to_string(active_peer_count),
-        ),
-        view_nav_item("chat_bubble", "Chats", True, int.to_string(unread_total)),
-        view_nav_item("folder_managed", "Library", False, ""),
-        view_nav_item("settings", "Settings", False, ""),
-      ]),
-      html.div([attribute.class("mt-7")], [
-        html.div(
-          [
-            attribute.class(
-              "mb-3 flex items-center justify-between px-2 font-mono-label text-[10px] uppercase tracking-widest text-outline",
-            ),
-          ],
-          [
-            html.span([], [html.text("Active Sessions")]),
-            html.span([], [html.text(int.to_string(active_peer_count))]),
-          ],
-        ),
-        html.ul(
-          [attribute.id("peers"), attribute.class("space-y-2")],
-          view_peers(model),
-        ),
-      ]),
-    ]),
-    html.div(
-      [attribute.class("border-t border-outline-variant/50 p-5 space-y-5")],
-      [
-        html.button(
-          [
-            attribute.type_("button"),
-            attribute.class(
-              "h-14 w-full rounded-[1.45rem] bg-primary text-on-primary font-bold text-base flex items-center justify-center gap-2 shadow-sm active:scale-[0.99] transition-transform",
-            ),
-          ],
-          [
-            html.span(
-              [attribute.class("material-symbols-outlined text-[22px]")],
-              [html.text("cloud_upload")],
-            ),
-            html.span([], [html.text("Share File")]),
-          ],
-        ),
-        html.div([attribute.class("space-y-3")], [
-          view_sidebar_footer_item("help", "Support"),
-          view_sidebar_footer_item("terminal", "Logs"),
-        ]),
-      ],
-    ),
-  ])
-}
-
-fn view_nav_item(
-  icon: String,
-  label: String,
-  active: Bool,
-  badge: String,
-) -> Element(Message) {
-  let item_class = case active {
-    True ->
-      "flex h-12 items-center gap-4 rounded-[1.5rem] bg-primary px-5 text-on-primary shadow-sm"
-    False ->
-      "flex h-12 items-center gap-4 rounded-[1.5rem] px-5 text-on-surface-variant hover:bg-[#efecfb] transition-colors"
-  }
-
-  let icon_class = case active {
-    True -> "material-symbols-outlined text-[24px] text-on-primary"
-    False -> "material-symbols-outlined text-[24px] text-on-surface"
-  }
-
-  html.div([attribute.class(item_class)], [
-    html.span([attribute.class(icon_class)], [html.text(icon)]),
-    html.span([attribute.class("flex-1 font-headline text-sm")], [
-      html.text(label),
-    ]),
-    case badge {
-      "" -> html.span([], [])
-      "0" -> html.span([], [])
-      _ ->
-        html.span(
-          [
-            attribute.class(
-              "min-w-7 rounded-full bg-white px-2 py-1 text-center font-mono-data text-[11px] font-bold text-primary",
-            ),
-          ],
-          [html.text(badge)],
-        )
-    },
-  ])
-}
-
-fn view_sidebar_footer_item(icon: String, label: String) -> Element(Message) {
-  html.div(
-    [
-      attribute.class(
-        "flex h-9 items-center gap-4 px-5 text-on-surface-variant hover:text-on-surface transition-colors",
-      ),
-    ],
-    [
-      html.span([attribute.class("material-symbols-outlined text-[23px]")], [
-        html.text(icon),
-      ]),
-      html.span([attribute.class("font-headline text-sm")], [html.text(label)]),
-    ],
+  sidebar.Props(
+    status_label: mesh_status_label(model.status),
+    active_peer_count: active_peer_count,
+    unread_total: unread_total,
+    peers: sidebar_peer_items(model),
+    on_select_peer: UserSelectedPeer,
   )
+}
+
+fn sidebar_peer_items(model: Model) -> List(sidebar.PeerItem) {
+  let online_peers =
+    model.peers
+    |> list.filter(fn(peer) { peer.id != model.device_id })
+
+  let online_items =
+    online_peers
+    |> list.map(fn(peer) {
+      sidebar_peer_item(model, peer.id, peer.display_name, True)
+    })
+
+  let offline_items =
+    model.messages_by_peer
+    |> dict.keys
+    |> list.filter(fn(peer_id) {
+      peer_id != model.device_id && !peer_in_list(online_peers, peer_id)
+    })
+    |> list.sort(string.compare)
+    |> list.map(fn(peer_id) {
+      sidebar_peer_item(
+        model,
+        peer_id,
+        peer_display_name(model, peer_id),
+        False,
+      )
+    })
+
+  list.append(online_items, offline_items)
+}
+
+fn sidebar_peer_item(
+  model: Model,
+  peer_id: String,
+  display_name: String,
+  is_online: Bool,
+) -> sidebar.PeerItem {
+  let selected = chat.is_selected(model.selected_peer_id, peer_id)
+
+  sidebar.PeerItem(
+    id: peer_id,
+    display_name: display_name,
+    subtitle: case is_online {
+      True -> peer_id
+      False -> "Offline - " <> peer_id
+    },
+    initial: initial(display_name),
+    avatar_class: sidebar_avatar_class(peer_id, selected),
+    unread_count: chat.unread_count(model.unread_by_peer, peer_id),
+    selected: selected,
+  )
+}
+
+fn chat_panel_props(model: Model) -> chat_panel.Props(Message) {
+  chat_panel.Props(
+    selected_chat: selected_chat(model),
+    chat_notice: chat_notice(model),
+    on_deselect: UserDeselectedPeer,
+    on_type_message: UserTypedMessage,
+    on_keydown: UserPressedMessageKey,
+    on_send: UserClickedSendMessage,
+  )
+}
+
+fn selected_chat(model: Model) -> option.Option(chat_panel.SelectedChat) {
+  case model.selected_peer_id {
+    option.None -> option.None
+    option.Some(peer_id) -> {
+      let peer_name = peer_display_name(model, peer_id)
+
+      option.Some(chat_panel.SelectedChat(
+        peer_id: peer_id,
+        peer_name: peer_name,
+        peer_initial: initial(peer_name),
+        is_online: chat.peer_is_online(model.peers, peer_id),
+        draft: draft_for_peer(model, peer_id),
+        messages: message_items(model),
+      ))
+    }
+  }
+}
+
+fn message_items(model: Model) -> List(chat_panel.MessageItem) {
+  chat.messages_for_peer(model.messages_by_peer, model.selected_peer_id)
+  |> list.map(fn(message) { message_item(model, message) })
+}
+
+fn message_item(
+  model: Model,
+  message: shared_protocol.TextMessage,
+) -> chat_panel.MessageItem {
+  let is_self = message.from == model.device_id
+
+  chat_panel.MessageItem(
+    id: message.id,
+    body: message.body,
+    time: browser.format_time(message.created_at_ms),
+    is_self: is_self,
+    author_initial: message_author_initial(model, message, is_self),
+    avatar_class: message_avatar_class(message.from, is_self),
+  )
+}
+
+fn message_author_initial(
+  model: Model,
+  message: shared_protocol.TextMessage,
+  is_self: Bool,
+) -> String {
+  case is_self {
+    True -> initial(model.display_name)
+    False -> initial(peer_display_name(model, message.from))
+  }
+}
+
+fn peer_display_name(model: Model, peer_id: String) -> String {
+  case chat.find_peer(model.known_peers, peer_id) {
+    option.Some(peer) -> peer.display_name
+    option.None -> peer_id
+  }
+}
+
+fn peer_in_list(peers: List(shared_protocol.Peer), peer_id: String) -> Bool {
+  peers
+  |> list.any(fn(peer) { peer.id == peer_id })
+}
+
+fn initial(value: String) -> String {
+  value
+  |> string.first
+  |> result.unwrap("P")
+  |> string.uppercase
+}
+
+fn sidebar_avatar_class(peer_id: String, selected: Bool) -> String {
+  case selected {
+    True -> "bg-on-primary/10 text-on-primary border border-on-primary/20"
+    False -> avatar_palette_class(peer_id)
+  }
+}
+
+fn message_avatar_class(peer_id: String, is_self: Bool) -> String {
+  case is_self {
+    True -> "bg-primary-fixed text-primary border border-primary-fixed-dim"
+    False -> avatar_palette_class(peer_id)
+  }
+}
+
+fn avatar_palette_class(peer_id: String) -> String {
+  case string_hash(peer_id) % 4 {
+    0 -> "bg-rose-100 text-rose-800 border border-rose-200"
+    1 -> "bg-emerald-100 text-emerald-800 border border-emerald-200"
+    2 -> "bg-sky-100 text-sky-800 border border-sky-200"
+    _ -> "bg-violet-100 text-violet-800 border border-violet-200"
+  }
+}
+
+fn chat_notice(model: Model) -> String {
+  case model.chat_notice {
+    option.Some(message) -> message
+    option.None -> ""
+  }
 }
 
 fn mesh_status_label(status: Status) -> String {
@@ -693,1138 +608,6 @@ fn top_mesh_action_label(status: Status) -> String {
     Disconnected -> "Start Mesh"
     ConnectionError -> "Retry Mesh"
   }
-}
-
-fn view_transfer_queue(_model: Model) -> Element(Message) {
-  // Only show sidebar on desktop
-  let queue_class =
-    "w-[360px] h-full bg-[#f4f1fa]/80 border-l border-outline-variant/50 flex flex-col hidden xl:flex shrink-0"
-
-  html.aside([attribute.class(queue_class)], [
-    // Queue Header
-    html.div(
-      [
-        attribute.class(
-          "h-[88px] px-8 border-b border-outline-variant/40 flex items-center justify-between",
-        ),
-      ],
-      [
-        html.div([attribute.class("flex items-center gap-3")], [
-          html.span(
-            [
-              attribute.class(
-                "material-symbols-outlined text-primary text-[30px]",
-              ),
-            ],
-            [html.text("sync_alt")],
-          ),
-          html.h3(
-            [
-              attribute.class(
-                "font-headline text-on-surface font-bold text-lg uppercase tracking-normal",
-              ),
-            ],
-            [html.text("TRANSFER QUEUE")],
-          ),
-        ]),
-        html.span(
-          [
-            attribute.class(
-              "bg-primary/10 px-3 py-1.5 rounded-full text-[10px] font-mono-data text-primary font-bold border border-primary/10",
-            ),
-          ],
-          [html.text("4 ACTIVE")],
-        ),
-      ],
-    ),
-    // Queue Scrollable Content
-    html.div(
-      [
-        attribute.class(
-          "flex-1 overflow-y-auto px-5 py-6 space-y-5 custom-scrollbar",
-        ),
-      ],
-      [
-        // Item 1: Active Download
-        html.div(
-          [
-            attribute.class(
-              "bg-[#f0edf8] rounded-[1.6rem] border border-outline-variant/40 overflow-hidden relative p-5 pt-8 min-h-[114px]",
-            ),
-          ],
-          [
-            // Progress indicator line at top
-            html.div(
-              [
-                attribute.class(
-                  "absolute top-0 left-5 right-5 h-[2px] bg-outline-variant/20",
-                ),
-              ],
-              [
-                html.div(
-                  [
-                    attribute.class("h-full bg-primary progress-glow"),
-                    attribute.style("width", "68%"),
-                  ],
-                  [],
-                ),
-              ],
-            ),
-            // Content details
-            html.div(
-              [attribute.class("flex items-start justify-between mb-sm")],
-              [
-                html.div([attribute.class("flex items-center gap-sm min-w-0")], [
-                  html.span(
-                    [
-                      attribute.class(
-                        "material-symbols-outlined text-primary text-[18px]",
-                      ),
-                    ],
-                    [html.text("download_for_offline")],
-                  ),
-                  html.span(
-                    [
-                      attribute.class(
-                        "font-mono-data text-xs text-on-surface truncate max-w-[140px]",
-                      ),
-                    ],
-                    [html.text("asset_package.zip")],
-                  ),
-                ]),
-                html.span(
-                  [
-                    attribute.class(
-                      "font-mono-data text-[10px] text-primary font-bold",
-                    ),
-                  ],
-                  [html.text("68%")],
-                ),
-              ],
-            ),
-            html.div(
-              [
-                attribute.class(
-                  "flex justify-between items-center text-[10px] font-mono-label text-on-surface-variant",
-                ),
-              ],
-              [
-                html.span([], [html.text("82.4 MB/s")]),
-                html.span([], [html.text("ETA: 12s")]),
-              ],
-            ),
-          ],
-        ),
-        // Item 2: Active Upload
-        html.div(
-          [
-            attribute.class(
-              "bg-[#f0edf8] rounded-[1.6rem] border border-outline-variant/40 overflow-hidden relative p-5 pt-8 min-h-[114px]",
-            ),
-          ],
-          [
-            // Progress line
-            html.div(
-              [
-                attribute.class(
-                  "absolute top-0 left-5 right-5 h-[2px] bg-outline-variant/20",
-                ),
-              ],
-              [
-                html.div(
-                  [
-                    attribute.class("h-full bg-tertiary progress-glow"),
-                    attribute.style("width", "32%"),
-                  ],
-                  [],
-                ),
-              ],
-            ),
-            html.div(
-              [attribute.class("flex items-start justify-between mb-sm")],
-              [
-                html.div([attribute.class("flex items-center gap-sm min-w-0")], [
-                  html.span(
-                    [
-                      attribute.class(
-                        "material-symbols-outlined text-tertiary text-[18px]",
-                      ),
-                    ],
-                    [html.text("upload_file")],
-                  ),
-                  html.span(
-                    [
-                      attribute.class(
-                        "font-mono-data text-xs text-on-surface truncate max-w-[140px]",
-                      ),
-                    ],
-                    [html.text("presentation_decks.tar.gz")],
-                  ),
-                ]),
-                html.span(
-                  [
-                    attribute.class(
-                      "font-mono-data text-[10px] text-tertiary font-bold",
-                    ),
-                  ],
-                  [html.text("32%")],
-                ),
-              ],
-            ),
-            html.div(
-              [
-                attribute.class(
-                  "flex justify-between items-center text-[10px] font-mono-label text-on-surface-variant",
-                ),
-              ],
-              [
-                html.span([], [html.text("45.1 MB/s")]),
-                html.span([], [html.text("ETA: 4m 12s")]),
-              ],
-            ),
-          ],
-        ),
-        // Item 3: Completed
-        html.div(
-          [
-            attribute.class(
-              "bg-[#f0edf8]/60 rounded-[1.6rem] border border-outline-variant/25 p-5 min-h-[100px]",
-            ),
-          ],
-          [
-            html.div(
-              [attribute.class("flex items-center justify-between mb-xs")],
-              [
-                html.div([attribute.class("flex items-center gap-sm min-w-0")], [
-                  html.span(
-                    [
-                      attribute.class(
-                        "material-symbols-outlined text-primary text-[18px]",
-                      ),
-                    ],
-                    [html.text("check_circle")],
-                  ),
-                  html.span(
-                    [
-                      attribute.class(
-                        "font-mono-data text-xs text-on-surface-variant truncate max-w-[140px]",
-                      ),
-                    ],
-                    [html.text("project_manifest.json")],
-                  ),
-                ]),
-                html.span(
-                  [attribute.class("font-mono-data text-[10px] text-primary")],
-                  [html.text("100%")],
-                ),
-              ],
-            ),
-            html.p(
-              [attribute.class("font-mono-label text-[10px] text-outline")],
-              [html.text("Transferred • 12.4 KB")],
-            ),
-          ],
-        ),
-        // Item 4: Paused
-        html.div(
-          [
-            attribute.class(
-              "bg-[#f0edf8]/40 rounded-[1.6rem] border border-outline-variant/20 p-5 min-h-[100px] opacity-70",
-            ),
-          ],
-          [
-            html.div(
-              [attribute.class("flex items-center justify-between mb-xs")],
-              [
-                html.div([attribute.class("flex items-center gap-sm min-w-0")], [
-                  html.span(
-                    [
-                      attribute.class(
-                        "material-symbols-outlined text-on-surface-variant text-[18px]",
-                      ),
-                    ],
-                    [html.text("pause_circle")],
-                  ),
-                  html.span(
-                    [
-                      attribute.class(
-                        "font-mono-data text-xs text-on-surface-variant truncate max-w-[140px]",
-                      ),
-                    ],
-                    [html.text("heavy_video_stream.mkv")],
-                  ),
-                ]),
-                html.span(
-                  [
-                    attribute.class(
-                      "font-mono-data text-[10px] text-on-surface-variant",
-                    ),
-                  ],
-                  [html.text("14%")],
-                ),
-              ],
-            ),
-            html.p(
-              [attribute.class("font-mono-label text-[10px] text-outline")],
-              [html.text("Paused by peer")],
-            ),
-          ],
-        ),
-      ],
-    ),
-    // Footer Speed & Telemetry Graph
-    html.div(
-      [
-        attribute.class(
-          "px-7 py-8 bg-[#ece8f4] border-t border-outline-variant/50 mt-auto shrink-0",
-        ),
-      ],
-      [
-        html.div([attribute.class("flex justify-between items-center mb-md")], [
-          html.span(
-            [
-              attribute.class(
-                "font-mono-label text-[10px] text-on-surface-variant uppercase tracking-wider",
-              ),
-            ],
-            [html.text("Global Mesh Speed")],
-          ),
-          html.span(
-            [attribute.class("font-mono-data text-xs text-primary font-bold")],
-            [html.text("127.5 MB/s")],
-          ),
-        ]),
-        // Telemetry Box
-        html.div(
-          [
-            attribute.class(
-              "h-16 w-full relative bg-[#fbf9ff] rounded-[1.25rem] border border-outline-variant/20 flex items-center justify-center overflow-hidden",
-            ),
-          ],
-          [
-            // Render inline svg path for telemetry
-            element(
-              "svg",
-              [
-                attribute.class("absolute inset-0 w-full h-full opacity-10"),
-                attribute.attribute("viewBox", "0 0 200 60"),
-              ],
-              [
-                element(
-                  "path",
-                  [
-                    attribute.class("text-primary"),
-                    attribute.attribute(
-                      "d",
-                      "M0 40 Q 25 35, 50 45 T 100 40 T 150 35 T 200 45",
-                    ),
-                    attribute.attribute("fill", "none"),
-                    attribute.attribute("stroke", "currentColor"),
-                    attribute.attribute("stroke-width", "2"),
-                  ],
-                  [],
-                ),
-              ],
-            ),
-            html.span(
-              [
-                attribute.class(
-                  "font-mono-label text-[9px] text-primary bg-primary/10 px-2 py-1 rounded border border-primary/20 backdrop-blur-sm z-10",
-                ),
-              ],
-              [html.text("REAL-TIME TELEMETRY")],
-            ),
-          ],
-        ),
-      ],
-    ),
-  ])
-}
-
-fn view_peers(model: Model) -> List(Element(Message)) {
-  let peers = conversation_peers(model)
-
-  case peers {
-    [] -> [
-      html.div(
-        [
-          attribute.class(
-            "flex flex-col items-center justify-center p-8 text-center text-on-surface-variant space-y-2 mt-8",
-          ),
-        ],
-        [
-          html.span([attribute.class("text-3xl animate-pulse opacity-60")], [
-            html.text("📡"),
-          ]),
-          html.p(
-            [attribute.class("text-sm font-bold text-on-surface font-headline")],
-            [html.text("Waiting for other peers...")],
-          ),
-          html.p(
-            [
-              attribute.class(
-                "text-xs text-on-surface-variant max-w-[200px] leading-relaxed",
-              ),
-            ],
-            [
-              html.text(
-                "Open this page on another local device to start chatting.",
-              ),
-            ],
-          ),
-        ],
-      ),
-    ]
-    _ ->
-      peers
-      |> list.map(fn(peer) { view_peer(model, peer) })
-  }
-}
-
-fn conversation_peers(model: Model) -> List(shared_protocol.Peer) {
-  let online_peers =
-    model.peers
-    |> list.filter(fn(peer) { peer.id != model.device_id })
-
-  let offline_history_peers =
-    model.messages_by_peer
-    |> dict.keys
-    |> list.filter(fn(peer_id) {
-      peer_id != model.device_id && !peer_in_list(online_peers, peer_id)
-    })
-    |> list.sort(string.compare)
-    |> list.map(fn(peer_id) { history_peer(model, peer_id) })
-
-  list.append(online_peers, offline_history_peers)
-}
-
-fn peer_in_list(peers: List(shared_protocol.Peer), peer_id: String) -> Bool {
-  peers
-  |> list.any(fn(peer) { peer.id == peer_id })
-}
-
-fn history_peer(model: Model, peer_id: String) -> shared_protocol.Peer {
-  shared_protocol.Peer(
-    id: peer_id,
-    display_name: peer_display_name(model, peer_id),
-  )
-}
-
-fn peer_display_name(model: Model, peer_id: String) -> String {
-  case chat.find_peer(model.known_peers, peer_id) {
-    option.Some(peer) -> peer.display_name
-    option.None -> peer_id
-  }
-}
-
-fn view_peer(model: Model, peer: shared_protocol.Peer) -> Element(Message) {
-  let count = chat.unread_count(model.unread_by_peer, peer.id)
-  let is_selected = chat.is_selected(model.selected_peer_id, peer.id)
-  let is_online = chat.peer_is_online(model.peers, peer.id)
-
-  let item_class = case is_selected {
-    True ->
-      "flex items-center gap-3 p-3 rounded-xl bg-primary text-on-primary border border-outline/30 cursor-pointer transition-all shadow-sm"
-    False ->
-      "flex items-center gap-3 p-3 rounded-xl bg-surface hover:bg-surface-container-low border border-outline-variant/30 text-on-surface-variant hover:text-on-surface cursor-pointer transition-all"
-  }
-
-  // Get avatar initial
-  let initial =
-    peer.display_name
-    |> string.first
-    |> result.unwrap("P")
-    |> string.uppercase
-
-  // Dynamic gradient based on a robust hash of the peer ID
-  let hash = string_hash(peer.id)
-  let avatar_colors = case is_selected {
-    True -> "bg-on-primary/10 text-on-primary border border-on-primary/20"
-    False ->
-      case hash % 4 {
-        0 -> "bg-rose-100 text-rose-800 border border-rose-200"
-        1 -> "bg-emerald-100 text-emerald-800 border border-emerald-200"
-        2 -> "bg-sky-100 text-sky-800 border border-sky-200"
-        _ -> "bg-violet-100 text-violet-800 border border-violet-200"
-      }
-  }
-
-  html.li(
-    [
-      attribute.data("device-id", peer.id),
-      attribute.class(item_class),
-      event.on_click(UserSelectedPeer(peer.id)),
-    ],
-    [
-      // Avatar
-      html.div(
-        [
-          attribute.class(
-            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-mono font-bold text-xs shadow-sm "
-            <> avatar_colors,
-          ),
-        ],
-        [html.text(initial)],
-      ),
-      // Info
-      html.div([attribute.class("flex-1 min-w-0")], [
-        html.div([attribute.class("flex items-center justify-between")], [
-          html.span(
-            [
-              attribute.class(
-                "font-semibold text-xs truncate "
-                <> case is_selected {
-                  True -> "text-on-primary"
-                  False -> "text-on-surface"
-                },
-              ),
-            ],
-            [html.text(peer.display_name)],
-          ),
-          // Unread badge
-          case count {
-            0 -> html.span([], [])
-            _ ->
-              html.span(
-                [
-                  attribute.class(
-                    "bg-error text-on-error text-[9px] font-mono font-bold h-4 min-w-4 px-1 flex items-center justify-center rounded-full shadow-sm",
-                  ),
-                ],
-                [html.text(int.to_string(count))],
-              )
-          },
-        ]),
-        html.p(
-          [
-            attribute.class(
-              "text-[9px] truncate font-mono mt-0.5 "
-              <> case is_selected {
-                True -> "text-on-primary/60"
-                False -> "text-on-surface-variant/60"
-              },
-            ),
-          ],
-          [
-            html.text(case is_online {
-              True -> peer.id
-              False -> "Offline - " <> peer.id
-            }),
-          ],
-        ),
-      ]),
-    ],
-  )
-}
-
-fn view_chat(model: Model) -> Element(Message) {
-  case model.selected_peer_id {
-    option.None -> {
-      // Empty state
-      let header =
-        html.div(
-          [
-            attribute.class(
-              "h-14 border-b border-outline-variant/30 px-lg flex items-center justify-between glass-panel shrink-0",
-            ),
-          ],
-          [
-            html.div([attribute.class("flex items-center gap-md")], [
-              html.span(
-                [
-                  attribute.class(
-                    "font-mono-label text-mono-label uppercase tracking-widest text-on-surface-variant",
-                  ),
-                ],
-                [html.text("No Peer Selected")],
-              ),
-            ]),
-          ],
-        )
-
-      let body =
-        html.div(
-          [
-            attribute.class(
-              "flex-1 flex flex-col items-center justify-center p-8 text-center bg-surface-container-low/10 gap-4",
-            ),
-          ],
-          [
-            html.div(
-              [
-                attribute.class(
-                  "flex h-16 w-16 items-center justify-center rounded-2xl bg-surface-container border border-outline-variant text-primary mb-4 shadow-sm",
-                ),
-              ],
-              [
-                html.span(
-                  [attribute.class("material-symbols-outlined text-3xl")],
-                  [html.text("forum")],
-                ),
-              ],
-            ),
-            html.h3(
-              [
-                attribute.class(
-                  "text-lg font-bold text-on-surface font-headline mb-1",
-                ),
-              ],
-              [html.text("No Active Chat")],
-            ),
-            html.p(
-              [
-                attribute.class(
-                  "text-sm text-on-surface-variant w-[320px] max-w-full leading-relaxed font-sans",
-                ),
-              ],
-              [
-                html.text(
-                  "Select an active peer from the sidebar mesh network list to start messaging.",
-                ),
-              ],
-            ),
-          ],
-        )
-
-      html.section(
-        [
-          attribute.id("chat"),
-          attribute.class(
-            "flex-1 flex flex-col min-h-0 overflow-hidden bg-surface",
-          ),
-        ],
-        [header, body],
-      )
-    }
-    option.Some(peer_id) -> {
-      let is_online = chat.peer_is_online(model.peers, peer_id)
-      let draft = draft_for_selected_peer(model)
-      let is_send_disabled = !is_online || string.trim(draft) == ""
-
-      let peer_name = peer_display_name(model, peer_id)
-
-      html.section(
-        [
-          attribute.id("chat"),
-          attribute.class(
-            "flex-1 flex flex-col min-h-0 overflow-hidden bg-[#fbf9ff] relative",
-          ),
-        ],
-        [
-          // Chat Header
-          html.div(
-            [
-              attribute.class(
-                "h-[70px] border-b border-outline-variant/50 bg-[#f1eef8] px-8 flex items-center justify-between shrink-0",
-              ),
-            ],
-            [
-              html.div([attribute.class("flex items-center gap-4 min-w-0")], [
-                // Back Button (hidden on desktop, visible on mobile)
-                html.button(
-                  [
-                    attribute.type_("button"),
-                    attribute.class(
-                      "flex md:hidden h-8 w-8 items-center justify-center rounded-xl bg-surface border border-outline-variant/50 hover:bg-surface-container transition-all cursor-pointer shrink-0 mr-1",
-                    ),
-                    event.on_click(UserDeselectedPeer),
-                  ],
-                  [
-                    html.span(
-                      [attribute.class("material-symbols-outlined text-[18px]")],
-                      [html.text("arrow_back")],
-                    ),
-                  ],
-                ),
-                // Avatar representation
-                html.div(
-                  [
-                    attribute.class(
-                      "relative h-10 w-10 rounded-full border border-outline-variant/40 bg-primary-fixed flex items-center justify-center font-bold text-xs text-primary font-mono shrink-0 shadow-sm",
-                    ),
-                  ],
-                  [
-                    html.text(
-                      peer_name
-                      |> string.first
-                      |> result.unwrap("P")
-                      |> string.uppercase,
-                    ),
-                    case is_online {
-                      True ->
-                        html.span(
-                          [
-                            attribute.class(
-                              "absolute bottom-0 right-0 w-2.5 h-2.5 bg-tertiary border-2 border-[#f1eef8] rounded-full",
-                            ),
-                          ],
-                          [],
-                        )
-                      False ->
-                        html.span(
-                          [
-                            attribute.class(
-                              "absolute bottom-0 right-0 w-2.5 h-2.5 bg-outline-variant border-2 border-[#f1eef8] rounded-full",
-                            ),
-                          ],
-                          [],
-                        )
-                    },
-                  ],
-                ),
-                html.div([attribute.class("min-w-0")], [
-                  html.h2(
-                    [
-                      attribute.id("chat-heading"),
-                      attribute.class(
-                        "font-headline-sm text-body-lg text-on-surface leading-none truncate",
-                      ),
-                    ],
-                    [html.text(peer_name)],
-                  ),
-                  html.p(
-                    [
-                      attribute.class(
-                        "font-mono-label text-[10px] text-on-surface-variant truncate mt-0.5",
-                      ),
-                    ],
-                    [
-                      html.text(case is_online {
-                        True -> "P2P encrypted - 12ms latency"
-                        False -> "Offline session - disconnected"
-                      }),
-                    ],
-                  ),
-                ]),
-              ]),
-              html.div(
-                [attribute.class("hidden sm:flex gap-5 text-on-surface")],
-                [
-                  html.button(
-                    [
-                      attribute.type_("button"),
-                      attribute.class(
-                        "h-10 w-10 rounded-xl flex items-center justify-center hover:bg-[#e7e3f0] transition-colors",
-                      ),
-                    ],
-                    [
-                      html.span(
-                        [
-                          attribute.class(
-                            "material-symbols-outlined text-[24px]",
-                          ),
-                        ],
-                        [html.text("videocam")],
-                      ),
-                    ],
-                  ),
-                  html.button(
-                    [
-                      attribute.type_("button"),
-                      attribute.class(
-                        "h-10 w-10 rounded-xl flex items-center justify-center hover:bg-[#e7e3f0] transition-colors",
-                      ),
-                    ],
-                    [
-                      html.span(
-                        [
-                          attribute.class(
-                            "material-symbols-outlined text-[24px]",
-                          ),
-                        ],
-                        [html.text("info")],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-          // Chat Notice banner (if any)
-          case chat_notice(model) {
-            "" -> html.span([], [])
-            notice ->
-              html.div(
-                [
-                  attribute.id("chat-notice"),
-                  attribute.class(
-                    "mx-4 sm:mx-6 mt-4 p-3 rounded-xl bg-error-container text-xs text-on-error-container border border-error/30 flex items-center gap-2 font-sans",
-                  ),
-                ],
-                [
-                  html.span(
-                    [attribute.class("material-symbols-outlined text-sm")],
-                    [html.text("warning")],
-                  ),
-                  html.span([attribute.class("flex-1 font-medium")], [
-                    html.text(notice),
-                  ]),
-                ],
-              )
-          },
-          // Messages Pane (Col-Reverse anchors scrolling to bottom)
-          html.div(
-            [
-              attribute.class(
-                "flex-1 min-h-0 overflow-hidden px-8 py-8 flex flex-col",
-              ),
-            ],
-            [
-              html.div(
-                [
-                  attribute.class(
-                    "mb-8 flex items-center gap-5 font-mono-label text-[10px] uppercase tracking-widest text-outline",
-                  ),
-                ],
-                [
-                  html.div(
-                    [attribute.class("h-px flex-1 bg-outline-variant/50")],
-                    [],
-                  ),
-                  html.span([], [html.text("Today")]),
-                  html.div(
-                    [attribute.class("h-px flex-1 bg-outline-variant/50")],
-                    [],
-                  ),
-                ],
-              ),
-              html.ol(
-                [
-                  attribute.id("messages"),
-                  attribute.class(
-                    "flex-1 overflow-y-auto pb-10 space-y-8 flex flex-col-reverse custom-scrollbar",
-                  ),
-                ],
-                view_messages(model),
-              ),
-            ],
-          ),
-          // Message Input Bar
-          html.div(
-            [
-              attribute.class("px-8 pb-8 pt-2 bg-[#fbf9ff] shrink-0"),
-            ],
-            [
-              html.div(
-                [
-                  attribute.class(
-                    "min-h-[78px] rounded-[1.5rem] bg-[#f0edf8] px-5 py-3 flex items-center gap-4 border border-outline-variant/60 relative focus-within:border-primary transition-all",
-                  ),
-                ],
-                [
-                  html.button(
-                    [
-                      attribute.type_("button"),
-                      attribute.class(
-                        "h-10 w-10 text-on-surface hover:text-primary transition-colors shrink-0 flex items-center justify-center",
-                      ),
-                    ],
-                    [
-                      html.span(
-                        [
-                          attribute.class(
-                            "material-symbols-outlined text-[20px]",
-                          ),
-                        ],
-                        [html.text("add_circle")],
-                      ),
-                    ],
-                  ),
-                  html.input([
-                    attribute.id("message-body"),
-                    attribute.class(
-                      "flex-1 bg-transparent text-body-md text-on-surface placeholder-on-surface-variant/70 border-none outline-none focus:outline-none focus:ring-0 p-0 py-2 font-sans",
-                    ),
-                    attribute.placeholder(case is_online {
-                      True -> "Write a message or drop files here..."
-                      False -> "Peer is offline - draft is saved"
-                    }),
-                    attribute.maxlength(10_000),
-                    attribute.autocomplete("off"),
-                    attribute.value(draft),
-                    event.on_input(UserTypedMessage),
-                    event.on_keydown(UserPressedMessageKey),
-                  ]),
-                  html.div(
-                    [attribute.class("flex gap-3 items-center shrink-0")],
-                    [
-                      html.button(
-                        [
-                          attribute.type_("button"),
-                          attribute.class(
-                            "h-10 w-10 text-on-surface-variant hover:text-tertiary transition-colors flex items-center justify-center",
-                          ),
-                        ],
-                        [
-                          html.span(
-                            [
-                              attribute.class(
-                                "material-symbols-outlined text-[20px]",
-                              ),
-                            ],
-                            [html.text("mood")],
-                          ),
-                        ],
-                      ),
-                      html.button(
-                        [
-                          attribute.id("send-message-button"),
-                          attribute.type_("button"),
-                          attribute.disabled(is_send_disabled),
-                          attribute.class(
-                            "bg-primary text-on-primary w-14 h-14 rounded-full flex items-center justify-center active:scale-95 transition-transform shimmer-hover shadow-sm "
-                            <> case is_send_disabled {
-                              True ->
-                                "opacity-40 cursor-not-allowed bg-outline-variant"
-                              False -> ""
-                            },
-                          ),
-                          event.on_click(UserClickedSendMessage),
-                        ],
-                        [
-                          html.span(
-                            [
-                              attribute.class("material-symbols-outlined"),
-                              attribute.style(
-                                "font-variation-settings",
-                                "'FILL' 1",
-                              ),
-                            ],
-                            [html.text("send")],
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ],
-      )
-    }
-  }
-}
-
-fn chat_notice(model: Model) -> String {
-  case model.chat_notice {
-    option.Some(message) -> message
-    option.None -> ""
-  }
-}
-
-fn view_messages(model: Model) -> List(Element(Message)) {
-  chat.messages_for_peer(model.messages_by_peer, model.selected_peer_id)
-  |> list.reverse
-  |> list.map(fn(message) { view_message(model, message) })
-}
-
-fn view_message(
-  model: Model,
-  message: shared_protocol.TextMessage,
-) -> Element(Message) {
-  let is_self = message.from == model.device_id
-  let time_str = browser.format_time(message.created_at_ms)
-
-  let author_initial = case is_self {
-    True ->
-      model.display_name
-      |> string.first
-      |> result.unwrap("P")
-      |> string.uppercase
-    False ->
-      case chat.find_peer(model.known_peers, message.from) {
-        option.Some(peer) ->
-          peer.display_name
-          |> string.first
-          |> result.unwrap("P")
-          |> string.uppercase
-        option.None -> "P"
-      }
-  }
-
-  let hash = string_hash(message.from)
-  let avatar_colors = case is_self {
-    True -> "bg-primary-fixed text-primary border border-primary-fixed-dim"
-    False ->
-      case hash % 4 {
-        0 -> "bg-rose-100 text-rose-800 border border-rose-200"
-        1 -> "bg-emerald-100 text-emerald-800 border border-emerald-200"
-        2 -> "bg-sky-100 text-sky-800 border border-sky-200"
-        _ -> "bg-violet-100 text-violet-800 border border-violet-200"
-      }
-  }
-
-  case is_self {
-    True -> {
-      html.li(
-        [
-          attribute.data("message-id", message.id),
-          attribute.class(
-            "flex gap-md max-w-[80%] ml-auto flex-row-reverse items-start",
-          ),
-        ],
-        [
-          // Avatar
-          html.div(
-            [
-              attribute.class(
-                "w-8 h-8 rounded-full border border-outline-variant/30 flex items-center justify-center font-bold text-xs font-mono shrink-0 shadow-sm "
-                <> avatar_colors,
-              ),
-            ],
-            [html.text(author_initial)],
-          ),
-          // Bubble
-          html.div([attribute.class("flex flex-col items-end")], [
-            html.div(
-              [
-                attribute.class(
-                  "bg-primary/10 rounded-xl p-md rounded-tr-none border border-primary/20",
-                ),
-              ],
-              [
-                html.p(
-                  [
-                    attribute.class(
-                      "text-body-md text-primary break-words text-right",
-                    ),
-                  ],
-                  [html.text(message.body)],
-                ),
-              ],
-            ),
-            html.span(
-              [
-                attribute.class(
-                  "font-mono-label text-[10px] text-on-surface-variant mt-1 mr-1",
-                ),
-              ],
-              [html.text(time_str)],
-            ),
-          ]),
-        ],
-      )
-    }
-    False -> {
-      html.li(
-        [
-          attribute.data("message-id", message.id),
-          attribute.class("flex gap-md max-w-[80%] items-start"),
-        ],
-        [
-          // Avatar
-          html.div(
-            [
-              attribute.class(
-                "w-8 h-8 rounded-full border border-outline-variant/30 flex items-center justify-center font-bold text-xs font-mono shrink-0 shadow-sm "
-                <> avatar_colors,
-              ),
-            ],
-            [html.text(author_initial)],
-          ),
-          // Bubble
-          html.div([attribute.class("flex flex-col items-start")], [
-            html.div(
-              [
-                attribute.class(
-                  "bg-surface-container rounded-xl p-md rounded-tl-none border border-outline-variant/30",
-                ),
-              ],
-              [
-                html.p(
-                  [
-                    attribute.class(
-                      "text-body-md text-on-surface break-words text-left",
-                    ),
-                  ],
-                  [html.text(message.body)],
-                ),
-              ],
-            ),
-            html.span(
-              [
-                attribute.class(
-                  "font-mono-label text-[10px] text-on-surface-variant mt-1 ml-1",
-                ),
-              ],
-              [html.text(time_str)],
-            ),
-          ]),
-        ],
-      )
-    }
-  }
-}
-
-fn view_log_drawer(model: Model) -> Element(Message) {
-  html.details(
-    [
-      attribute.class(
-        "border-t border-outline-variant/30 bg-surface-container-high/80 backdrop-blur-md transition-all group shrink-0 z-40",
-      ),
-    ],
-    [
-      html.summary(
-        [
-          attribute.class(
-            "flex items-center justify-between px-6 py-2.5 cursor-pointer text-on-surface-variant hover:text-on-surface select-none list-none font-mono font-bold text-xs uppercase tracking-wider",
-          ),
-        ],
-        [
-          html.div([attribute.class("flex items-center gap-2")], [
-            html.span(
-              [
-                attribute.class(
-                  "text-[8px] group-open:rotate-90 transition-transform inline-block",
-                ),
-              ],
-              [html.text("▶")],
-            ),
-            html.text("Developer Event Log"),
-          ]),
-          html.span(
-            [
-              attribute.class(
-                "text-[9px] font-mono text-on-surface-variant/60 font-normal",
-              ),
-            ],
-            [html.text(int.to_string(list.length(model.log)) <> " events")],
-          ),
-        ],
-      ),
-      html.div(
-        [
-          attribute.class(
-            "px-6 pb-4 border-t border-outline-variant/30 bg-slate-950/20 flex flex-col",
-          ),
-        ],
-        [
-          html.div([attribute.class("flex justify-end mt-3")], [
-            html.button(
-              [
-                attribute.type_("button"),
-                attribute.class(
-                  "text-[10px] font-mono font-bold text-on-surface-variant hover:text-error bg-surface border border-outline-variant px-3 py-1 rounded-lg transition-all cursor-pointer uppercase tracking-wider shadow-sm",
-                ),
-                event.on_click(UserClickedClearLog),
-              ],
-              [html.text("Clear Log")],
-            ),
-          ]),
-          html.pre(
-            [
-              attribute.id("log"),
-              attribute.class(
-                "mt-2 text-xs font-mono text-emerald-400 bg-slate-900 border border-slate-950/60 p-4 max-h-48 overflow-y-auto leading-relaxed rounded-lg scrollbar-none",
-              ),
-            ],
-            [html.text(model.log |> string.join(with: "\n"))],
-          ),
-        ],
-      ),
-    ],
-  )
 }
 
 fn string_hash(s: String) -> Int {
