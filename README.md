@@ -2,19 +2,41 @@
 
 Experimental local-network instant messaging and file sharing service in Gleam.
 
-## Run
+The current slice is a Lustre client bundle backed by the existing Mist WebSocket presence server.
+
+## Development Run
+
+Build and test the shared protocol package:
 
 ```sh
-gleam run
+cd shared && gleam test
+```
+
+Build the Lustre browser client into the server static directory:
+
+```sh
+cd ../client && gleam run -m lustre/dev build --outdir=../priv/static
+```
+
+Start the server:
+
+```sh
+cd .. && gleam run
 ```
 
 Open <http://localhost:9143> in a browser.
+
+## Production Client Bundle
+
+```sh
+cd client && gleam run -m lustre/dev build --minify --outdir=../priv/static
+```
 
 ## WebSocket Endpoint
 
 `ws://localhost:9143/ws`
 
-This slice supports `peer.hello`, full `peer.list`, `peer.joined`, and `peer.left` presence events. Send a JSON message:
+This slice supports `peer.hello`, full `peer.list`, `peer.joined`, and `peer.left` presence events. The UI sends a JSON message:
 
 ```json
 {"type":"peer.hello","device_id":"device_abc","display_name":"Zed"}
@@ -29,7 +51,9 @@ The server replies with:
 ## Test
 
 ```sh
-gleam test
+cd shared && gleam test
+cd ../client && gleam test
+cd .. && gleam test
 ```
 
 ## Known Limitations (Current Slice)

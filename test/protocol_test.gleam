@@ -1,6 +1,7 @@
 import gleam/string
 import gleeunit
 import protocol
+import shared/protocol as shared_protocol
 
 pub fn main() -> Nil {
   gleeunit.main()
@@ -42,7 +43,7 @@ pub fn decode_blank_display_name_test() {
 pub fn encode_peer_list_contains_fields_test() {
   let json =
     protocol.encode_peer_list([
-      protocol.Peer(id: "device_abc", display_name: "Zed"),
+      shared_protocol.Peer(id: "device_abc", display_name: "Zed"),
     ])
 
   let assert True = string.contains(json, "\"type\":\"peer.list\"")
@@ -52,7 +53,7 @@ pub fn encode_peer_list_contains_fields_test() {
 
 pub fn encode_peer_joined_contains_fields_test() {
   let json =
-    protocol.encode_peer_joined(protocol.Peer(
+    protocol.encode_peer_joined(shared_protocol.Peer(
       id: "device_abc",
       display_name: "Zed",
     ))

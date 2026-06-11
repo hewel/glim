@@ -3,11 +3,11 @@ import gleam/erlang/process
 import gleam/list
 import gleam/otp/actor
 import gleam/string
-import protocol
+import shared/protocol as shared_protocol
 
 pub type ClientMessage {
-  SendPeerList(peers: List(protocol.Peer))
-  SendPeerJoined(peer: protocol.Peer)
+  SendPeerList(peers: List(shared_protocol.Peer))
+  SendPeerJoined(peer: shared_protocol.Peer)
   SendPeerLeft(device_id: String)
   SessionReplaced
 }
@@ -22,7 +22,10 @@ pub type Message {
 }
 
 type PeerSession {
-  PeerSession(peer: protocol.Peer, client: process.Subject(ClientMessage))
+  PeerSession(
+    peer: shared_protocol.Peer,
+    client: process.Subject(ClientMessage),
+  )
 }
 
 type State {
@@ -57,7 +60,7 @@ fn join(
   display_name: String,
   client: process.Subject(ClientMessage),
 ) -> actor.Next(State, Message) {
-  let peer = protocol.Peer(id: device_id, display_name: display_name)
+  let peer = shared_protocol.Peer(id: device_id, display_name: display_name)
   let session = PeerSession(peer: peer, client: client)
 
   case dict.get(state.peers, device_id) {
@@ -105,7 +108,9 @@ fn leave(
   }
 }
 
-fn sorted_peers(peers: dict.Dict(String, PeerSession)) -> List(protocol.Peer) {
+fn sorted_peers(
+  peers: dict.Dict(String, PeerSession),
+) -> List(shared_protocol.Peer) {
   peers
   |> dict.values
   |> list.map(fn(session) { session.peer })
@@ -114,7 +119,7 @@ fn sorted_peers(peers: dict.Dict(String, PeerSession)) -> List(protocol.Peer) {
 
 fn broadcast_joined(
   peers: dict.Dict(String, PeerSession),
-  peer: protocol.Peer,
+  peer: shared_protocol.Peer,
 ) -> Nil {
   peers
   |> dict.values
@@ -126,7 +131,7 @@ fn broadcast_joined(
 fn broadcast_joined_to_others(
   peers: dict.Dict(String, PeerSession),
   device_id: String,
-  peer: protocol.Peer,
+  peer: shared_protocol.Peer,
 ) -> Nil {
   peers
   |> dict.values

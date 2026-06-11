@@ -1,7 +1,7 @@
 import gleam/erlang/process
 import gleeunit
-import protocol
 import room
+import shared/protocol as shared_protocol
 
 pub fn main() -> Nil {
   gleeunit.main()
@@ -17,7 +17,7 @@ pub fn joining_alice_sends_self_peer_list_test() {
   )
 
   let assert Ok(room.SendPeerList([
-    protocol.Peer(id: "alice", display_name: "Alice"),
+    shared_protocol.Peer(id: "alice", display_name: "Alice"),
   ])) = process.receive(from: alice, within: 1000)
 }
 
@@ -31,7 +31,7 @@ pub fn joining_bob_sends_full_list_and_joined_event_test() {
     room.Join(device_id: "alice", display_name: "Alice", client: alice),
   )
   let assert Ok(room.SendPeerList([
-    protocol.Peer(id: "alice", display_name: "Alice"),
+    shared_protocol.Peer(id: "alice", display_name: "Alice"),
   ])) = process.receive(from: alice, within: 1000)
 
   process.send(
@@ -40,10 +40,10 @@ pub fn joining_bob_sends_full_list_and_joined_event_test() {
   )
 
   let assert Ok(room.SendPeerList([
-    protocol.Peer(id: "alice", display_name: "Alice"),
-    protocol.Peer(id: "bob", display_name: "Bob"),
+    shared_protocol.Peer(id: "alice", display_name: "Alice"),
+    shared_protocol.Peer(id: "bob", display_name: "Bob"),
   ])) = process.receive(from: bob, within: 1000)
-  let assert Ok(room.SendPeerJoined(protocol.Peer(
+  let assert Ok(room.SendPeerJoined(shared_protocol.Peer(
     id: "bob",
     display_name: "Bob",
   ))) = process.receive(from: alice, within: 1000)
@@ -86,7 +86,7 @@ pub fn replacing_alice_sends_replaced_and_ignores_stale_leave_test() {
     room.Join(device_id: "alice", display_name: "Alice", client: old_alice),
   )
   let assert Ok(room.SendPeerList([
-    protocol.Peer(id: "alice", display_name: "Alice"),
+    shared_protocol.Peer(id: "alice", display_name: "Alice"),
   ])) = process.receive(from: old_alice, within: 1000)
 
   process.send(
@@ -96,7 +96,7 @@ pub fn replacing_alice_sends_replaced_and_ignores_stale_leave_test() {
   let assert Ok(room.SessionReplaced) =
     process.receive(from: old_alice, within: 1000)
   let assert Ok(room.SendPeerList([
-    protocol.Peer(id: "alice", display_name: "Alice 2"),
+    shared_protocol.Peer(id: "alice", display_name: "Alice 2"),
   ])) = process.receive(from: new_alice, within: 1000)
 
   process.send(room_subject, room.Leave(device_id: "alice", client: old_alice))
@@ -106,10 +106,10 @@ pub fn replacing_alice_sends_replaced_and_ignores_stale_leave_test() {
   )
 
   let assert Ok(room.SendPeerList([
-    protocol.Peer(id: "alice", display_name: "Alice 2"),
-    protocol.Peer(id: "bob", display_name: "Bob"),
+    shared_protocol.Peer(id: "alice", display_name: "Alice 2"),
+    shared_protocol.Peer(id: "bob", display_name: "Bob"),
   ])) = process.receive(from: bob, within: 1000)
-  let assert Ok(room.SendPeerJoined(protocol.Peer(
+  let assert Ok(room.SendPeerJoined(shared_protocol.Peer(
     id: "bob",
     display_name: "Bob",
   ))) = process.receive(from: new_alice, within: 1000)

@@ -14,9 +14,9 @@ pub fn handle_request(
   case request.path_segments(req) {
     [] ->
       serve_static_file("priv/static/index.html", "text/html; charset=utf-8")
-    ["assets", "app.js"] ->
+    ["assets", "client.js"] ->
       serve_static_file(
-        "priv/static/app.js",
+        "priv/static/client.js",
         "application/javascript; charset=utf-8",
       )
     ["assets", "style.css"] ->
