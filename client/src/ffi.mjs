@@ -46,3 +46,11 @@ export function connect(displayName, helloJson, onOpen, onClose, onError, onMess
     onError();
   });
 }
+
+export function send(payload, onError) {
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(payload);
+  } else {
+    onError();
+  }
+}

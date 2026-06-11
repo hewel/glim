@@ -114,3 +114,89 @@ pub fn replacing_alice_sends_replaced_and_ignores_stale_leave_test() {
     display_name: "Bob",
   ))) = process.receive(from: new_alice, within: 1000)
 }
+
+pub fn text_send_routes_to_receiver_and_sender_test() {
+  let assert Ok(room_subject) = room.start()
+  let alice = process.new_subject()
+  let bob = process.new_subject()
+
+  process.send(
+    room_subject,
+    room.Join(device_id: "alice", display_name: "Alice", client: alice),
+  )
+  let assert Ok(room.SendPeerList(_)) =
+    process.receive(from: alice, within: 1000)
+
+  process.send(
+    room_subject,
+    room.Join(device_id: "bob", display_name: "Bob", client: bob),
+  )
+  let assert Ok(room.SendPeerList(_)) = process.receive(from: bob, within: 1000)
+  let assert Ok(room.SendPeerJoined(_)) =
+    process.receive(from: alice, within: 1000)
+
+  process.send(
+    room_subject,
+    room.SendText(from: "alice", to: "bob", body: "hello", client: alice),
+  )
+
+  let assert Ok(room.SendTextMessage(shared_protocol.TextMessage(
+    id: "msg_1",
+    from: "alice",
+    to: "bob",
+    body: "hello",
+    created_at_ms: _,
+  ))) = process.receive(from: alice, within: 1000)
+  let assert Ok(room.SendTextMessage(shared_protocol.TextMessage(
+    id: "msg_1",
+    from: "alice",
+    to: "bob",
+    body: "hello",
+    created_at_ms: _,
+  ))) = process.receive(from: bob, within: 1000)
+}
+
+pub fn text_send_to_offline_peer_sends_error_test() {
+  let assert Ok(room_subject) = room.start()
+  let alice = process.new_subject()
+
+  process.send(
+    room_subject,
+    room.Join(device_id: "alice", display_name: "Alice", client: alice),
+  )
+  let assert Ok(room.SendPeerList(_)) =
+    process.receive(from: alice, within: 1000)
+
+  process.send(
+    room_subject,
+    room.SendText(from: "alice", to: "bob", body: "hello", client: alice),
+  )
+
+  let assert Ok(room.SendError(
+    code: "peer_offline",
+    message: "The selected peer is no longer online.",
+  )) = process.receive(from: alice, within: 1000)
+  let assert Error(_) = process.receive(from: alice, within: 50)
+}
+
+pub fn text_send_to_self_sends_error_test() {
+  let assert Ok(room_subject) = room.start()
+  let alice = process.new_subject()
+
+  process.send(
+    room_subject,
+    room.Join(device_id: "alice", display_name: "Alice", client: alice),
+  )
+  let assert Ok(room.SendPeerList(_)) =
+    process.receive(from: alice, within: 1000)
+
+  process.send(
+    room_subject,
+    room.SendText(from: "alice", to: "alice", body: "hello", client: alice),
+  )
+
+  let assert Ok(room.SendError(
+    code: "invalid_recipient",
+    message: "You cannot send a message to yourself.",
+  )) = process.receive(from: alice, within: 1000)
+}

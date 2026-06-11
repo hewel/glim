@@ -2,7 +2,7 @@
 
 Experimental local-network instant messaging and file sharing service in Gleam.
 
-The current slice is a Lustre client bundle backed by the existing Mist WebSocket presence server.
+The current slice is a Lustre client bundle backed by a Mist WebSocket presence and peer-to-peer text chat server.
 
 ## Development Run
 
@@ -36,7 +36,7 @@ cd client && gleam run -m lustre/dev build --minify --outdir=../priv/static
 
 `ws://localhost:9143/ws`
 
-This slice supports `peer.hello`, full `peer.list`, `peer.joined`, and `peer.left` presence events. The UI sends a JSON message:
+This slice supports `peer.hello`, full `peer.list`, `peer.joined`, `peer.left`, `text.send`, and `text.message` events. The UI sends a JSON hello message:
 
 ```json
 {"type":"peer.hello","device_id":"device_abc","display_name":"Zed"}
@@ -48,6 +48,19 @@ The server replies with:
 {"type":"peer.list","peers":[{"id":"device_abc","display_name":"Zed"}]}
 ```
 
+Text messages are sent as:
+
+```json
+{"type":"text.send","to":"device_xyz","body":"hello"}
+```
+
+The server routes accepted messages back to both peers as:
+
+```json
+{"type":"text.message","id":"msg_1","from":"device_abc","to":"device_xyz","body":"hello","created_at_ms":123}
+```
+
+
 ## Test
 
 ```sh
@@ -58,7 +71,6 @@ cd .. && gleam test
 
 ## Known Limitations (Current Slice)
 
-- No text messages between peers.
 - No file offers or file transfers.
 - No upload or download endpoints.
 - No persistence across server restarts.

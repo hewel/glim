@@ -29,6 +29,26 @@ pub fn validate_display_name_rejects_too_long_test() {
     validation.validate_display_name(long_name)
 }
 
+pub fn validate_text_body_trims_test() {
+  let assert Ok("hello") = validation.validate_text_body(" hello ")
+}
+
+pub fn validate_text_body_rejects_whitespace_only_test() {
+  let assert Error(validation.EmptyTextBody) =
+    validation.validate_text_body("   ")
+}
+
+pub fn validate_text_body_accepts_max_length_test() {
+  let body = repeat_char("A", 10_000)
+  let assert Ok(_) = validation.validate_text_body(body)
+}
+
+pub fn validate_text_body_rejects_too_long_test() {
+  let body = repeat_char("A", 10_001)
+  let assert Error(validation.TextBodyTooLong(max: 10_000)) =
+    validation.validate_text_body(body)
+}
+
 fn repeat_char(char: String, count: Int) -> String {
   case count {
     0 -> ""

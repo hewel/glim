@@ -32,6 +32,10 @@ pub fn connect(
   })
 }
 
+pub fn send(payload: String, on_error: msg) -> Effect(msg) {
+  effect.from(fn(dispatch) { do_send(payload, fn() { dispatch(on_error) }) })
+}
+
 @external(javascript, "./ffi.mjs", "loadIdentity")
 fn do_load_identity() -> Identity {
   Identity(device_id: "", display_name: "Glim Peer")
@@ -46,5 +50,10 @@ fn do_connect(
   _on_error: fn() -> Nil,
   _on_message: fn(String) -> Nil,
 ) -> Nil {
+  Nil
+}
+
+@external(javascript, "./ffi.mjs", "send")
+fn do_send(_payload: String, _on_error: fn() -> Nil) -> Nil {
   Nil
 }

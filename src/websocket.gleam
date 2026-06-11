@@ -36,6 +36,8 @@ pub fn handle_message(
       case protocol.decode_client_event(text) {
         Ok(protocol.PeerHello(device_id:, display_name:)) ->
           handle_peer_hello(state, device_id, display_name)
+        Ok(protocol.TextSend(to:, body:)) ->
+          handle_text_send(state, conn, to, body)
         Error(_) -> {
           send_invalid_event(conn)
           mist.continue(state)
@@ -56,6 +58,14 @@ pub fn handle_message(
     }
     mist.Custom(room.SendPeerLeft(device_id)) -> {
       let _ = mist.send_text_frame(conn, protocol.encode_peer_left(device_id))
+      mist.continue(state)
+    }
+    mist.Custom(room.SendTextMessage(message)) -> {
+      let _ = mist.send_text_frame(conn, protocol.encode_text_message(message))
+      mist.continue(state)
+    }
+    mist.Custom(room.SendError(code:, message:)) -> {
+      let _ = mist.send_text_frame(conn, protocol.encode_error(code, message))
       mist.continue(state)
     }
     mist.Custom(room.SessionReplaced) -> {
@@ -107,6 +117,34 @@ fn handle_peer_hello(
     ),
   )
   mist.continue(State(..state, device_id: option.Some(device_id)))
+}
+
+fn handle_text_send(
+  state: State,
+  conn: mist.WebsocketConnection,
+  to: String,
+  body: String,
+) -> mist.Next(State, room.ClientMessage) {
+  case state.device_id {
+    option.None -> {
+      let _ =
+        mist.send_text_frame(
+          conn,
+          protocol.encode_error(
+            "not_joined",
+            "Send peer.hello before sending messages.",
+          ),
+        )
+      mist.continue(state)
+    }
+    option.Some(from) -> {
+      process.send(
+        state.room,
+        room.SendText(from: from, to: to, body: body, client: state.client),
+      )
+      mist.continue(state)
+    }
+  }
 }
 
 fn leave_if_joined(state: State) -> Nil {

@@ -1,14 +1,26 @@
 import gleam/dynamic/decode
 import gleam/json
+import gleam/result
 
 pub type Peer {
   Peer(id: String, display_name: String)
+}
+
+pub type TextMessage {
+  TextMessage(
+    id: String,
+    from: String,
+    to: String,
+    body: String,
+    created_at_ms: Int,
+  )
 }
 
 pub type ServerEvent {
   PeerList(peers: List(Peer))
   PeerJoined(peer: Peer)
   PeerLeft(device_id: String)
+  TextMessageEvent(message: TextMessage)
   ErrorEvent(code: String, message: String)
   UnknownServerEvent(event_type: String)
 }
@@ -17,6 +29,7 @@ type ServerEventType {
   PeerListEvent
   PeerJoinedEvent
   PeerLeftEvent
+  TextMessageServerEvent
   ErrorServerEvent
   UnknownEventType(raw: String)
 }
@@ -26,6 +39,15 @@ pub fn encode_peer_hello(device_id: String, display_name: String) -> String {
     #("type", json.string("peer.hello")),
     #("device_id", json.string(device_id)),
     #("display_name", json.string(display_name)),
+  ])
+  |> json.to_string
+}
+
+pub fn encode_text_send(to: String, body: String) -> String {
+  json.object([
+    #("type", json.string("text.send")),
+    #("to", json.string(to)),
+    #("body", json.string(body)),
   ])
   |> json.to_string
 }
@@ -54,10 +76,35 @@ pub fn encode_peer(peer: Peer) -> json.Json {
   ])
 }
 
+pub fn encode_text_message(message: TextMessage) -> json.Json {
+  json.object([
+    #("id", json.string(message.id)),
+    #("from", json.string(message.from)),
+    #("to", json.string(message.to)),
+    #("body", json.string(message.body)),
+    #("created_at_ms", json.int(message.created_at_ms)),
+  ])
+}
+
 fn peer_decoder() -> decode.Decoder(Peer) {
   use id <- decode.field("id", decode.string)
   use display_name <- decode.field("display_name", decode.string)
   decode.success(Peer(id: id, display_name: display_name))
+}
+
+fn text_message_decoder() -> decode.Decoder(TextMessage) {
+  use id <- decode.field("id", decode.string)
+  use from <- decode.field("from", decode.string)
+  use to <- decode.field("to", decode.string)
+  use body <- decode.field("body", decode.string)
+  use created_at_ms <- decode.field("created_at_ms", decode.int)
+  decode.success(TextMessage(
+    id: id,
+    from: from,
+    to: to,
+    body: body,
+    created_at_ms: created_at_ms,
+  ))
 }
 
 fn decode_known_server_event(
@@ -86,6 +133,10 @@ fn decode_known_server_event(
       }
       json.parse(from: input, using: decoder)
     }
+    TextMessageServerEvent -> {
+      json.parse(from: input, using: text_message_decoder())
+      |> result.map(fn(message) { TextMessageEvent(message: message) })
+    }
     ErrorServerEvent -> {
       let decoder = {
         use code <- decode.field("code", decode.string)
@@ -104,6 +155,7 @@ fn classify_server_event_type(event_type: String) -> ServerEventType {
     "peer.list" -> PeerListEvent
     "peer.joined" -> PeerJoinedEvent
     "peer.left" -> PeerLeftEvent
+    "text.message" -> TextMessageServerEvent
     "error" -> ErrorServerEvent
     other -> UnknownEventType(raw: other)
   }

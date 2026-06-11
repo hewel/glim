@@ -30,3 +30,5 @@ outdir = "../priv/static"
 stylesheets = [
   { href = "/style.css" }
 ]
+title = "LAN Share IM"
+body = "<main id=\"app\"></main>"

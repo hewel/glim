@@ -7,6 +7,7 @@ import validation
 
 pub type ClientEvent {
   PeerHello(device_id: String, display_name: String)
+  TextSend(to: String, body: String)
 }
 
 pub type DecodeError {
@@ -17,6 +18,7 @@ pub type DecodeError {
 
 type ClientEventType {
   PeerHelloEvent
+  TextSendEvent
   UnknownClientEventType(raw: String)
 }
 
@@ -44,6 +46,7 @@ fn decode_known_client_event(
 ) -> Result(ClientEvent, DecodeError) {
   case event_type {
     PeerHelloEvent -> decode_peer_hello(input)
+    TextSendEvent -> decode_text_send(input)
     UnknownClientEventType(raw) -> Error(UnknownEvent(event_type: raw))
   }
 }
@@ -51,6 +54,7 @@ fn decode_known_client_event(
 fn classify_client_event_type(event_type: String) -> ClientEventType {
   case event_type {
     "peer.hello" -> PeerHelloEvent
+    "text.send" -> TextSendEvent
     other -> UnknownClientEventType(raw: other)
   }
 }
@@ -71,6 +75,28 @@ fn decode_peer_hello(input: String) -> Result(ClientEvent, DecodeError) {
             Error(_) -> Error(InvalidPayload)
             Ok(valid_name) ->
               Ok(PeerHello(device_id: valid_id, display_name: valid_name))
+          }
+        }
+      }
+    }
+  }
+}
+
+fn decode_text_send(input: String) -> Result(ClientEvent, DecodeError) {
+  let decoder = {
+    use to <- decode.field("to", decode.string)
+    use body <- decode.field("body", decode.string)
+    decode.success(#(to, body))
+  }
+  case json.parse(from: input, using: decoder) {
+    Error(_) -> Error(InvalidPayload)
+    Ok(#(to, body)) -> {
+      case validation.validate_device_id(to) {
+        Error(_) -> Error(InvalidPayload)
+        Ok(valid_to) -> {
+          case validation.validate_text_body(body) {
+            Error(_) -> Error(InvalidPayload)
+            Ok(valid_body) -> Ok(TextSend(to: valid_to, body: valid_body))
           }
         }
       }
@@ -100,6 +126,18 @@ pub fn encode_peer_left(device_id: String) -> String {
   json.object([
     #("type", json.string("peer.left")),
     #("device_id", json.string(device_id)),
+  ])
+  |> json.to_string
+}
+
+pub fn encode_text_message(message: shared_protocol.TextMessage) -> String {
+  json.object([
+    #("type", json.string("text.message")),
+    #("id", json.string(message.id)),
+    #("from", json.string(message.from)),
+    #("to", json.string(message.to)),
+    #("body", json.string(message.body)),
+    #("created_at_ms", json.int(message.created_at_ms)),
   ])
   |> json.to_string
 }

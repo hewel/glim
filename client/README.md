@@ -1,6 +1,6 @@
 # LAN Share IM Client
 
-Lustre browser client for the LAN Share IM presence slice.
+Lustre browser client for the LAN Share IM presence and text chat slice.
 
 This package targets JavaScript and builds a browser bundle consumed by the root Mist server. It does not run as a standalone server.
 
@@ -31,10 +31,11 @@ gleam run -m lustre/dev build --minify --outdir=../priv/static
 
 ## Package Layout
 
-- `src/client.gleam` renders the Lustre UI and owns pure peer-list update helpers.
+- `src/client.gleam` renders the Lustre UI and owns browser update wiring.
+- `src/chat.gleam` owns pure peer-list and per-peer chat bookkeeping.
 - `src/browser.gleam` wraps browser effects as Lustre effects.
 - `src/ffi.mjs` contains direct `localStorage` and `WebSocket` access.
-- `test/client_test.gleam` covers pure peer-list behavior.
+- `test/client_test.gleam` covers pure peer-list and per-peer chat behavior.
 
 ## Current Scope
 
@@ -44,11 +45,12 @@ Supported:
 - edit display name
 - connect to `/ws`
 - send `peer.hello`
-- render `peer.list`, `peer.joined`, `peer.left`, and server `error` events
+- render `peer.list`, `peer.joined`, `peer.left`, `text.message`, and server `error` events
+- select a peer and send `text.send`
+- keep per-peer conversations and unread counts in memory for the current browser session
 
 Not included in this slice:
 
-- text messages
 - file offers or transfers
 - upload/download endpoints
 - persistence

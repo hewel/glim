@@ -14,6 +14,15 @@ pub fn handle_request(
   case request.path_segments(req) {
     [] ->
       serve_static_file("priv/static/index.html", "text/html; charset=utf-8")
+    ["client.js"] ->
+      serve_static_file(
+        "priv/static/client.js",
+        "application/javascript; charset=utf-8",
+      )
+    ["client.css"] ->
+      serve_static_file("priv/static/client.css", "text/css; charset=utf-8")
+    ["style.css"] ->
+      serve_static_file("priv/static/style.css", "text/css; charset=utf-8")
     ["assets", "client.js"] ->
       serve_static_file(
         "priv/static/client.js",
@@ -21,6 +30,8 @@ pub fn handle_request(
       )
     ["assets", "style.css"] ->
       serve_static_file("priv/static/style.css", "text/css; charset=utf-8")
+    ["assets", "client.css"] ->
+      serve_static_file("priv/static/client.css", "text/css; charset=utf-8")
     ["ws"] ->
       mist.websocket(
         request: req,

@@ -1,5 +1,7 @@
+import clock
 import gleam/dict
 import gleam/erlang/process
+import gleam/int
 import gleam/list
 import gleam/otp/actor
 import gleam/string
@@ -9,6 +11,8 @@ pub type ClientMessage {
   SendPeerList(peers: List(shared_protocol.Peer))
   SendPeerJoined(peer: shared_protocol.Peer)
   SendPeerLeft(device_id: String)
+  SendTextMessage(message: shared_protocol.TextMessage)
+  SendError(code: String, message: String)
   SessionReplaced
 }
 
@@ -19,6 +23,12 @@ pub type Message {
     client: process.Subject(ClientMessage),
   )
   Leave(device_id: String, client: process.Subject(ClientMessage))
+  SendText(
+    from: String,
+    to: String,
+    body: String,
+    client: process.Subject(ClientMessage),
+  )
 }
 
 type PeerSession {
@@ -29,12 +39,12 @@ type PeerSession {
 }
 
 type State {
-  State(peers: dict.Dict(String, PeerSession))
+  State(peers: dict.Dict(String, PeerSession), next_message_sequence: Int)
 }
 
 pub fn start() -> Result(process.Subject(Message), actor.StartError) {
   case
-    actor.new(State(peers: dict.new()))
+    actor.new(State(peers: dict.new(), next_message_sequence: 1))
     |> actor.on_message(handle_message)
     |> actor.start
   {
@@ -51,6 +61,8 @@ fn handle_message(
     Join(device_id:, display_name:, client:) ->
       join(state, device_id, display_name, client)
     Leave(device_id:, client:) -> leave(state, device_id, client)
+    SendText(from:, to:, body:, client:) ->
+      send_text(state, from, to, body, client)
   }
 }
 
@@ -67,7 +79,7 @@ fn join(
     Error(_) -> {
       let peers =
         dict.insert(into: state.peers, for: device_id, insert: session)
-      let new_state = State(peers: peers)
+      let new_state = State(..state, peers: peers)
       process.send(client, SendPeerList(sorted_peers(peers)))
       broadcast_joined(state.peers, peer)
       actor.continue(new_state)
@@ -75,7 +87,7 @@ fn join(
     Ok(stored) -> {
       let peers =
         dict.insert(into: state.peers, for: device_id, insert: session)
-      let new_state = State(peers: peers)
+      let new_state = State(..state, peers: peers)
 
       case stored.client == client {
         True -> Nil
@@ -102,9 +114,76 @@ fn leave(
         True -> {
           let peers = dict.delete(from: state.peers, delete: device_id)
           broadcast_left(peers, device_id)
-          actor.continue(State(peers: peers))
+          actor.continue(State(..state, peers: peers))
         }
       }
+  }
+}
+
+fn send_text(
+  state: State,
+  from: String,
+  to: String,
+  body: String,
+  client: process.Subject(ClientMessage),
+) -> actor.Next(State, Message) {
+  case from == to {
+    True -> {
+      process.send(
+        client,
+        SendError(
+          code: "invalid_recipient",
+          message: "You cannot send a message to yourself.",
+        ),
+      )
+      actor.continue(state)
+    }
+    False -> {
+      case dict.get(state.peers, from) {
+        Error(_) -> {
+          process.send(
+            client,
+            SendError(
+              code: "not_joined",
+              message: "Send peer.hello before sending messages.",
+            ),
+          )
+          actor.continue(state)
+        }
+        Ok(sender) -> {
+          case dict.get(state.peers, to) {
+            Error(_) -> {
+              process.send(
+                sender.client,
+                SendError(
+                  code: "peer_offline",
+                  message: "The selected peer is no longer online.",
+                ),
+              )
+              actor.continue(state)
+            }
+            Ok(receiver) -> {
+              let message =
+                shared_protocol.TextMessage(
+                  id: "msg_" <> int.to_string(state.next_message_sequence),
+                  from: from,
+                  to: to,
+                  body: body,
+                  created_at_ms: clock.now_ms(),
+                )
+              process.send(sender.client, SendTextMessage(message))
+              process.send(receiver.client, SendTextMessage(message))
+              actor.continue(
+                State(
+                  ..state,
+                  next_message_sequence: state.next_message_sequence + 1,
+                ),
+              )
+            }
+          }
+        }
+      }
+    }
   }
 }
 
