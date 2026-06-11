@@ -27,9 +27,42 @@ pub fn decode_missing_type_test() {
 }
 
 pub fn decode_unknown_event_type_test() {
-  let assert Error(protocol.UnknownEvent(event_type: "file.offer")) =
+  let assert Error(protocol.UnknownEvent(event_type: "file.unknown")) =
     protocol.decode_client_event(
-      "{\"type\":\"file.offer\",\"device_id\":\"device_abc\",\"display_name\":\"Zed\"}",
+      "{\"type\":\"file.unknown\",\"device_id\":\"device_abc\",\"display_name\":\"Zed\"}",
+    )
+}
+
+pub fn decode_valid_file_offer_test() {
+  let assert Ok(protocol.FileOffer(
+    to: "bob",
+    transfer_id: "transfer_1",
+    name: "clip.mov",
+    size: 1234,
+    mime_type: "video/quicktime",
+  )) =
+    protocol.decode_client_event(
+      "{\"type\":\"file.offer\",\"to\":\"bob\",\"transfer_id\":\"transfer_1\",\"name\":\"clip.mov\",\"size\":1234,\"mime_type\":\"video/quicktime\"}",
+    )
+}
+
+pub fn decode_file_offer_rejects_negative_size_test() {
+  let assert Error(protocol.InvalidPayload) =
+    protocol.decode_client_event(
+      "{\"type\":\"file.offer\",\"to\":\"bob\",\"transfer_id\":\"transfer_1\",\"name\":\"clip.mov\",\"size\":-1,\"mime_type\":\"video/quicktime\"}",
+    )
+}
+
+pub fn decode_valid_file_chunk_ack_test() {
+  let assert Ok(protocol.FileChunkAck(shared_protocol.FileChunkAck(
+    transfer_id: "transfer_1",
+    sequence: 1,
+    offset: 256,
+    byte_length: 256,
+    final: False,
+  ))) =
+    protocol.decode_client_event(
+      "{\"type\":\"file.chunk_ack\",\"transfer_id\":\"transfer_1\",\"sequence\":1,\"offset\":256,\"byte_length\":256,\"final\":false}",
     )
 }
 

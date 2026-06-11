@@ -16,12 +16,39 @@ pub type TextMessage {
   )
 }
 
+pub type FileOffer {
+  FileOffer(
+    transfer_id: String,
+    from: String,
+    to: String,
+    name: String,
+    size: Int,
+    mime_type: String,
+  )
+}
+
+pub type FileChunkAck {
+  FileChunkAck(
+    transfer_id: String,
+    sequence: Int,
+    offset: Int,
+    byte_length: Int,
+    final: Bool,
+  )
+}
+
 pub type ServerEvent {
   PeerList(peers: List(Peer))
   PeerJoined(peer: Peer)
   PeerLeft(device_id: String)
   TextMessageEvent(message: TextMessage)
   MessageHistory(messages: List(TextMessage))
+  FileOffered(offer: FileOffer)
+  FileAccepted(transfer_id: String)
+  FileDeclined(transfer_id: String)
+  FileCancelled(transfer_id: String, reason: String)
+  FileChunkAcknowledged(ack: FileChunkAck)
+  FileCompleted(transfer_id: String)
   ErrorEvent(code: String, message: String)
   UnknownServerEvent(event_type: String)
 }
@@ -32,6 +59,12 @@ type ServerEventType {
   PeerLeftEvent
   TextMessageServerEvent
   MessageHistoryEvent
+  FileOfferedEvent
+  FileAcceptedEvent
+  FileDeclinedEvent
+  FileCancelledEvent
+  FileChunkAcknowledgedEvent
+  FileCompletedEvent
   ErrorServerEvent
   UnknownEventType(raw: String)
 }
@@ -50,6 +83,60 @@ pub fn encode_text_send(to: String, body: String) -> String {
     #("type", json.string("text.send")),
     #("to", json.string(to)),
     #("body", json.string(body)),
+  ])
+  |> json.to_string
+}
+
+pub fn encode_file_offer(
+  to: String,
+  transfer_id: String,
+  name: String,
+  size: Int,
+  mime_type: String,
+) -> String {
+  json.object([
+    #("type", json.string("file.offer")),
+    #("to", json.string(to)),
+    #("transfer_id", json.string(transfer_id)),
+    #("name", json.string(name)),
+    #("size", json.int(size)),
+    #("mime_type", json.string(mime_type)),
+  ])
+  |> json.to_string
+}
+
+pub fn encode_file_accept(transfer_id: String) -> String {
+  json.object([
+    #("type", json.string("file.accept")),
+    #("transfer_id", json.string(transfer_id)),
+  ])
+  |> json.to_string
+}
+
+pub fn encode_file_decline(transfer_id: String) -> String {
+  json.object([
+    #("type", json.string("file.decline")),
+    #("transfer_id", json.string(transfer_id)),
+  ])
+  |> json.to_string
+}
+
+pub fn encode_file_cancel(transfer_id: String) -> String {
+  json.object([
+    #("type", json.string("file.cancel")),
+    #("transfer_id", json.string(transfer_id)),
+  ])
+  |> json.to_string
+}
+
+pub fn encode_file_chunk_ack(ack: FileChunkAck) -> String {
+  json.object([
+    #("type", json.string("file.chunk_ack")),
+    #("transfer_id", json.string(ack.transfer_id)),
+    #("sequence", json.int(ack.sequence)),
+    #("offset", json.int(ack.offset)),
+    #("byte_length", json.int(ack.byte_length)),
+    #("final", json.bool(ack.final)),
   ])
   |> json.to_string
 }
@@ -88,6 +175,27 @@ pub fn encode_text_message(message: TextMessage) -> json.Json {
   ])
 }
 
+pub fn encode_file_offer_payload(offer: FileOffer) -> json.Json {
+  json.object([
+    #("transfer_id", json.string(offer.transfer_id)),
+    #("from", json.string(offer.from)),
+    #("to", json.string(offer.to)),
+    #("name", json.string(offer.name)),
+    #("size", json.int(offer.size)),
+    #("mime_type", json.string(offer.mime_type)),
+  ])
+}
+
+pub fn encode_file_chunk_ack_payload(ack: FileChunkAck) -> json.Json {
+  json.object([
+    #("transfer_id", json.string(ack.transfer_id)),
+    #("sequence", json.int(ack.sequence)),
+    #("offset", json.int(ack.offset)),
+    #("byte_length", json.int(ack.byte_length)),
+    #("final", json.bool(ack.final)),
+  ])
+}
+
 fn peer_decoder() -> decode.Decoder(Peer) {
   use id <- decode.field("id", decode.string)
   use display_name <- decode.field("display_name", decode.string)
@@ -106,6 +214,38 @@ fn text_message_decoder() -> decode.Decoder(TextMessage) {
     to: to,
     body: body,
     created_at_ms: created_at_ms,
+  ))
+}
+
+fn file_offer_decoder() -> decode.Decoder(FileOffer) {
+  use transfer_id <- decode.field("transfer_id", decode.string)
+  use from <- decode.field("from", decode.string)
+  use to <- decode.field("to", decode.string)
+  use name <- decode.field("name", decode.string)
+  use size <- decode.field("size", decode.int)
+  use mime_type <- decode.field("mime_type", decode.string)
+  decode.success(FileOffer(
+    transfer_id: transfer_id,
+    from: from,
+    to: to,
+    name: name,
+    size: size,
+    mime_type: mime_type,
+  ))
+}
+
+fn file_chunk_ack_decoder() -> decode.Decoder(FileChunkAck) {
+  use transfer_id <- decode.field("transfer_id", decode.string)
+  use sequence <- decode.field("sequence", decode.int)
+  use offset <- decode.field("offset", decode.int)
+  use byte_length <- decode.field("byte_length", decode.int)
+  use final <- decode.field("final", decode.bool)
+  decode.success(FileChunkAck(
+    transfer_id: transfer_id,
+    sequence: sequence,
+    offset: offset,
+    byte_length: byte_length,
+    final: final,
   ))
 }
 
@@ -149,6 +289,49 @@ fn decode_known_server_event(
       }
       json.parse(from: input, using: decoder)
     }
+    FileOfferedEvent -> {
+      let decoder = {
+        use offer <- decode.field("offer", file_offer_decoder())
+        decode.success(FileOffered(offer: offer))
+      }
+      json.parse(from: input, using: decoder)
+    }
+    FileAcceptedEvent -> {
+      let decoder = {
+        use transfer_id <- decode.field("transfer_id", decode.string)
+        decode.success(FileAccepted(transfer_id: transfer_id))
+      }
+      json.parse(from: input, using: decoder)
+    }
+    FileDeclinedEvent -> {
+      let decoder = {
+        use transfer_id <- decode.field("transfer_id", decode.string)
+        decode.success(FileDeclined(transfer_id: transfer_id))
+      }
+      json.parse(from: input, using: decoder)
+    }
+    FileCancelledEvent -> {
+      let decoder = {
+        use transfer_id <- decode.field("transfer_id", decode.string)
+        use reason <- decode.field("reason", decode.string)
+        decode.success(FileCancelled(transfer_id: transfer_id, reason: reason))
+      }
+      json.parse(from: input, using: decoder)
+    }
+    FileChunkAcknowledgedEvent -> {
+      let decoder = {
+        use ack <- decode.field("ack", file_chunk_ack_decoder())
+        decode.success(FileChunkAcknowledged(ack: ack))
+      }
+      json.parse(from: input, using: decoder)
+    }
+    FileCompletedEvent -> {
+      let decoder = {
+        use transfer_id <- decode.field("transfer_id", decode.string)
+        decode.success(FileCompleted(transfer_id: transfer_id))
+      }
+      json.parse(from: input, using: decoder)
+    }
     ErrorServerEvent -> {
       let decoder = {
         use code <- decode.field("code", decode.string)
@@ -169,6 +352,12 @@ fn classify_server_event_type(event_type: String) -> ServerEventType {
     "peer.left" -> PeerLeftEvent
     "text.message" -> TextMessageServerEvent
     "message.history" -> MessageHistoryEvent
+    "file.offered" -> FileOfferedEvent
+    "file.accepted" -> FileAcceptedEvent
+    "file.declined" -> FileDeclinedEvent
+    "file.cancelled" -> FileCancelledEvent
+    "file.chunk_ack" -> FileChunkAcknowledgedEvent
+    "file.completed" -> FileCompletedEvent
     "error" -> ErrorServerEvent
     other -> UnknownEventType(raw: other)
   }

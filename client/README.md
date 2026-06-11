@@ -33,8 +33,9 @@ gleam run -m lustre/dev build --minify --outdir=../priv/static
 
 - `src/client.gleam` renders the Lustre UI and owns browser update wiring.
 - `src/chat.gleam` owns pure peer-list and per-peer chat bookkeeping.
+- `src/transfer.gleam` owns pure file-transfer state transitions.
 - `src/browser.gleam` wraps browser effects as Lustre effects.
-- `src/ffi.mjs` contains direct `localStorage` and `WebSocket` access.
+- `src/ffi.mjs` contains direct `localStorage`, file picker, save stream, and `WebSocket` access.
 - `test/client_test.gleam` covers pure peer-list and per-peer chat behavior.
 
 ## Current Scope
@@ -48,10 +49,11 @@ Supported:
 - render `peer.list`, `peer.joined`, `peer.left`, `text.message`, and server `error` events
 - select a peer and send `text.send`
 - keep per-peer conversations and unread counts in memory for the current browser session
+- offer, accept, decline, cancel, and stream online-only file transfers over binary WebSocket frames
+- stream received file bytes to a browser-selected save target when supported
 
 Not included in this slice:
 
-- file offers or transfers
 - upload/download endpoints
-- persistence
+- file-transfer persistence or offline download
 - LAN auto-discovery

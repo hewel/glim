@@ -1,7 +1,18 @@
 import lustre/effect.{type Effect}
+import transfer
 
 pub type Identity {
   Identity(device_id: String, display_name: String)
+}
+
+pub type WrittenChunk {
+  WrittenChunk(
+    transfer_id: String,
+    sequence: Int,
+    offset: Int,
+    byte_length: Int,
+    final: Bool,
+  )
 }
 
 pub fn load_identity(to_message: fn(Identity) -> msg) -> Effect(msg) {
@@ -19,6 +30,8 @@ pub fn connect(
   on_close: msg,
   on_error: msg,
   on_message: fn(String) -> msg,
+  on_chunk_written: fn(WrittenChunk) -> msg,
+  on_receive_error: fn(String, String) -> msg,
 ) -> Effect(msg) {
   effect.from(fn(dispatch) {
     do_connect(
@@ -28,6 +41,11 @@ pub fn connect(
       fn() { dispatch(on_close) },
       fn() { dispatch(on_error) },
       fn(raw) { raw |> on_message |> dispatch },
+      fn(chunk) { chunk |> on_chunk_written |> dispatch },
+      fn(transfer_id, reason) {
+        on_receive_error(transfer_id, reason)
+        |> dispatch
+      },
     )
   })
 }
@@ -35,6 +53,66 @@ pub fn connect(
 pub fn send(payload: String, on_error: msg) -> Effect(msg) {
   effect.from(fn(dispatch) { do_send(payload, fn() { dispatch(on_error) }) })
 }
+
+pub fn select_file(
+  on_selected: fn(transfer.FileSelection) -> msg,
+  on_error: msg,
+) -> Effect(msg) {
+  effect.from(fn(dispatch) {
+    do_select_file(
+      fn(selection) {
+        selection
+        |> on_selected
+        |> dispatch
+      },
+      fn() { dispatch(on_error) },
+    )
+  })
+}
+
+pub fn start_receive_file(
+  transfer_id: String,
+  name: String,
+  on_ready: msg,
+  on_error: fn(String) -> msg,
+  on_unsupported: msg,
+) -> Effect(msg) {
+  effect.from(fn(dispatch) {
+    do_start_receive_file(
+      transfer_id,
+      name,
+      fn() { dispatch(on_ready) },
+      fn(reason) {
+        reason
+        |> on_error
+        |> dispatch
+      },
+      fn() { dispatch(on_unsupported) },
+    )
+  })
+}
+
+pub fn send_file_chunk(
+  file_id: String,
+  transfer_id: String,
+  sequence: Int,
+  offset: Int,
+  chunk_size: Int,
+  on_error: msg,
+) -> Effect(msg) {
+  effect.from(fn(dispatch) {
+    do_send_file_chunk(file_id, transfer_id, sequence, offset, chunk_size, fn() {
+      dispatch(on_error)
+    })
+  })
+}
+
+pub fn close_receive_file(transfer_id: String) -> Effect(msg) {
+  effect.from(fn(_dispatch) { do_close_receive_file(transfer_id) })
+}
+
+@external(javascript, "./ffi.mjs", "streamSaveSupported")
+pub fn stream_save_supported() -> Bool
 
 @external(javascript, "./ffi.mjs", "loadIdentity")
 fn do_load_identity() -> Identity {
@@ -49,12 +127,50 @@ fn do_connect(
   _on_close: fn() -> Nil,
   _on_error: fn() -> Nil,
   _on_message: fn(String) -> Nil,
+  _on_chunk_written: fn(WrittenChunk) -> Nil,
+  _on_receive_error: fn(String, String) -> Nil,
 ) -> Nil {
   Nil
 }
 
 @external(javascript, "./ffi.mjs", "send")
 fn do_send(_payload: String, _on_error: fn() -> Nil) -> Nil {
+  Nil
+}
+
+@external(javascript, "./ffi.mjs", "selectFile")
+fn do_select_file(
+  _on_selected: fn(transfer.FileSelection) -> Nil,
+  _on_error: fn() -> Nil,
+) -> Nil {
+  Nil
+}
+
+@external(javascript, "./ffi.mjs", "startReceiveFile")
+fn do_start_receive_file(
+  _transfer_id: String,
+  _name: String,
+  _on_ready: fn() -> Nil,
+  _on_error: fn(String) -> Nil,
+  _on_unsupported: fn() -> Nil,
+) -> Nil {
+  Nil
+}
+
+@external(javascript, "./ffi.mjs", "sendFileChunk")
+fn do_send_file_chunk(
+  _file_id: String,
+  _transfer_id: String,
+  _sequence: Int,
+  _offset: Int,
+  _chunk_size: Int,
+  _on_error: fn() -> Nil,
+) -> Nil {
+  Nil
+}
+
+@external(javascript, "./ffi.mjs", "closeReceiveFile")
+fn do_close_receive_file(_transfer_id: String) -> Nil {
   Nil
 }
 

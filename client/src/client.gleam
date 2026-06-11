@@ -9,11 +9,14 @@ import lustre
 import lustre/effect.{type Effect}
 import lustre/element.{type Element}
 import shared/protocol as shared_protocol
+import transfer
 import ui/chat_panel
 import ui/log_drawer
 import ui/shell
 import ui/sidebar
 import ui/transfer_queue
+
+const chunk_size = 262_144
 
 pub fn main() -> Nil {
   let app = lustre.application(init, update, view)
@@ -32,6 +35,9 @@ type Model {
     message_drafts: dict.Dict(String, String),
     messages_by_peer: dict.Dict(String, List(shared_protocol.TextMessage)),
     unread_by_peer: dict.Dict(String, Int),
+    transfers: List(transfer.Item),
+    local_files: dict.Dict(String, transfer.LocalFile),
+    pending_file_peer_id: option.Option(String),
     chat_notice: option.Option(String),
     pending_draft_clear: option.Option(chat.PendingDraftClear),
     log: List(String),
@@ -52,6 +58,18 @@ type Message {
   UserTypedMessage(String)
   UserClickedSendMessage
   UserPressedMessageKey(String)
+  UserClickedShareFile
+  BrowserSelectedFile(transfer.FileSelection)
+  BrowserFileSelectionFailed
+  UserAcceptedFile(String)
+  UserDeclinedFile(String)
+  UserCancelledFile(String)
+  BrowserReceiveReady(String)
+  BrowserReceiveStartFailed(String, String)
+  BrowserReceiveUnsupported(String)
+  BrowserFileChunkWritten(browser.WrittenChunk)
+  BrowserFileReceiveFailed(String, String)
+  WebSocketBinarySendFailed(String)
   BrowserLoadedIdentity(device_id: String, display_name: String)
   WebSocketOpened
   WebSocketClosed
@@ -77,6 +95,9 @@ fn init(_flags: Nil) -> #(Model, Effect(Message)) {
       message_drafts: dict.new(),
       messages_by_peer: dict.new(),
       unread_by_peer: dict.new(),
+      transfers: [],
+      local_files: dict.new(),
+      pending_file_peer_id: option.None,
       chat_notice: option.None,
       pending_draft_clear: option.None,
       log: [],
@@ -123,11 +144,96 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
 
     UserClickedSendMessage -> send_message(model)
 
+    UserClickedShareFile -> select_file_for_current_peer(model)
+
     UserPressedMessageKey(key) ->
       case key {
         "Enter" -> send_message(model)
         _ -> #(model, effect.none())
       }
+
+    BrowserSelectedFile(selection) -> send_file_offer(model, selection)
+
+    BrowserFileSelectionFailed ->
+      set_chat_notice(model, "File selection was cancelled.")
+
+    UserAcceptedFile(transfer_id) -> accept_file(model, transfer_id)
+
+    UserDeclinedFile(transfer_id) ->
+      update_file_transfer(
+        Model(
+          ..model,
+          transfers: transfer.mark_status(
+            model.transfers,
+            transfer_id,
+            transfer.Declined,
+            "Declined",
+          ),
+        ),
+        shared_protocol.encode_file_decline(transfer_id),
+      )
+
+    UserCancelledFile(transfer_id) -> cancel_file(model, transfer_id)
+
+    BrowserReceiveReady(transfer_id) ->
+      update_file_transfer(
+        Model(
+          ..model,
+          transfers: transfer.mark_status(
+            model.transfers,
+            transfer_id,
+            transfer.Transferring,
+            "Ready to receive",
+          ),
+        ),
+        shared_protocol.encode_file_accept(transfer_id),
+      )
+
+    BrowserReceiveStartFailed(transfer_id, reason) ->
+      update_file_transfer(
+        Model(
+          ..model,
+          transfers: transfer.mark_status(
+            model.transfers,
+            transfer_id,
+            transfer.Failed,
+            reason,
+          ),
+        ),
+        shared_protocol.encode_file_cancel(transfer_id),
+      )
+
+    BrowserReceiveUnsupported(transfer_id) -> #(
+      Model(
+        ..model,
+        transfers: transfer.mark_status(
+          model.transfers,
+          transfer_id,
+          transfer.Unsupported,
+          "Stream-to-save is not supported in this browser",
+        ),
+      ),
+      effect.none(),
+    )
+
+    BrowserFileChunkWritten(chunk) -> acknowledge_written_chunk(model, chunk)
+
+    BrowserFileReceiveFailed(transfer_id, reason) ->
+      fail_received_file(model, transfer_id, reason)
+
+    WebSocketBinarySendFailed(transfer_id) ->
+      update_file_transfer(
+        Model(
+          ..model,
+          transfers: transfer.mark_status(
+            model.transfers,
+            transfer_id,
+            transfer.Failed,
+            "File chunk could not be sent.",
+          ),
+        ),
+        shared_protocol.encode_file_cancel(transfer_id),
+      )
 
     BrowserLoadedIdentity(device_id:, display_name:) -> #(
       Model(..model, device_id: device_id, display_name: display_name),
@@ -166,6 +272,8 @@ fn connect(model: Model) -> #(Model, Effect(Message)) {
       WebSocketClosed,
       WebSocketFailed,
       WebSocketReceived,
+      BrowserFileChunkWritten,
+      BrowserFileReceiveFailed,
     ),
   )
 }
@@ -206,6 +314,60 @@ fn handle_server_event(model: Model, raw: String) -> #(Model, Effect(Message)) {
 
     Ok(shared_protocol.MessageHistory(messages: messages)) -> #(
       apply_message_history(model, messages, log),
+      effect.none(),
+    )
+
+    Ok(shared_protocol.FileOffered(offer: offer)) -> #(
+      apply_file_offered(model, offer, log),
+      effect.none(),
+    )
+
+    Ok(shared_protocol.FileAccepted(transfer_id: transfer_id)) ->
+      apply_file_accepted(model, transfer_id, log)
+
+    Ok(shared_protocol.FileDeclined(transfer_id: transfer_id)) -> #(
+      Model(
+        ..model,
+        transfers: transfer.mark_status(
+          model.transfers,
+          transfer_id,
+          transfer.Declined,
+          "Declined",
+        ),
+        log: log,
+      ),
+      effect.none(),
+    )
+
+    Ok(shared_protocol.FileCancelled(transfer_id: transfer_id, reason: reason)) -> #(
+      Model(
+        ..model,
+        transfers: transfer.mark_status(
+          model.transfers,
+          transfer_id,
+          transfer.Cancelled,
+          reason,
+        ),
+        log: log,
+      ),
+      browser.close_receive_file(transfer_id),
+    )
+
+    Ok(shared_protocol.FileChunkAcknowledged(ack: ack)) ->
+      apply_file_chunk_ack(model, ack, log)
+
+    Ok(shared_protocol.FileCompleted(transfer_id: transfer_id)) -> #(
+      Model(
+        ..model,
+        transfers: transfer.mark_status(
+          model.transfers,
+          transfer_id,
+          transfer.Completed,
+          "Complete",
+        ),
+        local_files: dict.delete(from: model.local_files, delete: transfer_id),
+        log: log,
+      ),
       effect.none(),
     )
 
@@ -280,6 +442,270 @@ fn apply_message_history(
       messages,
     ),
     log: log,
+  )
+}
+
+fn select_file_for_current_peer(model: Model) -> #(Model, Effect(Message)) {
+  case send_file_target(model) {
+    Ok(peer_id) -> #(
+      Model(..model, pending_file_peer_id: option.Some(peer_id)),
+      browser.select_file(BrowserSelectedFile, BrowserFileSelectionFailed),
+    )
+    Error(notice) -> set_chat_notice(model, notice)
+  }
+}
+
+fn send_file_target(model: Model) -> Result(String, String) {
+  use Nil <- result.try(ensure_connected(model.status))
+  use peer_id <- result.try(ensure_selected_peer(model.selected_peer_id))
+  use Nil <- result.try(ensure_peer_online(model.peers, peer_id))
+
+  Ok(peer_id)
+}
+
+fn send_file_offer(
+  model: Model,
+  selection: transfer.FileSelection,
+) -> #(Model, Effect(Message)) {
+  case model.pending_file_peer_id {
+    option.None ->
+      set_chat_notice(model, "Select an online peer before sharing a file.")
+    option.Some(peer_id) -> {
+      let peer_name = peer_display_name(model, peer_id)
+      let payload =
+        shared_protocol.encode_file_offer(
+          peer_id,
+          selection.transfer_id,
+          selection.name,
+          selection.size,
+          selection.mime_type,
+        )
+
+      #(
+        Model(
+          ..model,
+          pending_file_peer_id: option.None,
+          chat_notice: option.None,
+          transfers: transfer.add_outgoing(
+            model.transfers,
+            peer_id,
+            peer_name,
+            selection,
+          ),
+          local_files: dict.insert(
+            into: model.local_files,
+            for: selection.transfer_id,
+            insert: transfer.local_file(selection),
+          ),
+        ),
+        browser.send(payload, WebSocketSendFailed),
+      )
+    }
+  }
+}
+
+fn accept_file(model: Model, transfer_id: String) -> #(Model, Effect(Message)) {
+  case transfer.find(model.transfers, transfer_id) {
+    option.None ->
+      set_chat_notice(model, "That file transfer is no longer available.")
+    option.Some(item) ->
+      case item.status {
+        transfer.Unsupported ->
+          set_chat_notice(
+            model,
+            "This browser cannot stream incoming files to disk.",
+          )
+        transfer.Offered -> #(
+          Model(
+            ..model,
+            transfers: transfer.mark_status(
+              model.transfers,
+              transfer_id,
+              transfer.AwaitingSave,
+              "Choose where to save this file",
+            ),
+          ),
+          browser.start_receive_file(
+            transfer_id,
+            item.name,
+            BrowserReceiveReady(transfer_id),
+            fn(reason) { BrowserReceiveStartFailed(transfer_id, reason) },
+            BrowserReceiveUnsupported(transfer_id),
+          ),
+        )
+        transfer.AwaitingSave -> #(model, effect.none())
+        transfer.Transferring -> #(model, effect.none())
+        transfer.Completed -> #(model, effect.none())
+        transfer.Failed -> #(model, effect.none())
+        transfer.Cancelled -> #(model, effect.none())
+        transfer.Declined -> #(model, effect.none())
+      }
+  }
+}
+
+fn cancel_file(model: Model, transfer_id: String) -> #(Model, Effect(Message)) {
+  #(
+    Model(
+      ..model,
+      transfers: transfer.mark_status(
+        model.transfers,
+        transfer_id,
+        transfer.Cancelled,
+        "Cancelled",
+      ),
+      local_files: dict.delete(from: model.local_files, delete: transfer_id),
+    ),
+    effect.batch([
+      browser.send(
+        shared_protocol.encode_file_cancel(transfer_id),
+        WebSocketSendFailed,
+      ),
+      browser.close_receive_file(transfer_id),
+    ]),
+  )
+}
+
+fn update_file_transfer(
+  model: Model,
+  payload: String,
+) -> #(Model, Effect(Message)) {
+  #(model, browser.send(payload, WebSocketSendFailed))
+}
+
+fn acknowledge_written_chunk(
+  model: Model,
+  chunk: browser.WrittenChunk,
+) -> #(Model, Effect(Message)) {
+  let ack =
+    shared_protocol.FileChunkAck(
+      transfer_id: chunk.transfer_id,
+      sequence: chunk.sequence,
+      offset: chunk.offset,
+      byte_length: chunk.byte_length,
+      final: chunk.final,
+    )
+
+  #(
+    Model(..model, transfers: transfer.mark_progress(model.transfers, ack)),
+    browser.send(
+      shared_protocol.encode_file_chunk_ack(ack),
+      WebSocketSendFailed,
+    ),
+  )
+}
+
+fn fail_received_file(
+  model: Model,
+  transfer_id: String,
+  reason: String,
+) -> #(Model, Effect(Message)) {
+  let model =
+    Model(
+      ..model,
+      transfers: transfer.mark_status(
+        model.transfers,
+        transfer_id,
+        transfer.Failed,
+        reason,
+      ),
+    )
+
+  case transfer_id {
+    "" -> #(model, effect.none())
+    _ -> #(
+      model,
+      browser.send(
+        shared_protocol.encode_file_cancel(transfer_id),
+        WebSocketSendFailed,
+      ),
+    )
+  }
+}
+
+fn apply_file_offered(
+  model: Model,
+  offer: shared_protocol.FileOffer,
+  log: List(String),
+) -> Model {
+  Model(
+    ..model,
+    transfers: transfer.add_incoming(
+      model.transfers,
+      offer,
+      peer_display_name(model, offer.from),
+      browser.stream_save_supported(),
+    ),
+    log: log,
+  )
+}
+
+fn apply_file_accepted(
+  model: Model,
+  transfer_id: String,
+  log: List(String),
+) -> #(Model, Effect(Message)) {
+  let model =
+    Model(
+      ..model,
+      transfers: transfer.mark_status(
+        model.transfers,
+        transfer_id,
+        transfer.Transferring,
+        "Transferring",
+      ),
+      log: log,
+    )
+
+  case dict.get(model.local_files, transfer_id) {
+    Ok(file) -> #(model, send_next_file_chunk(transfer_id, file))
+    Error(_) -> #(model, effect.none())
+  }
+}
+
+fn apply_file_chunk_ack(
+  model: Model,
+  ack: shared_protocol.FileChunkAck,
+  log: List(String),
+) -> #(Model, Effect(Message)) {
+  let transfers = transfer.mark_progress(model.transfers, ack)
+
+  case dict.get(model.local_files, ack.transfer_id) {
+    Ok(file) -> {
+      let updated_file = transfer.update_local_file_after_ack(file, ack)
+      let local_files = case ack.final {
+        True -> dict.delete(from: model.local_files, delete: ack.transfer_id)
+        False ->
+          dict.insert(
+            into: model.local_files,
+            for: ack.transfer_id,
+            insert: updated_file,
+          )
+      }
+      let effect = case ack.final {
+        True -> effect.none()
+        False -> send_next_file_chunk(ack.transfer_id, updated_file)
+      }
+
+      #(
+        Model(..model, transfers: transfers, local_files: local_files, log: log),
+        effect,
+      )
+    }
+    Error(_) -> #(Model(..model, transfers: transfers, log: log), effect.none())
+  }
+}
+
+fn send_next_file_chunk(
+  transfer_id: String,
+  file: transfer.LocalFile,
+) -> Effect(Message) {
+  browser.send_file_chunk(
+    file.file_id,
+    transfer_id,
+    file.next_sequence,
+    file.next_offset,
+    chunk_size,
+    WebSocketBinarySendFailed(transfer_id),
   )
 }
 
@@ -404,7 +830,10 @@ fn view(model: Model) -> Element(Message) {
     on_connect: UserClickedConnect,
     sidebar: sidebar.view(sidebar_props(model)),
     chat: chat_panel.view(chat_panel_props(model)),
-    transfer_queue: transfer_queue.view(),
+    transfer_queue: transfer_queue.view(transfer_queue.Props(
+      transfers: model.transfers,
+      on_cancel: UserCancelledFile,
+    )),
     log_drawer: log_drawer.view(log_drawer.Props(
       log: model.log,
       on_clear: UserClickedClearLog,
@@ -429,6 +858,7 @@ fn sidebar_props(model: Model) -> sidebar.Props(Message) {
     unread_total: unread_total,
     peers: sidebar_peer_items(model),
     on_select_peer: UserSelectedPeer,
+    on_share_file: UserClickedShareFile,
   )
 }
 
@@ -492,6 +922,10 @@ fn chat_panel_props(model: Model) -> chat_panel.Props(Message) {
     on_type_message: UserTypedMessage,
     on_keydown: UserPressedMessageKey,
     on_send: UserClickedSendMessage,
+    on_attach_file: UserClickedShareFile,
+    on_accept_file: UserAcceptedFile,
+    on_decline_file: UserDeclinedFile,
+    on_cancel_file: UserCancelledFile,
   )
 }
 
@@ -508,6 +942,7 @@ fn selected_chat(model: Model) -> option.Option(chat_panel.SelectedChat) {
         is_online: chat.peer_is_online(model.peers, peer_id),
         draft: draft_for_peer(model, peer_id),
         messages: message_items(model),
+        transfers: transfer.items_for_peer(model.transfers, peer_id),
       ))
     }
   }

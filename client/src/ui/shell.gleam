@@ -50,13 +50,13 @@ pub fn view(props: Props(msg)) -> Element(msg) {
                   "font-headline-md text-[25px] font-bold text-primary tracking-tight",
                 ),
               ],
-              [html.text("LocalLink")],
+              [html.text("Glim")],
             ),
             html.button(
               [
                 attribute.type_("button"),
                 attribute.class(
-                  "hidden md:flex items-center gap-2 bg-[#efecfb] rounded-full px-4 py-2 border border-outline-variant/70 shadow-inner hover:border-primary/40 transition-colors",
+                  "flex items-center gap-2 bg-[#efecfb] rounded-full px-4 py-2 border border-outline-variant/70 shadow-inner hover:border-primary/40 transition-colors",
                 ),
                 event.on_click(props.on_connect),
               ],

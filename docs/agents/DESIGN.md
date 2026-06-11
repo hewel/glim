@@ -1,12 +1,12 @@
 ---
-name: Nexus Terminal
+name: LocalLink
 colors:
-  surface: '#fbf8ff'
+  surface: '#fbf9ff'
   surface-dim: '#dbd8e4'
-  surface-bright: '#fbf8ff'
+  surface-bright: '#fbf9ff'
   surface-container-lowest: '#ffffff'
   surface-container-low: '#f5f2fe'
-  surface-container: '#efecf8'
+  surface-container: '#f0edf8'
   surface-container-high: '#e9e7f2'
   surface-container-highest: '#e3e1ec'
   on-surface: '#1b1b23'
@@ -37,15 +37,7 @@ colors:
   primary-fixed-dim: '#bec2ff'
   on-primary-fixed: '#00016d'
   on-primary-fixed-variant: '#272fbf'
-  secondary-fixed: '#e0e0ff'
-  secondary-fixed-dim: '#bec2ff'
-  on-secondary-fixed: '#11144a'
-  on-secondary-fixed-variant: '#3e4278'
-  tertiary-fixed: '#ffdcc3'
-  tertiary-fixed-dim: '#ffb77e'
-  on-tertiary-fixed: '#2f1500'
-  on-tertiary-fixed-variant: '#6e3900'
-  background: '#fbf8ff'
+  background: '#f8f5ff'
   on-background: '#1b1b23'
   surface-variant: '#e3e1ec'
 typography:
@@ -54,29 +46,31 @@ typography:
     fontSize: 32px
     fontWeight: '600'
     lineHeight: '1.2'
-    letterSpacing: -0.02em
+    letterSpacing: 0
   headline-md:
     fontFamily: Geist
     fontSize: 24px
     fontWeight: '600'
     lineHeight: '1.3'
-    letterSpacing: -0.01em
+    letterSpacing: 0
   headline-sm:
     fontFamily: Geist
     fontSize: 20px
     fontWeight: '600'
     lineHeight: '1.4'
-    letterSpacing: -0.01em
+    letterSpacing: 0
   body-lg:
     fontFamily: Inter
     fontSize: 16px
     fontWeight: '400'
     lineHeight: '1.6'
+    letterSpacing: 0
   body-md:
     fontFamily: Inter
     fontSize: 14px
     fontWeight: '400'
     lineHeight: '1.5'
+    letterSpacing: 0
   label-md:
     fontFamily: JetBrains Mono
     fontSize: 12px
@@ -88,6 +82,7 @@ typography:
     fontSize: 12px
     fontWeight: '400'
     lineHeight: '1.4'
+    letterSpacing: 0
 rounded:
   sm: 0.5rem
   DEFAULT: 1rem
@@ -107,63 +102,109 @@ spacing:
   margin-mobile: 16px
 ---
 
-## Brand & Style
+# LocalLink Design System
 
-The design system embodies a "High-Resolution Technical" aesthetic, adapted for a clean, professional light-mode environment. It targets a sophisticated user base—engineers, analysts, and system architects—who require clarity and precision. 
+## Product Direction
 
-The visual style is a hybrid of **Minimalism** and **Modern Corporate**, utilizing heavy whitespace to reduce cognitive load while maintaining technical authority through structured layouts and monospaced accents. The emotional response should be one of "controlled efficiency"—a workspace that feels airy and light yet retains the rigorous density of a terminal interface. All elements prioritize legibility, utilizing subtle borders and structural alignment over heavy shadows or decorative flourishes.
+LocalLink is the browser client for LAN Share IM: a local-network messaging and file-sharing tool for devices in the same shared room. The interface should feel like a focused operations console for nearby devices, not a social network or cloud drive.
 
-## Colors
+The product language is built around the domain terms in `CONTEXT.md`:
 
-The palette is centered on a "Clinical Light" foundation. The background uses a neutral, high-brightness gray to reduce eye strain, while primary surfaces are elevated using pure white with thin, defined borders.
+- **Device** is the browser-held identity.
+- **Peer** is another currently connected device.
+- **Message history** is persisted text involving the device.
+- **File transfer** is an online-only relay between two connected peers.
 
-- **Primary Violet-Indigo (#5d67f1):** Used for high-intent actions, active states, and focus indicators. It provides a striking contrast against the light surfaces while maintaining professional authority.
-- **Surface Tiers:** Backgrounds start at `#fbf8ff`. Secondary containers (sidebars, secondary panels) use `#efecf9`. Primary cards and modals use `#ffffff`.
-- **Text Hierarchy:** A deep neutral slate (`#1a1b23`) is used for primary content to ensure maximum contrast, while mid-tones like `#464654` provide a clear distinction for meta-data and supporting text.
-- **Accents:** Secondary slate blue (`#6e72ac`) and tertiary amber (`#c86c00`) are used to categorize data and provide functional variance in complex interfaces.
+Avoid user/account/profile language in UI copy. Prefer peer, device, mesh, transfer, and room.
 
-## Typography
+## Visual Style
 
-Typography is used to reinforce the technical nature of the design system. We utilize a three-font strategy:
+The current client uses a light technical workspace with restrained indigo primary actions, amber transfer accents, and pale lavender surface layers. Keep the interface dense enough for repeated use, but readable at a glance.
 
-1.  **Geist (Headlines):** A technical Sans-Serif that provides a sharp, geometric feel for titles.
-2.  **Inter (Body):** A highly legible workhorse for all long-form content and UI controls, ensuring clarity at small sizes.
-3.  **JetBrains Mono (Labels/Data):** Reserved for status badges, IDs, code snippets, and button labels to inject the "Terminal" personality without sacrificing professional polish.
+Primary goals:
 
-All typography uses a slightly tightened letter spacing for headings to maintain a modern, dense look. Mobile headers should scale down by roughly 20% (e.g., `headline-lg` becomes 24px) to ensure no awkward wrapping on small viewports.
+- Make connection state, selected peer, and transfer progress visible without explanation text.
+- Keep chat and transfer workflows in the first viewport.
+- Use icon-led controls for common actions such as attach, send, accept, decline, cancel, and clear log.
+- Prefer thin borders, tonal layers, and small monospaced labels over decorative shadows.
 
-## Layout & Spacing
+Do not introduce marketing-style hero sections, decorative gradients, large empty cards, or one-off illustrations. The first screen is the usable mesh/chat/transfer interface.
 
-This design system follows a **Fixed-Fluid Hybrid** model. Main application dashboards use a 12-column fluid grid to maximize data visibility, while content-heavy pages (documentation, settings) are capped at a 1280px container width.
+## Layout
 
-- **Rhythm:** An 8px base grid is used for all layout decisions, with a 4px sub-grid for internal component spacing (e.g., label-to-input distance).
-- **Margins:** Desktop views utilize 24px gutters and margins. On mobile, margins shrink to 16px to conserve horizontal space.
-- **Density:** Elements are spaced with "Technical Density"—enough room to breathe, but tight enough to feel like a powerful tool rather than a consumer landing page.
+The main application is a three-pane operational layout:
 
-## Elevation & Depth
+- **Top bar:** brand, mesh action/status, global utility icons, and local device badge.
+- **Left sidebar:** local mesh status, peer list, unread chat counts, and file-share entry point.
+- **Center chat panel:** selected peer header, message history, file transfer cards, and composer.
+- **Right transfer queue:** online-only file transfer progress, active count, cancellation, and completed count.
+- **Developer log:** collapsed diagnostic drawer at the bottom.
 
-In this light-themed system, depth is conveyed through **Low-contrast Outlines** and **Tonal Layering** rather than traditional shadows. 
+Desktop keeps all panes visible when space allows. Mobile prioritizes the peer list until a peer is selected, then shows the chat panel with a back action. The right transfer queue can remain desktop-only; transfer cards in the chat timeline must carry the essential state on smaller screens.
 
-- **Level 0 (Base):** `#fbf8ff` background.
-- **Level 1 (Card/Surface):** `#ffffff` with a 1px solid border of `#c7c5d6`. No shadow.
-- **Level 2 (Active/Hover):** A very soft, diffused shadow is applied only when an element is interactive or needs to float above the primary surface (like a dropdown).
-- **Level 3 (Modals):** High-contrast border (`#777685`) and a 16px blur backdrop filter to focus user attention.
+## Interaction Rules
 
-Avoid using shadows on static items to maintain the "flat-technical" aesthetic. Use background color shifts (e.g., shifting from white to `#efecf9`) to denote hierarchy.
+### Mesh and Chat
 
-## Shapes
+- The connect action starts or retries the mesh session and sends `peer.hello`.
+- Selecting a peer clears unread count for that peer.
+- Text messages require a connected session, selected peer, online peer, and non-empty body.
+- Message history is restored state; do not mark replayed messages unread.
+- Offline peers can appear when history exists, but sending to them must be blocked.
 
-The design system utilizes **Pill-shaped** geometry. While the aesthetic remains technical and engineered, the use of larger radii provides a modern, high-end software feel that softens the rigorous grid.
+### File Transfer
 
-- **Standard Elements:** Buttons, inputs, and small cards use a `1rem` (16px) radius.
-- **Large Containers:** Modals and main content areas use a `2rem` (32px) radius.
-- **Data Elements:** Status badges and chips utilize full-pill radii to distinguish them from interactive buttons.
+File transfers are online-only and require both peers to remain connected. They are not persisted and are not part of message history.
 
-## Components
+The UI must represent these states:
 
-- **Buttons:** Primary buttons use a solid Violet-Indigo background with white text. Secondary buttons are outlined with a 1px border of `#c7c5d6` and secondary slate text. Always use JetBrains Mono for button labels in uppercase for a technical vibe.
-- **Inputs:** Fields use a white background, 1px `#c7c5d6` border, and a 2px Primary Indigo ring on focus. Labels sit 4px above the input in JetBrains Mono.
-- **Chips/Badges:** Pill-shaped tags with tonal backgrounds. Use Tertiary Amber dots or fills for specific status warnings.
-- **Cards:** Always white background, 1px border, no shadow. Use a 4px Primary Indigo top-border for "featured" or "active" cards to provide visual emphasis.
-- **Lists:** Data rows are separated by 1px horizontal rules in `#efecf9`. Hover states on list items should trigger a subtle `#f4f2fe` background fill.
-- **Code Blocks:** Encapsulated in a dark slate container even in light mode to provide a clear visual break and reference the "Terminal" heritage.
+- Offered: pending receiver response.
+- Awaiting save: receiver accepted intent and is choosing a save target.
+- Transferring: chunks are streaming with receiver ACK pacing.
+- Completed: final chunk written and acknowledged.
+- Declined: receiver rejected the offer.
+- Cancelled: either side cancelled or a peer disconnected.
+- Failed: browser, socket, or save-stream error.
+- Unsupported: receiver browser cannot stream to a save target.
+
+The sender sends one 256 KiB chunk at a time. The receiver writes the chunk to the selected save stream before sending `file.chunk_ack`. This flow preserves no-app-cap semantics by avoiding full in-memory assembly.
+
+When stream-to-save APIs are unsupported, the receiver must not accept the file. Show unsupported state and allow decline/cancel.
+
+## Component Guidance
+
+- **Peer item:** show display name, device id or offline label, unread badge, and selected state. Avatar initials are enough; do not add profile imagery.
+- **Composer:** keep text input, attach, mood placeholder, and send controls compact. Attach opens file selection only for a connected, selected, online peer.
+- **Transfer card:** show file icon, name, direction, peer, progress bar, byte progress, status label, and action buttons relevant to the current state.
+- **Transfer queue:** show newest transfers first, active count in the header, and a compact telemetry footer. It should reflect real transfer state rather than static sample files.
+- **Notices:** use the existing chat notice area for send/transfer validation errors. Keep messages short and actionable.
+- **Log drawer:** diagnostic only; it should not become the primary user feedback channel.
+
+## Accessibility and Responsiveness
+
+- All icon-only buttons need either visible context or `title`/accessible labeling in implementation.
+- Button text must fit at mobile widths; use short labels such as Accept, Decline, Cancel, Send.
+- Keep transfer status readable without relying only on color.
+- Preserve keyboard send with Enter for text messages.
+- Do not hide essential transfer state solely in the desktop right rail; mirror active transfer cards in chat.
+
+## Copy Tone
+
+Use concise operational copy:
+
+- "Mesh Online", "Discovery Active", "Connection Issue"
+- "Select a peer before sending."
+- "That peer is offline."
+- "Choose where to save this file"
+- "Stream-to-save is not supported in this browser"
+- "Peer disconnected."
+
+Avoid consumer/social copy such as "friends", "profiles", "upload to cloud", "inbox", or "followers".
+
+## Current Constraints
+
+- The server persists accepted text messages in SQLite.
+- File transfers are relayed over WebSocket only while both peers are online.
+- File bytes use binary WebSocket frames with a length-prefixed JSON header.
+- The right rail is a transfer queue, not a general file library.
+- There are no upload/download HTTP endpoints and no LAN auto-discovery yet.

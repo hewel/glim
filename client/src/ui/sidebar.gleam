@@ -24,6 +24,7 @@ pub type Props(msg) {
     unread_total: Int,
     peers: List(PeerItem),
     on_select_peer: fn(String) -> msg,
+    on_share_file: msg,
   )
 }
 
@@ -114,6 +115,7 @@ pub fn view(props: Props(msg)) -> Element(msg) {
             attribute.class(
               "h-14 w-full rounded-[1.45rem] bg-primary text-on-primary font-bold text-base flex items-center justify-center gap-2 shadow-sm active:scale-[0.99] transition-transform",
             ),
+            event.on_click(props.on_share_file),
           ],
           [
             html.span(

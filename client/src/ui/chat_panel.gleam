@@ -1,3 +1,4 @@
+import gleam/int
 import gleam/list
 import gleam/option
 import gleam/string
@@ -5,6 +6,7 @@ import lustre/attribute
 import lustre/element.{type Element}
 import lustre/element/html
 import lustre/event
+import transfer
 
 pub type MessageItem {
   MessageItem(
@@ -25,6 +27,7 @@ pub type SelectedChat {
     is_online: Bool,
     draft: String,
     messages: List(MessageItem),
+    transfers: List(transfer.Item),
   )
 }
 
@@ -36,6 +39,10 @@ pub type Props(msg) {
     on_type_message: fn(String) -> msg,
     on_keydown: fn(String) -> msg,
     on_send: msg,
+    on_attach_file: msg,
+    on_accept_file: fn(String) -> msg,
+    on_decline_file: fn(String) -> msg,
+    on_cancel_file: fn(String) -> msg,
   )
 }
 
@@ -134,10 +141,17 @@ fn view_selected(props: Props(msg), selected: SelectedChat) -> Element(msg) {
     [
       view_chat_header(selected, props.on_deselect),
       view_notice(props.chat_notice),
-      view_message_list(selected.messages),
+      view_message_list(
+        selected.messages,
+        selected.transfers,
+        props.on_accept_file,
+        props.on_decline_file,
+        props.on_cancel_file,
+      ),
       view_composer(
         selected,
         is_send_disabled,
+        props.on_attach_file,
         props.on_type_message,
         props.on_keydown,
         props.on_send,
@@ -264,7 +278,13 @@ fn view_notice(notice: String) -> Element(msg) {
   }
 }
 
-fn view_message_list(messages: List(MessageItem)) -> Element(msg) {
+fn view_message_list(
+  messages: List(MessageItem),
+  transfers: List(transfer.Item),
+  on_accept_file: fn(String) -> msg,
+  on_decline_file: fn(String) -> msg,
+  on_cancel_file: fn(String) -> msg,
+) -> Element(msg) {
   html.div(
     [
       attribute.class("flex-1 min-h-0 overflow-hidden px-8 py-8 flex flex-col"),
@@ -293,6 +313,18 @@ fn view_message_list(messages: List(MessageItem)) -> Element(msg) {
           |> list.reverse
           |> list.map(view_message),
       ),
+      html.div(
+        [attribute.class("mt-4 space-y-3")],
+        transfers
+          |> list.map(fn(item) {
+            view_transfer_card(
+              item,
+              on_accept_file,
+              on_decline_file,
+              on_cancel_file,
+            )
+          }),
+      ),
     ],
   )
 }
@@ -300,6 +332,7 @@ fn view_message_list(messages: List(MessageItem)) -> Element(msg) {
 fn view_composer(
   selected: SelectedChat,
   is_send_disabled: Bool,
+  on_attach_file: msg,
   on_type_message: fn(String) -> msg,
   on_keydown: fn(String) -> msg,
   on_send: msg,
@@ -318,6 +351,7 @@ fn view_composer(
             attribute.class(
               "h-10 w-10 text-on-surface hover:text-primary transition-colors shrink-0 flex items-center justify-center",
             ),
+            event.on_click(on_attach_file),
           ],
           [
             html.span(
@@ -384,6 +418,173 @@ fn view_composer(
       ],
     ),
   ])
+}
+
+fn view_transfer_card(
+  item: transfer.Item,
+  on_accept_file: fn(String) -> msg,
+  on_decline_file: fn(String) -> msg,
+  on_cancel_file: fn(String) -> msg,
+) -> Element(msg) {
+  let is_self = case item.direction {
+    transfer.Sending -> True
+    transfer.Receiving -> False
+  }
+
+  html.div(
+    [
+      attribute.data("transfer-id", item.transfer_id),
+      attribute.class(case is_self {
+        True ->
+          "max-w-[80%] ml-auto rounded-xl rounded-tr-none border border-primary/20 bg-primary/10 p-4 text-primary"
+        False ->
+          "max-w-[80%] rounded-xl rounded-tl-none border border-outline-variant/30 bg-surface-container p-4 text-on-surface"
+      }),
+    ],
+    [
+      html.div([attribute.class("flex items-start gap-3")], [
+        html.span(
+          [attribute.class("material-symbols-outlined text-[28px] shrink-0")],
+          [html.text("draft")],
+        ),
+        html.div([attribute.class("min-w-0 flex-1")], [
+          html.div(
+            [attribute.class("flex items-center justify-between gap-3")],
+            [
+              html.span(
+                [attribute.class("font-mono-data text-sm font-bold truncate")],
+                [html.text(item.name)],
+              ),
+              html.span(
+                [attribute.class("font-mono-label text-[10px] shrink-0")],
+                [
+                  html.text(status_label(item.status)),
+                ],
+              ),
+            ],
+          ),
+          html.p(
+            [attribute.class("mt-1 font-mono-label text-[10px] opacity-70")],
+            [
+              html.text(
+                direction_label(item.direction) <> " - " <> size_label(item),
+              ),
+            ],
+          ),
+          html.div(
+            [attribute.class("mt-3 h-1.5 rounded-full bg-outline-variant/30")],
+            [
+              html.div(
+                [
+                  attribute.class("h-full rounded-full bg-primary"),
+                  attribute.style("width", progress_width(item)),
+                ],
+                [],
+              ),
+            ],
+          ),
+          html.p(
+            [attribute.class("mt-2 font-mono-label text-[10px] opacity-70")],
+            [
+              html.text(item.notice),
+            ],
+          ),
+          view_transfer_actions(
+            item,
+            on_accept_file,
+            on_decline_file,
+            on_cancel_file,
+          ),
+        ]),
+      ]),
+    ],
+  )
+}
+
+fn view_transfer_actions(
+  item: transfer.Item,
+  on_accept_file: fn(String) -> msg,
+  on_decline_file: fn(String) -> msg,
+  on_cancel_file: fn(String) -> msg,
+) -> Element(msg) {
+  case item.direction, item.status {
+    transfer.Receiving, transfer.Offered ->
+      html.div([attribute.class("mt-3 flex gap-2")], [
+        action_button("Accept", on_accept_file(item.transfer_id), False),
+        action_button("Decline", on_decline_file(item.transfer_id), True),
+      ])
+    transfer.Receiving, transfer.Unsupported ->
+      html.div([attribute.class("mt-3 flex gap-2")], [
+        action_button("Decline", on_decline_file(item.transfer_id), True),
+      ])
+    _, transfer.Offered ->
+      html.div([attribute.class("mt-3 flex gap-2")], [
+        action_button("Cancel", on_cancel_file(item.transfer_id), True),
+      ])
+    _, transfer.AwaitingSave ->
+      html.div([attribute.class("mt-3 flex gap-2")], [
+        action_button("Cancel", on_cancel_file(item.transfer_id), True),
+      ])
+    _, transfer.Transferring ->
+      html.div([attribute.class("mt-3 flex gap-2")], [
+        action_button("Cancel", on_cancel_file(item.transfer_id), True),
+      ])
+    _, transfer.Completed -> html.span([], [])
+    _, transfer.Failed -> html.span([], [])
+    _, transfer.Cancelled -> html.span([], [])
+    _, transfer.Declined -> html.span([], [])
+    _, transfer.Unsupported -> html.span([], [])
+  }
+}
+
+fn action_button(label: String, on_click: msg, quiet: Bool) -> Element(msg) {
+  html.button(
+    [
+      attribute.type_("button"),
+      attribute.class(case quiet {
+        True ->
+          "rounded-lg border border-outline-variant/50 px-3 py-1.5 text-[11px] font-bold"
+        False ->
+          "rounded-lg bg-primary px-3 py-1.5 text-[11px] font-bold text-on-primary"
+      }),
+      event.on_click(on_click),
+    ],
+    [html.text(label)],
+  )
+}
+
+fn status_label(status: transfer.Status) -> String {
+  case status {
+    transfer.Offered -> "OFFER"
+    transfer.AwaitingSave -> "SAVE"
+    transfer.Transferring -> "LIVE"
+    transfer.Completed -> "DONE"
+    transfer.Failed -> "FAILED"
+    transfer.Cancelled -> "CANCELLED"
+    transfer.Declined -> "DECLINED"
+    transfer.Unsupported -> "UNSUPPORTED"
+  }
+}
+
+fn direction_label(direction: transfer.Direction) -> String {
+  case direction {
+    transfer.Sending -> "Sending"
+    transfer.Receiving -> "Receiving"
+  }
+}
+
+fn size_label(item: transfer.Item) -> String {
+  int.to_string(item.transferred)
+  <> " / "
+  <> int.to_string(item.size)
+  <> " bytes"
+}
+
+fn progress_width(item: transfer.Item) -> String {
+  case item.size {
+    0 -> "100%"
+    _ -> int.to_string(item.transferred * 100 / item.size) <> "%"
+  }
 }
 
 fn view_message(message: MessageItem) -> Element(msg) {

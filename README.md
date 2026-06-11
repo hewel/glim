@@ -39,7 +39,7 @@ cd client && gleam run -m lustre/dev build --minify --outdir=../priv/static
 
 `ws://localhost:9143/ws`
 
-This slice supports `peer.hello`, full `peer.list`, `peer.joined`, `peer.left`, `text.send`, `text.message`, and `message.history` events. The UI sends a JSON hello message:
+This slice supports presence, text chat, message history, and online-only binary file transfer events. The UI sends a JSON hello message:
 
 ```json
 {"type":"peer.hello","device_id":"device_abc","display_name":"Zed"}
@@ -75,6 +75,13 @@ device was either sender or receiver:
 History replay is restored state, not new activity. The UI does not mark
 replayed messages unread.
 
+File transfers are online-only relays. Control events use JSON text frames:
+`file.offer`, `file.accept`, `file.decline`, `file.cancel`, and
+`file.chunk_ack`. File bytes use binary WebSocket frames with a 4-byte
+big-endian JSON header length, a UTF-8 JSON `file.chunk` header, then raw bytes.
+The sender sends one 256 KiB chunk at a time and waits for receiver ACK after
+the browser writes the chunk to the selected save stream.
+
 ## SQL Code Generation
 
 Type-safe SQL is generated with Parrot from files under `src/sql`.
@@ -94,6 +101,7 @@ cd .. && gleam test
 
 ## Known Limitations (Current Slice)
 
-- No file offers or file transfers.
+- File transfers require browser stream-to-save support on the receiver.
+- File transfers are not persisted and require both peers to stay online.
 - No upload or download endpoints.
 - No LAN auto-discovery.

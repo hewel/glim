@@ -22,6 +22,23 @@ pub fn encode_text_send_contains_wire_fields_test() {
   let assert True = string.contains(json, "\"body\":\"hello\"")
 }
 
+pub fn encode_file_offer_contains_wire_fields_test() {
+  let json =
+    protocol.encode_file_offer(
+      "bob",
+      "transfer_1",
+      "clip.mov",
+      1234,
+      "video/quicktime",
+    )
+
+  let assert True = string.contains(json, "\"type\":\"file.offer\"")
+  let assert True = string.contains(json, "\"to\":\"bob\"")
+  let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
+  let assert True = string.contains(json, "\"name\":\"clip.mov\"")
+  let assert True = string.contains(json, "\"size\":1234")
+}
+
 pub fn decode_peer_list_test() {
   let assert Ok(protocol.PeerList([
     protocol.Peer(id: "device_abc", display_name: "Zed"),
@@ -91,6 +108,33 @@ pub fn decode_message_history_test() {
   ])) =
     protocol.decode_server_event(
       "{\"type\":\"message.history\",\"messages\":[{\"id\":\"msg_1\",\"from\":\"alice\",\"to\":\"bob\",\"body\":\"hello\",\"created_at_ms\":123},{\"id\":\"msg_2\",\"from\":\"bob\",\"to\":\"alice\",\"body\":\"again\",\"created_at_ms\":124}]}",
+    )
+}
+
+pub fn decode_file_offered_test() {
+  let assert Ok(protocol.FileOffered(protocol.FileOffer(
+    transfer_id: "transfer_1",
+    from: "alice",
+    to: "bob",
+    name: "clip.mov",
+    size: 1234,
+    mime_type: "video/quicktime",
+  ))) =
+    protocol.decode_server_event(
+      "{\"type\":\"file.offered\",\"offer\":{\"transfer_id\":\"transfer_1\",\"from\":\"alice\",\"to\":\"bob\",\"name\":\"clip.mov\",\"size\":1234,\"mime_type\":\"video/quicktime\"}}",
+    )
+}
+
+pub fn decode_file_chunk_ack_test() {
+  let assert Ok(protocol.FileChunkAcknowledged(protocol.FileChunkAck(
+    transfer_id: "transfer_1",
+    sequence: 2,
+    offset: 512,
+    byte_length: 256,
+    final: False,
+  ))) =
+    protocol.decode_server_event(
+      "{\"type\":\"file.chunk_ack\",\"ack\":{\"transfer_id\":\"transfer_1\",\"sequence\":2,\"offset\":512,\"byte_length\":256,\"final\":false}}",
     )
 }
 

@@ -8,6 +8,17 @@ import validation
 pub type ClientEvent {
   PeerHello(device_id: String, display_name: String)
   TextSend(to: String, body: String)
+  FileOffer(
+    to: String,
+    transfer_id: String,
+    name: String,
+    size: Int,
+    mime_type: String,
+  )
+  FileAccept(transfer_id: String)
+  FileDecline(transfer_id: String)
+  FileCancel(transfer_id: String)
+  FileChunkAck(ack: shared_protocol.FileChunkAck)
 }
 
 pub type DecodeError {
@@ -19,6 +30,11 @@ pub type DecodeError {
 type ClientEventType {
   PeerHelloEvent
   TextSendEvent
+  FileOfferEvent
+  FileAcceptEvent
+  FileDeclineEvent
+  FileCancelEvent
+  FileChunkAckEvent
   UnknownClientEventType(raw: String)
 }
 
@@ -47,6 +63,11 @@ fn decode_known_client_event(
   case event_type {
     PeerHelloEvent -> decode_peer_hello(input)
     TextSendEvent -> decode_text_send(input)
+    FileOfferEvent -> decode_file_offer(input)
+    FileAcceptEvent -> decode_file_transfer_id(input, FileAccept)
+    FileDeclineEvent -> decode_file_transfer_id(input, FileDecline)
+    FileCancelEvent -> decode_file_transfer_id(input, FileCancel)
+    FileChunkAckEvent -> decode_file_chunk_ack(input)
     UnknownClientEventType(raw) -> Error(UnknownEvent(event_type: raw))
   }
 }
@@ -55,6 +76,11 @@ fn classify_client_event_type(event_type: String) -> ClientEventType {
   case event_type {
     "peer.hello" -> PeerHelloEvent
     "text.send" -> TextSendEvent
+    "file.offer" -> FileOfferEvent
+    "file.accept" -> FileAcceptEvent
+    "file.decline" -> FileDeclineEvent
+    "file.cancel" -> FileCancelEvent
+    "file.chunk_ack" -> FileChunkAckEvent
     other -> UnknownClientEventType(raw: other)
   }
 }
@@ -101,6 +127,113 @@ fn decode_text_send(input: String) -> Result(ClientEvent, DecodeError) {
         }
       }
     }
+  }
+}
+
+fn decode_file_offer(input: String) -> Result(ClientEvent, DecodeError) {
+  let decoder = {
+    use to <- decode.field("to", decode.string)
+    use transfer_id <- decode.field("transfer_id", decode.string)
+    use name <- decode.field("name", decode.string)
+    use size <- decode.field("size", decode.int)
+    use mime_type <- decode.field("mime_type", decode.string)
+    decode.success(#(to, transfer_id, name, size, mime_type))
+  }
+
+  use fields <- result.try(
+    json.parse(from: input, using: decoder)
+    |> result.map_error(fn(_) { InvalidPayload }),
+  )
+  let #(to, transfer_id, name, size, mime_type) = fields
+  use valid_to <- result.try(
+    validate_payload(validation.validate_device_id(to)),
+  )
+  use valid_transfer_id <- result.try(
+    validate_payload(validation.validate_transfer_id(transfer_id)),
+  )
+  use valid_name <- result.try(
+    validate_payload(validation.validate_file_name(name)),
+  )
+  use valid_size <- result.try(
+    validate_payload(validation.validate_file_size(size)),
+  )
+  use valid_mime_type <- result.try(
+    validate_payload(validation.validate_mime_type(mime_type)),
+  )
+
+  Ok(FileOffer(
+    to: valid_to,
+    transfer_id: valid_transfer_id,
+    name: valid_name,
+    size: valid_size,
+    mime_type: valid_mime_type,
+  ))
+}
+
+fn decode_file_transfer_id(
+  input: String,
+  to_event: fn(String) -> ClientEvent,
+) -> Result(ClientEvent, DecodeError) {
+  let decoder = {
+    use transfer_id <- decode.field("transfer_id", decode.string)
+    decode.success(transfer_id)
+  }
+
+  use transfer_id <- result.try(
+    json.parse(from: input, using: decoder)
+    |> result.map_error(fn(_) { InvalidPayload }),
+  )
+  use valid_transfer_id <- result.try(
+    validate_payload(validation.validate_transfer_id(transfer_id)),
+  )
+
+  Ok(to_event(valid_transfer_id))
+}
+
+fn decode_file_chunk_ack(input: String) -> Result(ClientEvent, DecodeError) {
+  let decoder = {
+    use transfer_id <- decode.field("transfer_id", decode.string)
+    use sequence <- decode.field("sequence", decode.int)
+    use offset <- decode.field("offset", decode.int)
+    use byte_length <- decode.field("byte_length", decode.int)
+    use final <- decode.field("final", decode.bool)
+    decode.success(#(transfer_id, sequence, offset, byte_length, final))
+  }
+
+  use fields <- result.try(
+    json.parse(from: input, using: decoder)
+    |> result.map_error(fn(_) { InvalidPayload }),
+  )
+  let #(transfer_id, sequence, offset, byte_length, final) = fields
+  use valid_transfer_id <- result.try(
+    validate_payload(validation.validate_transfer_id(transfer_id)),
+  )
+  use Nil <- result.try(validate_non_negative(sequence))
+  use Nil <- result.try(validate_non_negative(offset))
+  use Nil <- result.try(validate_non_negative(byte_length))
+
+  Ok(
+    FileChunkAck(shared_protocol.FileChunkAck(
+      transfer_id: valid_transfer_id,
+      sequence: sequence,
+      offset: offset,
+      byte_length: byte_length,
+      final: final,
+    )),
+  )
+}
+
+fn validate_payload(
+  result: Result(a, validation.ValidationError),
+) -> Result(a, DecodeError) {
+  result
+  |> result.map_error(fn(_) { InvalidPayload })
+}
+
+fn validate_non_negative(value: Int) -> Result(Nil, DecodeError) {
+  case value < 0 {
+    True -> Error(InvalidPayload)
+    False -> Ok(Nil)
   }
 }
 
@@ -151,6 +284,51 @@ pub fn encode_message_history(
   json.object([
     #("type", json.string("message.history")),
     #("messages", json.preprocessed_array(encoded_messages)),
+  ])
+  |> json.to_string
+}
+
+pub fn encode_file_offered(offer: shared_protocol.FileOffer) -> String {
+  json.object([
+    #("type", json.string("file.offered")),
+    #("offer", shared_protocol.encode_file_offer_payload(offer)),
+  ])
+  |> json.to_string
+}
+
+pub fn encode_file_accepted(transfer_id: String) -> String {
+  encode_file_transfer_id("file.accepted", transfer_id)
+}
+
+pub fn encode_file_declined(transfer_id: String) -> String {
+  encode_file_transfer_id("file.declined", transfer_id)
+}
+
+pub fn encode_file_cancelled(transfer_id: String, reason: String) -> String {
+  json.object([
+    #("type", json.string("file.cancelled")),
+    #("transfer_id", json.string(transfer_id)),
+    #("reason", json.string(reason)),
+  ])
+  |> json.to_string
+}
+
+pub fn encode_file_chunk_ack(ack: shared_protocol.FileChunkAck) -> String {
+  json.object([
+    #("type", json.string("file.chunk_ack")),
+    #("ack", shared_protocol.encode_file_chunk_ack_payload(ack)),
+  ])
+  |> json.to_string
+}
+
+pub fn encode_file_completed(transfer_id: String) -> String {
+  encode_file_transfer_id("file.completed", transfer_id)
+}
+
+fn encode_file_transfer_id(event_type: String, transfer_id: String) -> String {
+  json.object([
+    #("type", json.string(event_type)),
+    #("transfer_id", json.string(transfer_id)),
   ])
   |> json.to_string
 }

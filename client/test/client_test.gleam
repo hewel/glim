@@ -3,6 +3,7 @@ import gleam/dict
 import gleam/option
 import gleeunit
 import shared/protocol as shared_protocol
+import transfer
 
 pub fn main() -> Nil {
   gleeunit.main()
@@ -154,4 +155,77 @@ pub fn text_message_event_does_not_update_peer_list_test() {
     )
 
   let assert [shared_protocol.Peer(id: "bob", display_name: "Bob")] = updated
+}
+
+pub fn transfer_add_outgoing_and_progress_test() {
+  let selection =
+    transfer.FileSelection(
+      transfer_id: "transfer_1",
+      file_id: "file_1",
+      name: "clip.mov",
+      size: 512,
+      mime_type: "video/quicktime",
+    )
+  let items = transfer.add_outgoing([], "bob", "Bob", selection)
+
+  let assert option.Some(transfer.Item(
+    transfer_id: "transfer_1",
+    peer_id: "bob",
+    peer_name: "Bob",
+    name: "clip.mov",
+    mime_type: "video/quicktime",
+    size: 512,
+    transferred: 0,
+    direction: transfer.Sending,
+    status: transfer.Offered,
+    notice: "Waiting for acceptance",
+  )) = transfer.find(items, "transfer_1")
+
+  let ack =
+    shared_protocol.FileChunkAck(
+      transfer_id: "transfer_1",
+      sequence: 0,
+      offset: 0,
+      byte_length: 512,
+      final: True,
+    )
+
+  let assert option.Some(transfer.Item(
+    transfer_id: "transfer_1",
+    peer_id: "bob",
+    peer_name: "Bob",
+    name: "clip.mov",
+    mime_type: "video/quicktime",
+    size: 512,
+    transferred: 512,
+    direction: transfer.Sending,
+    status: transfer.Completed,
+    notice: "Complete",
+  )) = items |> transfer.mark_progress(ack) |> transfer.find("transfer_1")
+}
+
+pub fn transfer_add_incoming_marks_unsupported_test() {
+  let offer =
+    shared_protocol.FileOffer(
+      transfer_id: "transfer_1",
+      from: "alice",
+      to: "bob",
+      name: "clip.mov",
+      size: 512,
+      mime_type: "video/quicktime",
+    )
+  let items = transfer.add_incoming([], offer, "Alice", False)
+
+  let assert option.Some(transfer.Item(
+    transfer_id: "transfer_1",
+    peer_id: "alice",
+    peer_name: "Alice",
+    name: "clip.mov",
+    mime_type: "video/quicktime",
+    size: 512,
+    transferred: 0,
+    direction: transfer.Receiving,
+    status: transfer.Unsupported,
+    notice: "Stream-to-save is not supported in this browser",
+  )) = transfer.find(items, "transfer_1")
 }

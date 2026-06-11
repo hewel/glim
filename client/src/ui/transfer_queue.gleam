@@ -1,8 +1,16 @@
+import gleam/int
+import gleam/list
 import lustre/attribute
 import lustre/element.{type Element, element}
 import lustre/element/html
+import lustre/event
+import transfer
 
-pub fn view() -> Element(msg) {
+pub type Props(msg) {
+  Props(transfers: List(transfer.Item), on_cancel: fn(String) -> msg)
+}
+
+pub fn view(props: Props(msg)) -> Element(msg) {
   html.aside(
     [
       attribute.class(
@@ -10,42 +18,27 @@ pub fn view() -> Element(msg) {
       ),
     ],
     [
-      view_header(),
+      view_header(transfer.active_count(props.transfers)),
       html.div(
         [
           attribute.class(
             "flex-1 overflow-y-auto px-5 py-6 space-y-5 custom-scrollbar",
           ),
         ],
-        [
-          view_card(
-            "download_for_offline",
-            "asset_package.zip",
-            "82.4 MB/s",
-            "ETA: 12s",
-            "68%",
-            "primary",
-            "68%",
-          ),
-          view_card(
-            "upload_file",
-            "presentation_decks.tar.gz",
-            "45.1 MB/s",
-            "ETA: 4m 12s",
-            "32%",
-            "tertiary",
-            "32%",
-          ),
-          view_done_card(),
-          view_paused_card(),
-        ],
+        case props.transfers {
+          [] -> [view_empty()]
+          _ ->
+            props.transfers
+            |> list.reverse
+            |> list.map(fn(item) { view_card(item, props.on_cancel) })
+        },
       ),
-      view_footer(),
+      view_footer(props.transfers),
     ],
   )
 }
 
-fn view_header() -> Element(msg) {
+fn view_header(active_count: Int) -> Element(msg) {
   html.div(
     [
       attribute.class(
@@ -77,34 +70,50 @@ fn view_header() -> Element(msg) {
             "bg-primary/10 px-3 py-1.5 rounded-full text-[10px] font-mono-data text-primary font-bold border border-primary/10",
           ),
         ],
-        [html.text("4 ACTIVE")],
+        [html.text(int.to_string(active_count) <> " ACTIVE")],
+      ),
+    ],
+  )
+}
+
+fn view_empty() -> Element(msg) {
+  html.div(
+    [
+      attribute.class(
+        "rounded-[1.4rem] border border-outline-variant/30 bg-[#f0edf8]/60 p-6 text-center",
+      ),
+    ],
+    [
+      html.span(
+        [attribute.class("material-symbols-outlined text-primary text-[30px]")],
+        [html.text("inventory_2")],
+      ),
+      html.p(
+        [attribute.class("mt-2 font-mono-label text-[10px] text-outline")],
+        [html.text("No file transfers")],
       ),
     ],
   )
 }
 
 fn view_card(
-  icon: String,
-  name: String,
-  rate: String,
-  eta: String,
-  progress: String,
-  tone: String,
-  width: String,
+  item: transfer.Item,
+  on_cancel: fn(String) -> msg,
 ) -> Element(msg) {
-  let color = case tone {
-    "tertiary" -> "text-tertiary"
-    _ -> "text-primary"
+  let tone = case item.direction {
+    transfer.Sending -> "text-tertiary"
+    transfer.Receiving -> "text-primary"
   }
-  let bar = case tone {
-    "tertiary" -> "bg-tertiary"
-    _ -> "bg-primary"
+  let bar = case item.direction {
+    transfer.Sending -> "bg-tertiary"
+    transfer.Receiving -> "bg-primary"
   }
 
   html.div(
     [
+      attribute.data("transfer-id", item.transfer_id),
       attribute.class(
-        "bg-[#f0edf8] rounded-[1.6rem] border border-outline-variant/40 overflow-hidden relative p-5 pt-8 min-h-[114px]",
+        "bg-[#f0edf8] rounded-[1.6rem] border border-outline-variant/40 overflow-hidden relative p-5 pt-8 min-h-[122px]",
       ),
     ],
     [
@@ -118,7 +127,7 @@ fn view_card(
           html.div(
             [
               attribute.class("h-full progress-glow " <> bar),
-              attribute.style("width", width),
+              attribute.style("width", progress_width(item)),
             ],
             [],
           ),
@@ -127,21 +136,23 @@ fn view_card(
       html.div([attribute.class("flex items-start justify-between mb-sm")], [
         html.div([attribute.class("flex items-center gap-sm min-w-0")], [
           html.span(
-            [attribute.class("material-symbols-outlined text-[18px] " <> color)],
-            [html.text(icon)],
+            [attribute.class("material-symbols-outlined text-[18px] " <> tone)],
+            [html.text(icon(item.direction))],
           ),
           html.span(
             [
               attribute.class(
-                "font-mono-data text-xs text-on-surface truncate max-w-[140px]",
+                "font-mono-data text-xs text-on-surface truncate max-w-[150px]",
               ),
             ],
-            [html.text(name)],
+            [html.text(item.name)],
           ),
         ]),
         html.span(
-          [attribute.class("font-mono-data text-[10px] font-bold " <> color)],
-          [html.text(progress)],
+          [attribute.class("font-mono-data text-[10px] font-bold " <> tone)],
+          [
+            html.text(status_label(item.status)),
+          ],
         ),
       ]),
       html.div(
@@ -150,94 +161,57 @@ fn view_card(
             "flex justify-between items-center text-[10px] font-mono-label text-on-surface-variant",
           ),
         ],
-        [html.span([], [html.text(rate)]), html.span([], [html.text(eta)])],
+        [
+          html.span([], [html.text(size_label(item))]),
+          html.span([], [html.text(item.peer_name)]),
+        ],
       ),
-    ],
-  )
-}
-
-fn view_done_card() -> Element(msg) {
-  html.div(
-    [
-      attribute.class(
-        "bg-[#f0edf8]/60 rounded-[1.6rem] border border-outline-variant/25 p-5 min-h-[100px]",
-      ),
-    ],
-    [
-      html.div([attribute.class("flex items-center justify-between mb-xs")], [
-        html.div([attribute.class("flex items-center gap-sm min-w-0")], [
-          html.span(
-            [
-              attribute.class(
-                "material-symbols-outlined text-primary text-[18px]",
-              ),
-            ],
-            [html.text("check_circle")],
-          ),
-          html.span(
-            [
-              attribute.class(
-                "font-mono-data text-xs text-on-surface-variant truncate max-w-[140px]",
-              ),
-            ],
-            [html.text("project_manifest.json")],
-          ),
-        ]),
-        html.span([attribute.class("font-mono-data text-[10px] text-primary")], [
-          html.text("100%"),
-        ]),
-      ]),
-      html.p([attribute.class("font-mono-label text-[10px] text-outline")], [
-        html.text("Transferred • 12.4 KB"),
-      ]),
-    ],
-  )
-}
-
-fn view_paused_card() -> Element(msg) {
-  html.div(
-    [
-      attribute.class(
-        "bg-[#f0edf8]/40 rounded-[1.6rem] border border-outline-variant/20 p-5 min-h-[100px] opacity-70",
-      ),
-    ],
-    [
-      html.div([attribute.class("flex items-center justify-between mb-xs")], [
-        html.div([attribute.class("flex items-center gap-sm min-w-0")], [
-          html.span(
-            [
-              attribute.class(
-                "material-symbols-outlined text-on-surface-variant text-[18px]",
-              ),
-            ],
-            [html.text("pause_circle")],
-          ),
-          html.span(
-            [
-              attribute.class(
-                "font-mono-data text-xs text-on-surface-variant truncate max-w-[140px]",
-              ),
-            ],
-            [html.text("heavy_video_stream.mkv")],
-          ),
-        ]),
+      html.div([attribute.class("mt-3 flex items-center justify-between")], [
         html.span(
+          [attribute.class("font-mono-label text-[10px] text-outline")],
           [
-            attribute.class(
-              "font-mono-data text-[10px] text-on-surface-variant",
-            ),
+            html.text(item.notice),
           ],
-          [html.text("14%")],
         ),
-      ]),
-      html.p([attribute.class("font-mono-label text-[10px] text-outline")], [
-        html.text("Paused by peer"),
+        cancel_button(item, on_cancel),
       ]),
     ],
   )
 }
 
-fn view_footer() -> Element(msg) {
+fn cancel_button(
+  item: transfer.Item,
+  on_cancel: fn(String) -> msg,
+) -> Element(msg) {
+  case item.status {
+    transfer.Offered -> view_cancel_button(item.transfer_id, on_cancel)
+    transfer.AwaitingSave -> view_cancel_button(item.transfer_id, on_cancel)
+    transfer.Transferring -> view_cancel_button(item.transfer_id, on_cancel)
+    transfer.Completed -> html.span([], [])
+    transfer.Failed -> html.span([], [])
+    transfer.Cancelled -> html.span([], [])
+    transfer.Declined -> html.span([], [])
+    transfer.Unsupported -> html.span([], [])
+  }
+}
+
+fn view_cancel_button(
+  transfer_id: String,
+  on_cancel: fn(String) -> msg,
+) -> Element(msg) {
+  html.button(
+    [
+      attribute.type_("button"),
+      attribute.class(
+        "rounded-lg border border-outline-variant/50 px-2 py-1 text-[10px] font-bold text-on-surface-variant",
+      ),
+      event.on_click(on_cancel(transfer_id)),
+    ],
+    [html.text("Cancel")],
+  )
+}
+
+fn view_footer(transfers: List(transfer.Item)) -> Element(msg) {
   html.div(
     [
       attribute.class(
@@ -252,11 +226,11 @@ fn view_footer() -> Element(msg) {
               "font-mono-label text-[10px] text-on-surface-variant uppercase tracking-wider",
             ),
           ],
-          [html.text("Global Mesh Speed")],
+          [html.text("Completed Transfers")],
         ),
         html.span(
           [attribute.class("font-mono-data text-xs text-primary font-bold")],
-          [html.text("127.5 MB/s")],
+          [html.text(int.to_string(completed_count(transfers)))],
         ),
       ]),
       html.div(
@@ -301,4 +275,52 @@ fn view_footer() -> Element(msg) {
       ),
     ],
   )
+}
+
+fn completed_count(transfers: List(transfer.Item)) -> Int {
+  transfers
+  |> list.filter(fn(item) {
+    case item.status {
+      transfer.Completed -> True
+      transfer.Offered -> False
+      transfer.AwaitingSave -> False
+      transfer.Transferring -> False
+      transfer.Failed -> False
+      transfer.Cancelled -> False
+      transfer.Declined -> False
+      transfer.Unsupported -> False
+    }
+  })
+  |> list.length
+}
+
+fn icon(direction: transfer.Direction) -> String {
+  case direction {
+    transfer.Sending -> "upload_file"
+    transfer.Receiving -> "download_for_offline"
+  }
+}
+
+fn status_label(status: transfer.Status) -> String {
+  case status {
+    transfer.Offered -> "OFFER"
+    transfer.AwaitingSave -> "SAVE"
+    transfer.Transferring -> "LIVE"
+    transfer.Completed -> "100%"
+    transfer.Failed -> "FAILED"
+    transfer.Cancelled -> "CANCELLED"
+    transfer.Declined -> "DECLINED"
+    transfer.Unsupported -> "UNSUPPORTED"
+  }
+}
+
+fn size_label(item: transfer.Item) -> String {
+  int.to_string(item.transferred) <> " / " <> int.to_string(item.size) <> " B"
+}
+
+fn progress_width(item: transfer.Item) -> String {
+  case item.size {
+    0 -> "100%"
+    _ -> int.to_string(item.transferred * 100 / item.size) <> "%"
+  }
 }
