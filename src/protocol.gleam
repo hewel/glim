@@ -142,6 +142,19 @@ pub fn encode_text_message(message: shared_protocol.TextMessage) -> String {
   |> json.to_string
 }
 
+pub fn encode_message_history(
+  messages: List(shared_protocol.TextMessage),
+) -> String {
+  let encoded_messages =
+    messages |> list.map(shared_protocol.encode_text_message)
+
+  json.object([
+    #("type", json.string("message.history")),
+    #("messages", json.preprocessed_array(encoded_messages)),
+  ])
+  |> json.to_string
+}
+
 pub fn encode_error(code: String, message: String) -> String {
   json.object([
     #("type", json.string("error")),

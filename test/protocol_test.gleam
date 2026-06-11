@@ -109,6 +109,25 @@ pub fn encode_text_message_contains_fields_test() {
   let assert True = string.contains(json, "\"created_at_ms\":123")
 }
 
+pub fn encode_message_history_contains_fields_test() {
+  let json =
+    protocol.encode_message_history([
+      shared_protocol.TextMessage(
+        id: "msg_1",
+        from: "alice",
+        to: "bob",
+        body: "hello",
+        created_at_ms: 123,
+      ),
+    ])
+
+  let assert True = string.contains(json, "\"type\":\"message.history\"")
+  let assert True = string.contains(json, "\"messages\"")
+  let assert True = string.contains(json, "\"id\":\"msg_1\"")
+  let assert True = string.contains(json, "\"from\":\"alice\"")
+  let assert True = string.contains(json, "\"to\":\"bob\"")
+}
+
 fn repeat_char(char: String, count: Int) -> String {
   case count {
     0 -> ""

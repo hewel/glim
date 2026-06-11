@@ -34,6 +34,47 @@ pub fn persist_text_message_returns_database_ids_test() {
   let assert "again" = second.body
 }
 
+pub fn load_device_message_history_returns_participant_messages_test() {
+  let assert Ok(store) = message_store.start(":memory:")
+
+  let assert Ok(_) =
+    message_store.persist_text_message(
+      store,
+      from: "alice",
+      to: "bob",
+      body: "first",
+      timeout: 1000,
+    )
+  let assert Ok(_) =
+    message_store.persist_text_message(
+      store,
+      from: "carol",
+      to: "alice",
+      body: "second",
+      timeout: 1000,
+    )
+  let assert Ok(_) =
+    message_store.persist_text_message(
+      store,
+      from: "bob",
+      to: "carol",
+      body: "unrelated",
+      timeout: 1000,
+    )
+
+  let assert Ok([first, second]) =
+    message_store.load_device_message_history(
+      store,
+      device_id: "alice",
+      timeout: 1000,
+    )
+
+  let assert "msg_1" = first.id
+  let assert "first" = first.body
+  let assert "msg_2" = second.id
+  let assert "second" = second.body
+}
+
 pub fn persist_text_message_times_out_without_reply_test() {
   let store = process.new_subject()
 
@@ -43,6 +84,17 @@ pub fn persist_text_message_times_out_without_reply_test() {
       from: "alice",
       to: "bob",
       body: "hello",
+      timeout: 1,
+    )
+}
+
+pub fn load_device_message_history_times_out_without_reply_test() {
+  let store = process.new_subject()
+
+  let assert Error(message_store.TimedOut) =
+    message_store.load_device_message_history(
+      store,
+      device_id: "alice",
       timeout: 1,
     )
 }

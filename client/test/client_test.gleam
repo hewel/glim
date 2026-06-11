@@ -1,5 +1,6 @@
 import chat
 import gleam/dict
+import gleam/option
 import gleeunit
 import shared/protocol as shared_protocol
 
@@ -90,6 +91,48 @@ pub fn add_text_message_groups_by_other_peer_test() {
       created_at_ms: 123,
     ),
   ]) = dict.get(messages, "bob")
+}
+
+pub fn add_text_messages_deduplicates_by_message_id_test() {
+  let message =
+    shared_protocol.TextMessage(
+      id: "msg_1",
+      from: "alice",
+      to: "bob",
+      body: "hello",
+      created_at_ms: 123,
+    )
+
+  let messages =
+    dict.new()
+    |> chat.add_text_messages("alice", [message, message])
+
+  let assert Ok([_]) = dict.get(messages, "bob")
+}
+
+pub fn clear_pending_draft_clears_matching_thread_only_test() {
+  let drafts =
+    dict.new()
+    |> dict.insert(for: "bob", insert: "hello")
+    |> dict.insert(for: "carol", insert: "keep")
+
+  let message =
+    shared_protocol.TextMessage(
+      id: "msg_1",
+      from: "alice",
+      to: "bob",
+      body: "hello",
+      created_at_ms: 123,
+    )
+
+  let assert #(updated, option.None) =
+    chat.clear_pending_draft(
+      option.Some(chat.PendingDraftClear(to: "bob", body: "hello")),
+      drafts,
+      message,
+    )
+  let assert Error(_) = dict.get(updated, "bob")
+  let assert Ok("keep") = dict.get(updated, "carol")
 }
 
 pub fn unread_helpers_increment_and_clear_test() {

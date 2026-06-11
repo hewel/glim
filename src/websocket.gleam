@@ -64,6 +64,11 @@ pub fn handle_message(
       let _ = mist.send_text_frame(conn, protocol.encode_text_message(message))
       mist.continue(state)
     }
+    mist.Custom(room.SendMessageHistory(messages)) -> {
+      let _ =
+        mist.send_text_frame(conn, protocol.encode_message_history(messages))
+      mist.continue(state)
+    }
     mist.Custom(room.SendError(code:, message:)) -> {
       let _ = mist.send_text_frame(conn, protocol.encode_error(code, message))
       mist.continue(state)

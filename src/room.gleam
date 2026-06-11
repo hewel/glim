@@ -14,6 +14,7 @@ pub type ClientMessage {
   SendPeerJoined(peer: shared_protocol.Peer)
   SendPeerLeft(device_id: String)
   SendTextMessage(message: shared_protocol.TextMessage)
+  SendMessageHistory(messages: List(shared_protocol.TextMessage))
   SendError(code: String, message: String)
   SessionReplaced
 }
@@ -113,7 +114,7 @@ fn join(
       let peers =
         dict.insert(into: state.peers, for: device_id, insert: session)
       let new_state = State(..state, peers: peers)
-      process.send(client, SendPeerList(sorted_peers(peers)))
+      send_join_snapshot(new_state, client, device_id)
       broadcast_joined(state.peers, peer)
       actor.continue(new_state)
     }
@@ -127,10 +128,36 @@ fn join(
         False -> process.send(stored.client, SessionReplaced)
       }
 
-      process.send(client, SendPeerList(sorted_peers(peers)))
+      send_join_snapshot(new_state, client, device_id)
       broadcast_joined_to_others(peers, device_id, peer)
       actor.continue(new_state)
     }
+  }
+}
+
+fn send_join_snapshot(
+  state: State,
+  client: process.Subject(ClientMessage),
+  device_id: String,
+) -> Nil {
+  process.send(client, SendPeerList(sorted_peers(state.peers)))
+
+  case
+    message_store.load_device_message_history(
+      state.message_store,
+      device_id: device_id,
+      timeout: message_store_timeout_ms,
+    )
+  {
+    Ok(messages) -> process.send(client, SendMessageHistory(messages))
+    Error(_) ->
+      process.send(
+        client,
+        SendError(
+          code: "history_load_failed",
+          message: "Message history could not be loaded.",
+        ),
+      )
   }
 }
 

@@ -28,7 +28,7 @@ type Model {
     peers: List(shared_protocol.Peer),
     known_peers: dict.Dict(String, shared_protocol.Peer),
     selected_peer_id: option.Option(String),
-    message_draft: String,
+    message_drafts: dict.Dict(String, String),
     messages_by_peer: dict.Dict(String, List(shared_protocol.TextMessage)),
     unread_by_peer: dict.Dict(String, Int),
     chat_notice: option.Option(String),
@@ -73,7 +73,7 @@ fn init(_flags: Nil) -> #(Model, Effect(Message)) {
       peers: [],
       known_peers: dict.new(),
       selected_peer_id: option.None,
-      message_draft: "",
+      message_drafts: dict.new(),
       messages_by_peer: dict.new(),
       unread_by_peer: dict.new(),
       chat_notice: option.None,
@@ -130,7 +130,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
     UserClickedClearLog -> #(Model(..model, log: []), effect.none())
 
     UserTypedMessage(body) -> #(
-      Model(..model, message_draft: body),
+      update_selected_draft(model, body),
       effect.none(),
     )
 
@@ -200,6 +200,11 @@ fn handle_server_event(model: Model, raw: String) -> #(Model, Effect(Message)) {
       effect.none(),
     )
 
+    Ok(shared_protocol.MessageHistory(messages: messages)) -> #(
+      apply_message_history(model, messages, log),
+      effect.none(),
+    )
+
     Ok(shared_protocol.ErrorEvent(code: code, message: message)) -> #(
       Model(
         ..model,
@@ -236,10 +241,10 @@ fn apply_text_message(
     True -> chat.increment_unread(model.unread_by_peer, peer_id)
     False -> model.unread_by_peer
   }
-  let #(message_draft, pending_draft_clear) =
+  let #(message_drafts, pending_draft_clear) =
     chat.clear_pending_draft(
       model.pending_draft_clear,
-      model.message_draft,
+      model.message_drafts,
       message,
     )
   let chat_notice = case chat.is_selected(model.selected_peer_id, peer_id) {
@@ -251,9 +256,25 @@ fn apply_text_message(
     ..model,
     messages_by_peer: messages_by_peer,
     unread_by_peer: unread_by_peer,
-    message_draft: message_draft,
+    message_drafts: message_drafts,
     pending_draft_clear: pending_draft_clear,
     chat_notice: chat_notice,
+    log: log,
+  )
+}
+
+fn apply_message_history(
+  model: Model,
+  messages: List(shared_protocol.TextMessage),
+  log: List(String),
+) -> Model {
+  Model(
+    ..model,
+    messages_by_peer: chat.add_text_messages(
+      model.messages_by_peer,
+      model.device_id,
+      messages,
+    ),
     log: log,
   )
 }
@@ -270,7 +291,7 @@ fn send_message_request(model: Model) -> Result(SendMessageRequest, String) {
   use Nil <- result.try(ensure_connected(model.status))
   use peer_id <- result.try(ensure_selected_peer(model.selected_peer_id))
   use Nil <- result.try(ensure_peer_online(model.peers, peer_id))
-  let body = string.trim(model.message_draft)
+  let body = string.trim(draft_for_peer(model, peer_id))
   use Nil <- result.try(ensure_message_body(body))
 
   Ok(SendMessageRequest(peer_id: peer_id, body: body))
@@ -310,6 +331,42 @@ fn ensure_message_body(body: String) -> Result(Nil, String) {
   }
 }
 
+fn update_selected_draft(model: Model, body: String) -> Model {
+  case model.selected_peer_id {
+    option.Some(peer_id) ->
+      Model(
+        ..model,
+        message_drafts: set_draft(model.message_drafts, peer_id, body),
+      )
+    option.None -> model
+  }
+}
+
+fn draft_for_selected_peer(model: Model) -> String {
+  case model.selected_peer_id {
+    option.Some(peer_id) -> draft_for_peer(model, peer_id)
+    option.None -> ""
+  }
+}
+
+fn draft_for_peer(model: Model, peer_id: String) -> String {
+  case dict.get(model.message_drafts, peer_id) {
+    Ok(body) -> body
+    Error(_) -> ""
+  }
+}
+
+fn set_draft(
+  drafts: dict.Dict(String, String),
+  peer_id: String,
+  body: String,
+) -> dict.Dict(String, String) {
+  case body {
+    "" -> dict.delete(from: drafts, delete: peer_id)
+    _ -> dict.insert(into: drafts, for: peer_id, insert: body)
+  }
+}
+
 fn send_text_message(
   model: Model,
   peer_id: String,
@@ -320,7 +377,7 @@ fn send_text_message(
   #(
     Model(
       ..model,
-      message_draft: body,
+      message_drafts: set_draft(model.message_drafts, peer_id, body),
       chat_notice: option.None,
       pending_draft_clear: option.Some(chat.PendingDraftClear(
         to: peer_id,
@@ -985,11 +1042,9 @@ fn view_transfer_queue(_model: Model) -> Element(Message) {
 }
 
 fn view_peers(model: Model) -> List(Element(Message)) {
-  let other_peers =
-    model.peers
-    |> list.filter(fn(peer) { peer.id != model.device_id })
+  let peers = conversation_peers(model)
 
-  case other_peers {
+  case peers {
     [] -> [
       html.div(
         [
@@ -1021,14 +1076,51 @@ fn view_peers(model: Model) -> List(Element(Message)) {
       ),
     ]
     _ ->
-      other_peers
+      peers
       |> list.map(fn(peer) { view_peer(model, peer) })
+  }
+}
+
+fn conversation_peers(model: Model) -> List(shared_protocol.Peer) {
+  let online_peers =
+    model.peers
+    |> list.filter(fn(peer) { peer.id != model.device_id })
+
+  let offline_history_peers =
+    model.messages_by_peer
+    |> dict.keys
+    |> list.filter(fn(peer_id) {
+      peer_id != model.device_id && !peer_in_list(online_peers, peer_id)
+    })
+    |> list.sort(string.compare)
+    |> list.map(fn(peer_id) { history_peer(model, peer_id) })
+
+  list.append(online_peers, offline_history_peers)
+}
+
+fn peer_in_list(peers: List(shared_protocol.Peer), peer_id: String) -> Bool {
+  peers
+  |> list.any(fn(peer) { peer.id == peer_id })
+}
+
+fn history_peer(model: Model, peer_id: String) -> shared_protocol.Peer {
+  shared_protocol.Peer(
+    id: peer_id,
+    display_name: peer_display_name(model, peer_id),
+  )
+}
+
+fn peer_display_name(model: Model, peer_id: String) -> String {
+  case chat.find_peer(model.known_peers, peer_id) {
+    option.Some(peer) -> peer.display_name
+    option.None -> peer_id
   }
 }
 
 fn view_peer(model: Model, peer: shared_protocol.Peer) -> Element(Message) {
   let count = chat.unread_count(model.unread_by_peer, peer.id)
   let is_selected = chat.is_selected(model.selected_peer_id, peer.id)
+  let is_online = chat.peer_is_online(model.peers, peer.id)
 
   let item_class = case is_selected {
     True ->
@@ -1113,7 +1205,12 @@ fn view_peer(model: Model, peer: shared_protocol.Peer) -> Element(Message) {
               },
             ),
           ],
-          [html.text(peer.id)],
+          [
+            html.text(case is_online {
+              True -> peer.id
+              False -> "Offline - " <> peer.id
+            }),
+          ],
         ),
       ]),
     ],
@@ -1201,15 +1298,10 @@ fn view_chat(model: Model) -> Element(Message) {
     }
     option.Some(peer_id) -> {
       let is_online = chat.peer_is_online(model.peers, peer_id)
-      let disabled = !is_online
-      let is_send_disabled = disabled || string.trim(model.message_draft) == ""
+      let draft = draft_for_selected_peer(model)
+      let is_send_disabled = !is_online || string.trim(draft) == ""
 
-      let peer_name = case
-        chat.selected_peer(model.known_peers, model.selected_peer_id)
-      {
-        option.Some(peer) -> peer.display_name
-        option.None -> "Unknown Peer"
-      }
+      let peer_name = peer_display_name(model, peer_id)
 
       html.section(
         [
@@ -1445,12 +1537,11 @@ fn view_chat(model: Model) -> Element(Message) {
                     ),
                     attribute.placeholder(case is_online {
                       True -> "Write a message or drop files here..."
-                      False -> "Peer is offline"
+                      False -> "Peer is offline - draft is saved"
                     }),
                     attribute.maxlength(10_000),
                     attribute.autocomplete("off"),
-                    attribute.value(model.message_draft),
-                    attribute.disabled(disabled),
+                    attribute.value(draft),
                     event.on_input(UserTypedMessage),
                     event.on_keydown(UserPressedMessageKey),
                   ]),

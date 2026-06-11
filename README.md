@@ -39,7 +39,7 @@ cd client && gleam run -m lustre/dev build --minify --outdir=../priv/static
 
 `ws://localhost:9143/ws`
 
-This slice supports `peer.hello`, full `peer.list`, `peer.joined`, `peer.left`, `text.send`, and `text.message` events. The UI sends a JSON hello message:
+This slice supports `peer.hello`, full `peer.list`, `peer.joined`, `peer.left`, `text.send`, `text.message`, and `message.history` events. The UI sends a JSON hello message:
 
 ```json
 {"type":"peer.hello","device_id":"device_abc","display_name":"Zed"}
@@ -65,6 +65,16 @@ The server routes accepted messages back to both peers as:
 
 Message IDs are backed by SQLite row IDs and formatted as `msg_<rowid>`.
 
+After a device joins, the server replays all persisted text messages where that
+device was either sender or receiver:
+
+```json
+{"type":"message.history","messages":[{"id":"msg_1","from":"device_abc","to":"device_xyz","body":"hello","created_at_ms":123}]}
+```
+
+History replay is restored state, not new activity. The UI does not mark
+replayed messages unread.
+
 ## SQL Code Generation
 
 Type-safe SQL is generated with Parrot from files under `src/sql`.
@@ -86,5 +96,4 @@ cd .. && gleam test
 
 - No file offers or file transfers.
 - No upload or download endpoints.
-- No chat history replay from persisted messages.
 - No LAN auto-discovery.

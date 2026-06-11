@@ -64,3 +64,51 @@ pub fn insert_text_message_decoder() -> decode.Decoder(InsertTextMessage) {
     created_at_ms:,
   ))
 }
+
+pub type SelectDeviceMessageHistory {
+  SelectDeviceMessageHistory(
+    id: Int,
+    from_device_id: String,
+    to_device_id: String,
+    body: String,
+    created_at_ms: Int,
+  )
+}
+
+pub fn select_device_message_history(
+  from_device_id from_device_id: String,
+  to_device_id to_device_id: String,
+) {
+  let sql =
+    "SELECT
+  id,
+  from_device_id,
+  to_device_id,
+  body,
+  created_at_ms
+FROM messages
+WHERE from_device_id = ? OR to_device_id = ?
+ORDER BY id ASC"
+  #(
+    sql,
+    [dev.ParamString(from_device_id), dev.ParamString(to_device_id)],
+    select_device_message_history_decoder(),
+  )
+}
+
+pub fn select_device_message_history_decoder() -> decode.Decoder(
+  SelectDeviceMessageHistory,
+) {
+  use id <- decode.field(0, decode.int)
+  use from_device_id <- decode.field(1, decode.string)
+  use to_device_id <- decode.field(2, decode.string)
+  use body <- decode.field(3, decode.string)
+  use created_at_ms <- decode.field(4, decode.int)
+  decode.success(SelectDeviceMessageHistory(
+    id:,
+    from_device_id:,
+    to_device_id:,
+    body:,
+    created_at_ms:,
+  ))
+}

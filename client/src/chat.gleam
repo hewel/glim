@@ -44,6 +44,7 @@ pub fn apply_server_event_to_peers(
     Ok(shared_protocol.PeerLeft(device_id: device_id)) ->
       remove_peer(peers, device_id)
     Ok(shared_protocol.TextMessageEvent(message: _)) -> peers
+    Ok(shared_protocol.MessageHistory(messages: _)) -> peers
     Ok(shared_protocol.ErrorEvent(code: _, message: _)) -> peers
     Ok(shared_protocol.UnknownServerEvent(event_type: _)) -> peers
     Error(Nil) -> peers
@@ -67,12 +68,30 @@ pub fn add_text_message(
 ) -> dict.Dict(String, List(shared_protocol.TextMessage)) {
   let peer_id = conversation_peer_id(own_device_id, message)
   let existing = messages_for_peer(messages, option.Some(peer_id))
+  let next = case message_exists(existing, message.id) {
+    True -> existing
+    False -> list.append(existing, [message])
+  }
 
-  dict.insert(
-    into: messages,
-    for: peer_id,
-    insert: list.append(existing, [message]),
-  )
+  dict.insert(into: messages, for: peer_id, insert: next)
+}
+
+pub fn add_text_messages(
+  messages: dict.Dict(String, List(shared_protocol.TextMessage)),
+  own_device_id: String,
+  incoming: List(shared_protocol.TextMessage),
+) -> dict.Dict(String, List(shared_protocol.TextMessage)) {
+  list.fold(incoming, messages, fn(acc, message) {
+    add_text_message(acc, own_device_id, message)
+  })
+}
+
+fn message_exists(
+  messages: List(shared_protocol.TextMessage),
+  id: String,
+) -> Bool {
+  messages
+  |> list.any(fn(message) { message.id == id })
 }
 
 pub fn increment_unread(
@@ -164,24 +183,28 @@ pub fn messages_for_peer(
 
 pub fn clear_pending_draft(
   pending: option.Option(PendingDraftClear),
-  current_draft: String,
+  drafts: dict.Dict(String, String),
   message: shared_protocol.TextMessage,
-) -> #(String, option.Option(PendingDraftClear)) {
+) -> #(dict.Dict(String, String), option.Option(PendingDraftClear)) {
   case pending {
     option.Some(PendingDraftClear(to:, body:)) ->
       case
         message.from != message.to && message.to == to && message.body == body
       {
         True -> {
-          let draft = case current_draft == body {
-            True -> ""
-            False -> current_draft
+          let drafts = case dict.get(drafts, to) {
+            Ok(current_draft) ->
+              case current_draft == body {
+                True -> dict.delete(from: drafts, delete: to)
+                False -> drafts
+              }
+            Error(_) -> drafts
           }
-          #(draft, option.None)
+          #(drafts, option.None)
         }
-        False -> #(current_draft, pending)
+        False -> #(drafts, pending)
       }
-    option.None -> #(current_draft, option.None)
+    option.None -> #(drafts, option.None)
   }
 }
 
@@ -195,6 +218,7 @@ pub fn server_error_notice(
     "invalid_recipient" -> option.Some(message)
     "not_joined" -> option.Some(message)
     "invalid_event" -> option.Some(message)
+    "history_load_failed" -> option.Some(message)
     _ -> current
   }
 }

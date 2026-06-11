@@ -20,6 +20,12 @@ pub type Message {
     body: String,
     reply_to: process.Subject(Result(shared_protocol.TextMessage, StoreError)),
   )
+  LoadDeviceMessageHistory(
+    device_id: String,
+    reply_to: process.Subject(
+      Result(List(shared_protocol.TextMessage), StoreError),
+    ),
+  )
 }
 
 pub type StartError {
@@ -82,6 +88,23 @@ pub fn persist_text_message(
   }
 }
 
+pub fn load_device_message_history(
+  store: process.Subject(Message),
+  device_id device_id: String,
+  timeout timeout: Int,
+) -> Result(List(shared_protocol.TextMessage), StoreError) {
+  let reply_to = process.new_subject()
+  process.send(
+    store,
+    LoadDeviceMessageHistory(device_id: device_id, reply_to: reply_to),
+  )
+
+  case process.receive(from: reply_to, within: timeout) {
+    Ok(result) -> result
+    Error(Nil) -> Error(TimedOut)
+  }
+}
+
 fn handle_message(
   state: State,
   message: Message,
@@ -91,6 +114,13 @@ fn handle_message(
       process.send(
         reply_to,
         insert_text_message(state.connection, from, to, body),
+      )
+      actor.continue(state)
+    }
+    LoadDeviceMessageHistory(device_id:, reply_to:) -> {
+      process.send(
+        reply_to,
+        select_device_message_history(state.connection, device_id),
       )
       actor.continue(state)
     }
@@ -136,6 +166,44 @@ fn insert_text_message(
       ))
     _ -> Error(ExpectedOneRow)
   }
+}
+
+fn select_device_message_history(
+  connection: sqlight.Connection,
+  device_id: String,
+) -> Result(List(shared_protocol.TextMessage), StoreError) {
+  let #(query, params, decoder) =
+    sql.select_device_message_history(
+      from_device_id: device_id,
+      to_device_id: device_id,
+    )
+  use params <- result.try(params_to_sqlight(params))
+  use rows <- result.try(
+    sqlight.query(query, on: connection, with: params, expecting: decoder)
+    |> result.map_error(QueryFailed),
+  )
+
+  Ok(list.map(rows, history_row_to_text_message))
+}
+
+fn history_row_to_text_message(
+  row: sql.SelectDeviceMessageHistory,
+) -> shared_protocol.TextMessage {
+  let sql.SelectDeviceMessageHistory(
+    id: id,
+    from_device_id: from,
+    to_device_id: to,
+    body: body,
+    created_at_ms: created_at_ms,
+  ) = row
+
+  shared_protocol.TextMessage(
+    id: "msg_" <> int.to_string(id),
+    from: from,
+    to: to,
+    body: body,
+    created_at_ms: created_at_ms,
+  )
 }
 
 fn params_to_sqlight(

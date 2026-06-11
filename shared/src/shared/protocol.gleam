@@ -21,6 +21,7 @@ pub type ServerEvent {
   PeerJoined(peer: Peer)
   PeerLeft(device_id: String)
   TextMessageEvent(message: TextMessage)
+  MessageHistory(messages: List(TextMessage))
   ErrorEvent(code: String, message: String)
   UnknownServerEvent(event_type: String)
 }
@@ -30,6 +31,7 @@ type ServerEventType {
   PeerJoinedEvent
   PeerLeftEvent
   TextMessageServerEvent
+  MessageHistoryEvent
   ErrorServerEvent
   UnknownEventType(raw: String)
 }
@@ -137,6 +139,16 @@ fn decode_known_server_event(
       json.parse(from: input, using: text_message_decoder())
       |> result.map(fn(message) { TextMessageEvent(message: message) })
     }
+    MessageHistoryEvent -> {
+      let decoder = {
+        use messages <- decode.field(
+          "messages",
+          decode.list(text_message_decoder()),
+        )
+        decode.success(MessageHistory(messages: messages))
+      }
+      json.parse(from: input, using: decoder)
+    }
     ErrorServerEvent -> {
       let decoder = {
         use code <- decode.field("code", decode.string)
@@ -156,6 +168,7 @@ fn classify_server_event_type(event_type: String) -> ServerEventType {
     "peer.joined" -> PeerJoinedEvent
     "peer.left" -> PeerLeftEvent
     "text.message" -> TextMessageServerEvent
+    "message.history" -> MessageHistoryEvent
     "error" -> ErrorServerEvent
     other -> UnknownEventType(raw: other)
   }

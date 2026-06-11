@@ -72,10 +72,39 @@ pub fn decode_text_message_test() {
     )
 }
 
+pub fn decode_message_history_test() {
+  let assert Ok(protocol.MessageHistory([
+    protocol.TextMessage(
+      id: "msg_1",
+      from: "alice",
+      to: "bob",
+      body: "hello",
+      created_at_ms: 123,
+    ),
+    protocol.TextMessage(
+      id: "msg_2",
+      from: "bob",
+      to: "alice",
+      body: "again",
+      created_at_ms: 124,
+    ),
+  ])) =
+    protocol.decode_server_event(
+      "{\"type\":\"message.history\",\"messages\":[{\"id\":\"msg_1\",\"from\":\"alice\",\"to\":\"bob\",\"body\":\"hello\",\"created_at_ms\":123},{\"id\":\"msg_2\",\"from\":\"bob\",\"to\":\"alice\",\"body\":\"again\",\"created_at_ms\":124}]}",
+    )
+}
+
 pub fn decode_malformed_text_message_test() {
   let assert Error(Nil) =
     protocol.decode_server_event(
       "{\"type\":\"text.message\",\"id\":\"msg_1\",\"from\":\"alice\",\"to\":\"bob\",\"created_at_ms\":123}",
+    )
+}
+
+pub fn decode_malformed_message_history_test() {
+  let assert Error(Nil) =
+    protocol.decode_server_event(
+      "{\"type\":\"message.history\",\"messages\":[{\"id\":\"msg_1\",\"from\":\"alice\",\"to\":\"bob\",\"created_at_ms\":123}]}",
     )
 }
 
