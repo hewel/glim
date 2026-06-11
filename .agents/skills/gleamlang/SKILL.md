@@ -8,7 +8,7 @@ description: Use when you needs to write, edit, review, debug, test, or explain 
 ## Workflow
 
 1. Inspect `gleam.toml`, `manifest.toml`, `src/`, `test/`, and any target-specific FFI before editing.
-2. Prefer compiler-shaped designs: explicit function types, custom types for domain states, `Result` for fallible work, and exhaustive `case` expressions.
+2. Prefer compiler-shaped designs: explicit function types, custom types for domain states, `Result` for fallible work, and exhaustive `case` expressions for true branching.
 3. Keep APIs small and domain-focused. Avoid splitting modules by generic categories such as `types`, `utils`, `services`, or design-pattern names.
 4. After edits, run `gleam format` and `gleam test` when the CLI is available. If you cannot run them, say so and state what remains unverified.
 
@@ -25,6 +25,12 @@ description: Use when you needs to write, edit, review, debug, test, or explain 
 - Keep development tool configuration in `gleam.toml` under `tools.<tool_name>` when possible.
 - Put application or library code in `src`, tests in `test`, and development helper code in `dev`.
 
+## Control Flow
+
+- Do not build nested `case` pyramids for sequential fallible steps. Prefer flat `Result` control flow with `use value <- result.try(...)` when several extracted `Ok` values are needed, or a pipeline of `result.try`, `result.map`, and `result.map_error` when each step transforms the previous value.
+- Map lower-level errors at the boundary of each fallible step with `result.map_error`, so callers receive the module's domain error type rather than raw parser, decoder, transport, or FFI errors.
+- Keep `case` expressions for real branching: exhaustive custom-type handling, multi-shape pattern matching, or logic that genuinely differs per variant. Avoid `case` when it only unwraps `Ok`, forwards `Error`, and continues to the next fallible operation.
+
 ## Design Guidance
 
 - Model invalid states out of the type system. Replace ambiguous `Bool` fields or parallel `Option` fields with custom type variants.
@@ -33,7 +39,6 @@ description: Use when you needs to write, edit, review, debug, test, or explain 
 - Use the builder pattern for records with many optional settings. Let `new` establish required values and defaults, then add small pipeline-friendly update functions.
 - For HTTP clients, prefer sans-IO APIs: create one function that builds a request and another that parses a response, leaving transport to the caller.
 - Keep list algorithms aware that lists are immutable singly linked lists. Prefer prepending, pattern matching, `gleam/list` functions, or another data structure for indexed access.
-- Prefer `gleam/result.try`, `result.map`, `result.map_error`, pipelines, and `use <-` for linear `Result` workflows such as JSON validation, payload decoding, and dispatch. Avoid nested `case` expressions when each step only maps or forwards `Ok` and `Error`.
 - Use FFI sparingly. Provide precise external types and annotations; do not use `gleam/dynamic.Dynamic` to stand in for a more specific foreign type.
 
 ## References
