@@ -25,4 +25,9 @@ lustre_dev_tools = ">= 2.3.6 and < 3.0.0"
 
 [tools.lustre.build]
 no_html = true
-no_tailwind = true
+outdir = "../priv/static"
+
+[tools.lustre.html]
+stylesheets = [
+  { href = "/style.css" }
+]
