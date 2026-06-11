@@ -44,7 +44,8 @@ Supported:
 
 - load or create a browser device id from `localStorage`
 - edit display name
-- connect to `/ws`
+- auto-connect to `/ws` after identity load
+- retry interrupted WebSocket sessions with bounded backoff
 - send `peer.hello`
 - render `peer.list`, `peer.joined`, `peer.left`, `text.message`, and server `error` events
 - select a peer and send `text.send`

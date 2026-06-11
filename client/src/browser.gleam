@@ -111,6 +111,12 @@ pub fn close_receive_file(transfer_id: String) -> Effect(msg) {
   effect.from(fn(_dispatch) { do_close_receive_file(transfer_id) })
 }
 
+pub fn delay(milliseconds: Int, message: msg) -> Effect(msg) {
+  effect.from(fn(dispatch) {
+    do_delay(milliseconds, fn() { dispatch(message) })
+  })
+}
+
 @external(javascript, "./ffi.mjs", "streamSaveSupported")
 pub fn stream_save_supported() -> Bool
 
@@ -171,6 +177,11 @@ fn do_send_file_chunk(
 
 @external(javascript, "./ffi.mjs", "closeReceiveFile")
 fn do_close_receive_file(_transfer_id: String) -> Nil {
+  Nil
+}
+
+@external(javascript, "./ffi.mjs", "delay")
+fn do_delay(_milliseconds: Int, _callback: fn() -> Nil) -> Nil {
   Nil
 }
 

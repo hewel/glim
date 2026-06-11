@@ -171,6 +171,10 @@ export function closeReceiveFile(transferId) {
   }
 }
 
+export function delay(milliseconds, callback) {
+  setTimeout(callback, Math.max(0, milliseconds));
+}
+
 export function formatTime(ms) {
   const d = new Date(ms);
   const pad = (n) => String(n).padStart(2, '0');

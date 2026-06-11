@@ -8,6 +8,7 @@ import gleam/string
 import lustre
 import lustre/effect.{type Effect}
 import lustre/element.{type Element}
+import reconnect
 import shared/protocol as shared_protocol
 import transfer
 import ui/chat_panel
@@ -29,6 +30,8 @@ type Model {
     device_id: String,
     display_name: String,
     status: Status,
+    connection_generation: Int,
+    reconnect_attempt: Int,
     peers: List(shared_protocol.Peer),
     known_peers: dict.Dict(String, shared_protocol.Peer),
     selected_peer_id: option.Option(String),
@@ -46,7 +49,9 @@ type Model {
 
 type Status {
   Disconnected
+  Connecting
   Connected
+  Reconnecting
   ConnectionError
 }
 
@@ -71,11 +76,12 @@ type Message {
   BrowserFileReceiveFailed(String, String)
   WebSocketBinarySendFailed(String)
   BrowserLoadedIdentity(device_id: String, display_name: String)
-  WebSocketOpened
-  WebSocketClosed
-  WebSocketFailed
+  WebSocketOpened(generation: Int)
+  WebSocketClosed(generation: Int)
+  WebSocketFailed(generation: Int)
   WebSocketSendFailed
-  WebSocketReceived(raw: String)
+  WebSocketReceived(generation: Int, raw: String)
+  ReconnectTimerFired(generation: Int, attempt: Int)
   UserClickedClearLog
 }
 
@@ -89,6 +95,8 @@ fn init(_flags: Nil) -> #(Model, Effect(Message)) {
       device_id: "",
       display_name: "Glim Peer",
       status: Disconnected,
+      connection_generation: 0,
+      reconnect_attempt: 0,
       peers: [],
       known_peers: dict.new(),
       selected_peer_id: option.None,
@@ -118,7 +126,7 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
       effect.none(),
     )
 
-    UserClickedConnect -> connect(model)
+    UserClickedConnect -> connect_now(model)
 
     UserSelectedPeer(peer_id) -> #(
       Model(
@@ -235,16 +243,28 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
         shared_protocol.encode_file_cancel(transfer_id),
       )
 
-    BrowserLoadedIdentity(device_id:, display_name:) -> #(
-      Model(..model, device_id: device_id, display_name: display_name),
-      effect.none(),
-    )
+    BrowserLoadedIdentity(device_id:, display_name:) ->
+      connect_now(
+        Model(..model, device_id: device_id, display_name: display_name),
+      )
 
-    WebSocketOpened -> #(Model(..model, status: Connected), effect.none())
+    WebSocketOpened(generation:) ->
+      case generation == model.connection_generation {
+        True -> #(
+          Model(
+            ..model,
+            status: Connected,
+            reconnect_attempt: 0,
+            chat_notice: option.None,
+          ),
+          effect.none(),
+        )
+        False -> #(model, effect.none())
+      }
 
-    WebSocketClosed -> #(Model(..model, status: Disconnected), effect.none())
+    WebSocketClosed(generation:) -> connection_lost(model, generation)
 
-    WebSocketFailed -> #(Model(..model, status: ConnectionError), effect.none())
+    WebSocketFailed(generation:) -> connection_lost(model, generation)
 
     WebSocketSendFailed -> #(
       Model(
@@ -255,26 +275,103 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
       effect.none(),
     )
 
-    WebSocketReceived(raw:) -> handle_server_event(model, raw)
+    WebSocketReceived(generation:, raw:) ->
+      case generation == model.connection_generation {
+        True -> handle_server_event(model, raw)
+        False -> #(model, effect.none())
+      }
+
+    ReconnectTimerFired(generation:, attempt:) ->
+      case
+        generation == model.connection_generation
+        && attempt == model.reconnect_attempt
+      {
+        True -> connect_with_attempt(model, attempt, Reconnecting)
+        False -> #(model, effect.none())
+      }
   }
 }
 
-fn connect(model: Model) -> #(Model, Effect(Message)) {
+fn connect_now(model: Model) -> #(Model, Effect(Message)) {
+  connect_with_attempt(model, 0, Connecting)
+}
+
+fn connect_with_attempt(
+  model: Model,
+  attempt: Int,
+  status: Status,
+) -> #(Model, Effect(Message)) {
   let name = normalized_display_name(model.display_name)
   let hello_json = shared_protocol.encode_peer_hello(model.device_id, name)
+  let generation = model.connection_generation + 1
 
   #(
-    Model(..model, display_name: name),
+    Model(
+      ..model,
+      display_name: name,
+      status: status,
+      connection_generation: generation,
+      reconnect_attempt: attempt,
+    ),
     browser.connect(
       name,
       hello_json,
-      WebSocketOpened,
-      WebSocketClosed,
-      WebSocketFailed,
-      WebSocketReceived,
+      WebSocketOpened(generation: generation),
+      WebSocketClosed(generation: generation),
+      WebSocketFailed(generation: generation),
+      fn(raw) { WebSocketReceived(generation: generation, raw: raw) },
       BrowserFileChunkWritten,
       BrowserFileReceiveFailed,
     ),
+  )
+}
+
+fn connection_lost(model: Model, generation: Int) -> #(Model, Effect(Message)) {
+  case generation == model.connection_generation {
+    False -> #(model, effect.none())
+    True ->
+      case model.status {
+        Reconnecting -> #(model, effect.none())
+        Disconnected -> schedule_reconnect(model)
+        Connecting -> schedule_reconnect(model)
+        Connected -> schedule_reconnect(model)
+        ConnectionError -> schedule_reconnect(model)
+      }
+  }
+}
+
+fn schedule_reconnect(model: Model) -> #(Model, Effect(Message)) {
+  let attempt = model.reconnect_attempt + 1
+  let delay = reconnect.retry_delay_ms(attempt)
+  let close_effects =
+    model.transfers
+    |> transfer.interrupted_transfer_ids
+    |> list.map(browser.close_receive_file)
+  let model =
+    Model(
+      ..model,
+      status: Reconnecting,
+      reconnect_attempt: attempt,
+      peers: [],
+      transfers: transfer.mark_connection_lost(model.transfers),
+      local_files: dict.new(),
+      chat_notice: option.Some("Mesh disconnected. Reconnecting..."),
+    )
+
+  #(
+    model,
+    effect.batch(list.append(
+      [
+        browser.delay(
+          delay,
+          ReconnectTimerFired(
+            generation: model.connection_generation,
+            attempt: attempt,
+          ),
+        ),
+      ],
+      close_effects,
+    )),
   )
 }
 
@@ -731,6 +828,8 @@ fn ensure_connected(status: Status) -> Result(Nil, String) {
   case status {
     Connected -> Ok(Nil)
     Disconnected -> Error("Connect before sending messages.")
+    Connecting -> Error("Waiting for mesh connection.")
+    Reconnecting -> Error("Waiting for mesh reconnection.")
     ConnectionError -> Error("Connect before sending messages.")
   }
 }
@@ -1032,6 +1131,8 @@ fn chat_notice(model: Model) -> String {
 fn mesh_status_label(status: Status) -> String {
   case status {
     Connected -> "Discovery Active"
+    Connecting -> "Connecting"
+    Reconnecting -> "Reconnecting"
     Disconnected -> "Mesh Offline"
     ConnectionError -> "Connection Issue"
   }
@@ -1040,6 +1141,8 @@ fn mesh_status_label(status: Status) -> String {
 fn top_mesh_action_label(status: Status) -> String {
   case status {
     Connected -> "Mesh Online"
+    Connecting -> "Connecting"
+    Reconnecting -> "Retry Now"
     Disconnected -> "Start Mesh"
     ConnectionError -> "Retry Mesh"
   }

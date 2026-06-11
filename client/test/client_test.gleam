@@ -2,6 +2,7 @@ import chat
 import gleam/dict
 import gleam/option
 import gleeunit
+import reconnect
 import shared/protocol as shared_protocol
 import transfer
 
@@ -228,4 +229,61 @@ pub fn transfer_add_incoming_marks_unsupported_test() {
     status: transfer.Unsupported,
     notice: "Stream-to-save is not supported in this browser",
   )) = transfer.find(items, "transfer_1")
+}
+
+pub fn reconnect_retry_delay_caps_test() {
+  let assert 1000 = reconnect.retry_delay_ms(0)
+  let assert 1000 = reconnect.retry_delay_ms(1)
+  let assert 2000 = reconnect.retry_delay_ms(2)
+  let assert 5000 = reconnect.retry_delay_ms(3)
+  let assert 10_000 = reconnect.retry_delay_ms(4)
+  let assert 30_000 = reconnect.retry_delay_ms(5)
+  let assert 30_000 = reconnect.retry_delay_ms(20)
+}
+
+pub fn transfer_connection_loss_marks_active_transfers_failed_test() {
+  let selection =
+    transfer.FileSelection(
+      transfer_id: "transfer_1",
+      file_id: "file_1",
+      name: "clip.mov",
+      size: 512,
+      mime_type: "video/quicktime",
+    )
+  let completed =
+    transfer.Item(
+      transfer_id: "transfer_2",
+      peer_id: "bob",
+      peer_name: "Bob",
+      name: "done.txt",
+      mime_type: "text/plain",
+      size: 10,
+      transferred: 10,
+      direction: transfer.Sending,
+      status: transfer.Completed,
+      notice: "Complete",
+    )
+  let items =
+    [completed]
+    |> transfer.add_outgoing("bob", "Bob", selection)
+    |> transfer.mark_status("transfer_1", transfer.Transferring, "Transferring")
+
+  let assert ["transfer_1"] = transfer.interrupted_transfer_ids(items)
+  let assert option.Some(transfer.Item(
+    transfer_id: "transfer_1",
+    peer_id: "bob",
+    peer_name: "Bob",
+    name: "clip.mov",
+    mime_type: "video/quicktime",
+    size: 512,
+    transferred: 0,
+    direction: transfer.Sending,
+    status: transfer.Failed,
+    notice: "Connection lost.",
+  )) = items |> transfer.mark_connection_lost |> transfer.find("transfer_1")
+  let assert True =
+    items
+    |> transfer.mark_connection_lost
+    |> transfer.find("transfer_2")
+    == option.Some(completed)
 }

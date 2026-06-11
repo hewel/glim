@@ -146,7 +146,8 @@ Desktop keeps all panes visible when space allows. Mobile prioritizes the peer l
 
 ### Mesh and Chat
 
-- The connect action starts or retries the mesh session and sends `peer.hello`.
+- Identity load automatically starts the mesh session and sends `peer.hello`.
+- The mesh action retries the current session immediately when disconnected or reconnecting.
 - Selecting a peer clears unread count for that peer.
 - Text messages require a connected session, selected peer, online peer, and non-empty body.
 - Message history is restored state; do not mark replayed messages unread.
@@ -163,8 +164,8 @@ The UI must represent these states:
 - Transferring: chunks are streaming with receiver ACK pacing.
 - Completed: final chunk written and acknowledged.
 - Declined: receiver rejected the offer.
-- Cancelled: either side cancelled or a peer disconnected.
-- Failed: browser, socket, or save-stream error.
+- Cancelled: either side cancelled the transfer.
+- Failed: browser, socket, save-stream, or connection-loss error.
 - Unsupported: receiver browser cannot stream to a save target.
 
 The sender sends one 256 KiB chunk at a time. The receiver writes the chunk to the selected save stream before sending `file.chunk_ack`. This flow preserves no-app-cap semantics by avoiding full in-memory assembly.
@@ -192,7 +193,7 @@ When stream-to-save APIs are unsupported, the receiver must not accept the file.
 
 Use concise operational copy:
 
-- "Mesh Online", "Discovery Active", "Connection Issue"
+- "Mesh Online", "Discovery Active", "Connecting", "Reconnecting", "Connection Issue"
 - "Select a peer before sending."
 - "That peer is offline."
 - "Choose where to save this file"
@@ -205,6 +206,7 @@ Avoid consumer/social copy such as "friends", "profiles", "upload to cloud", "in
 
 - The server persists accepted text messages in SQLite.
 - File transfers are relayed over WebSocket only while both peers are online.
+- Browser clients auto-reconnect with bounded backoff after WebSocket loss.
 - File bytes use binary WebSocket frames with a length-prefixed JSON header.
 - The right rail is a transfer queue, not a general file library.
 - There are no upload/download HTTP endpoints and no LAN auto-discovery yet.

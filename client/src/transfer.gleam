@@ -159,6 +159,39 @@ pub fn mark_progress(
   })
 }
 
+pub fn mark_connection_lost(items: List(Item)) -> List(Item) {
+  items
+  |> list.map(fn(item) {
+    case item.status {
+      Offered -> Item(..item, status: Failed, notice: "Connection lost.")
+      AwaitingSave -> Item(..item, status: Failed, notice: "Connection lost.")
+      Transferring -> Item(..item, status: Failed, notice: "Connection lost.")
+      Completed -> item
+      Failed -> item
+      Cancelled -> item
+      Declined -> item
+      Unsupported -> item
+    }
+  })
+}
+
+pub fn interrupted_transfer_ids(items: List(Item)) -> List(String) {
+  items
+  |> list.filter(fn(item) {
+    case item.status {
+      Offered -> True
+      AwaitingSave -> True
+      Transferring -> True
+      Completed -> False
+      Failed -> False
+      Cancelled -> False
+      Declined -> False
+      Unsupported -> False
+    }
+  })
+  |> list.map(fn(item) { item.transfer_id })
+}
+
 pub fn active_count(items: List(Item)) -> Int {
   items
   |> list.filter(fn(item) {
