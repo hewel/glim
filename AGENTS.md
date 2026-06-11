@@ -803,3 +803,7 @@ Triage roles use the canonical labels: `needs-triage`, `needs-info`, `ready-for-
 ### Domain docs
 
 This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
+
+## Design
+
+See `docs/agents/DESIGN.md`
