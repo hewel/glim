@@ -26,6 +26,9 @@ cd .. && gleam run
 
 Open <http://localhost:9143> in a browser.
 
+The server stores accepted text messages in `priv/glim.sqlite`. The schema is
+bootstrapped from `priv/schema.sql` at startup.
+
 ## Production Client Bundle
 
 ```sh
@@ -60,6 +63,16 @@ The server routes accepted messages back to both peers as:
 {"type":"text.message","id":"msg_1","from":"device_abc","to":"device_xyz","body":"hello","created_at_ms":123}
 ```
 
+Message IDs are backed by SQLite row IDs and formatted as `msg_<rowid>`.
+
+## SQL Code Generation
+
+Type-safe SQL is generated with Parrot from files under `src/sql`.
+
+```sh
+sqlite3 /tmp/glim_parrot_codegen.sqlite < priv/schema.sql
+gleam run -m parrot -- --sqlite /tmp/glim_parrot_codegen.sqlite
+```
 
 ## Test
 
@@ -73,5 +86,5 @@ cd .. && gleam test
 
 - No file offers or file transfers.
 - No upload or download endpoints.
-- No persistence across server restarts.
+- No chat history replay from persisted messages.
 - No LAN auto-discovery.

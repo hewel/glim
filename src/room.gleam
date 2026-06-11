@@ -1,11 +1,13 @@
-import clock
 import gleam/dict
 import gleam/erlang/process
-import gleam/int
 import gleam/list
 import gleam/otp/actor
+import gleam/result
 import gleam/string
+import message_store
 import shared/protocol as shared_protocol
+
+const message_store_timeout_ms = 1000
 
 pub type ClientMessage {
   SendPeerList(peers: List(shared_protocol.Peer))
@@ -38,13 +40,44 @@ type PeerSession {
   )
 }
 
-type State {
-  State(peers: dict.Dict(String, PeerSession), next_message_sequence: Int)
+type SendTextRoute {
+  SendTextRoute(sender: PeerSession, receiver: PeerSession)
 }
 
-pub fn start() -> Result(process.Subject(Message), actor.StartError) {
+type SendTextRejection {
+  SendTextRejection(
+    client: process.Subject(ClientMessage),
+    code: String,
+    message: String,
+  )
+}
+
+type State {
+  State(
+    peers: dict.Dict(String, PeerSession),
+    message_store: process.Subject(message_store.Message),
+  )
+}
+
+pub type StartError {
+  StoreStartFailed(message_store.StartError)
+  RoomStartFailed(actor.StartError)
+}
+
+pub fn start() -> Result(process.Subject(Message), StartError) {
+  case message_store.start(":memory:") {
+    Ok(store) ->
+      start_with_store(store)
+      |> result.map_error(RoomStartFailed)
+    Error(error) -> Error(StoreStartFailed(error))
+  }
+}
+
+pub fn start_with_store(
+  store: process.Subject(message_store.Message),
+) -> Result(process.Subject(Message), actor.StartError) {
   case
-    actor.new(State(peers: dict.new(), next_message_sequence: 1))
+    actor.new(State(peers: dict.new(), message_store: store))
     |> actor.on_message(handle_message)
     |> actor.start
   {
@@ -127,64 +160,115 @@ fn send_text(
   body: String,
   client: process.Subject(ClientMessage),
 ) -> actor.Next(State, Message) {
+  case send_text_route(state, from, to, client) {
+    Ok(SendTextRoute(sender:, receiver:)) ->
+      persist_and_deliver_text(state, sender, receiver, from, to, body)
+    Error(rejection) -> reject_send_text(state, rejection)
+  }
+}
+
+fn send_text_route(
+  state: State,
+  from: String,
+  to: String,
+  client: process.Subject(ClientMessage),
+) -> Result(SendTextRoute, SendTextRejection) {
+  use Nil <- result.try(ensure_not_self(from, to, client))
+  use sender <- result.try(find_sender(state.peers, from, client))
+  use receiver <- result.try(find_receiver(state.peers, to, sender.client))
+
+  Ok(SendTextRoute(sender: sender, receiver: receiver))
+}
+
+fn ensure_not_self(
+  from: String,
+  to: String,
+  client: process.Subject(ClientMessage),
+) -> Result(Nil, SendTextRejection) {
   case from == to {
-    True -> {
-      process.send(
-        client,
-        SendError(
-          code: "invalid_recipient",
-          message: "You cannot send a message to yourself.",
-        ),
-      )
+    True ->
+      Error(SendTextRejection(
+        client: client,
+        code: "invalid_recipient",
+        message: "You cannot send a message to yourself.",
+      ))
+    False -> Ok(Nil)
+  }
+}
+
+fn find_sender(
+  peers: dict.Dict(String, PeerSession),
+  from: String,
+  client: process.Subject(ClientMessage),
+) -> Result(PeerSession, SendTextRejection) {
+  case dict.get(peers, from) {
+    Ok(sender) -> Ok(sender)
+    Error(_) ->
+      Error(SendTextRejection(
+        client: client,
+        code: "not_joined",
+        message: "Send peer.hello before sending messages.",
+      ))
+  }
+}
+
+fn find_receiver(
+  peers: dict.Dict(String, PeerSession),
+  to: String,
+  sender: process.Subject(ClientMessage),
+) -> Result(PeerSession, SendTextRejection) {
+  case dict.get(peers, to) {
+    Ok(receiver) -> Ok(receiver)
+    Error(_) ->
+      Error(SendTextRejection(
+        client: sender,
+        code: "peer_offline",
+        message: "The selected peer is no longer online.",
+      ))
+  }
+}
+
+fn persist_and_deliver_text(
+  state: State,
+  sender: PeerSession,
+  receiver: PeerSession,
+  from: String,
+  to: String,
+  body: String,
+) -> actor.Next(State, Message) {
+  case
+    message_store.persist_text_message(
+      state.message_store,
+      from: from,
+      to: to,
+      body: body,
+      timeout: message_store_timeout_ms,
+    )
+  {
+    Ok(message) -> {
+      process.send(sender.client, SendTextMessage(message))
+      process.send(receiver.client, SendTextMessage(message))
       actor.continue(state)
     }
-    False -> {
-      case dict.get(state.peers, from) {
-        Error(_) -> {
-          process.send(
-            client,
-            SendError(
-              code: "not_joined",
-              message: "Send peer.hello before sending messages.",
-            ),
-          )
-          actor.continue(state)
-        }
-        Ok(sender) -> {
-          case dict.get(state.peers, to) {
-            Error(_) -> {
-              process.send(
-                sender.client,
-                SendError(
-                  code: "peer_offline",
-                  message: "The selected peer is no longer online.",
-                ),
-              )
-              actor.continue(state)
-            }
-            Ok(receiver) -> {
-              let message =
-                shared_protocol.TextMessage(
-                  id: "msg_" <> int.to_string(state.next_message_sequence),
-                  from: from,
-                  to: to,
-                  body: body,
-                  created_at_ms: clock.now_ms(),
-                )
-              process.send(sender.client, SendTextMessage(message))
-              process.send(receiver.client, SendTextMessage(message))
-              actor.continue(
-                State(
-                  ..state,
-                  next_message_sequence: state.next_message_sequence + 1,
-                ),
-              )
-            }
-          }
-        }
-      }
-    }
+    Error(_) ->
+      reject_send_text(
+        state,
+        SendTextRejection(
+          client: sender.client,
+          code: "message_persist_failed",
+          message: "Message could not be saved.",
+        ),
+      )
   }
+}
+
+fn reject_send_text(
+  state: State,
+  rejection: SendTextRejection,
+) -> actor.Next(State, Message) {
+  let SendTextRejection(client:, code:, message:) = rejection
+  process.send(client, SendError(code: code, message: message))
+  actor.continue(state)
 }
 
 fn sorted_peers(
