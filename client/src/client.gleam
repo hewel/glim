@@ -47,6 +47,7 @@ type Message {
   UserTypedDisplayName(String)
   UserClickedConnect
   UserSelectedPeer(String)
+  UserDeselectedPeer
   UserTypedMessage(String)
   UserClickedSendMessage
   UserPressedMessageKey(String)
@@ -117,6 +118,11 @@ fn update(model: Model, message: Message) -> #(Model, Effect(Message)) {
         unread_by_peer: chat.clear_unread(model.unread_by_peer, peer_id),
         chat_notice: option.None,
       ),
+      effect.none(),
+    )
+
+    UserDeselectedPeer -> #(
+      Model(..model, selected_peer_id: option.None),
       effect.none(),
     )
 
@@ -334,6 +340,23 @@ fn normalized_display_name(display_name: String) -> String {
 }
 
 fn view(model: Model) -> Element(Message) {
+  let is_peer_selected = case model.selected_peer_id {
+    option.Some(_) -> True
+    option.None -> False
+  }
+
+  let sidebar_class = case is_peer_selected {
+    True ->
+      "w-full md:w-80 flex flex-col border-r border-slate-800/60 bg-slate-900/40 backdrop-blur-sm shrink-0 hidden md:flex"
+    False ->
+      "w-full md:w-80 flex flex-col border-r border-slate-800/60 bg-slate-900/40 backdrop-blur-sm shrink-0 flex"
+  }
+
+  let chat_class = case is_peer_selected {
+    True -> "flex-1 flex flex-col bg-slate-950/20 flex"
+    False -> "flex-1 flex flex-col bg-slate-950/20 hidden md:flex"
+  }
+
   html.div(
     [
       attribute.class(
@@ -345,7 +368,7 @@ fn view(model: Model) -> Element(Message) {
       html.header(
         [
           attribute.class(
-            "flex items-center justify-between border-b border-slate-800/80 bg-slate-900/60 px-6 py-4 backdrop-blur-md z-10",
+            "flex items-center justify-between border-b border-slate-800/80 bg-slate-900/60 px-4 md:px-6 py-3 md:py-4 backdrop-blur-md z-10",
           ),
         ],
         [
@@ -354,7 +377,7 @@ fn view(model: Model) -> Element(Message) {
             html.div(
               [
                 attribute.class(
-                  "flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-600 font-bold text-white shadow-lg shadow-indigo-500/25",
+                  "flex h-9 w-9 md:h-10 md:w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-600 font-bold text-white shadow-lg shadow-indigo-500/25 text-sm md:text-base",
                 ),
               ],
               [html.text("G")],
@@ -363,7 +386,7 @@ fn view(model: Model) -> Element(Message) {
               html.h1(
                 [
                   attribute.class(
-                    "text-lg font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent",
+                    "text-sm md:text-lg font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent",
                   ),
                 ],
                 [html.text("Glim Share")],
@@ -371,7 +394,7 @@ fn view(model: Model) -> Element(Message) {
               html.p(
                 [
                   attribute.class(
-                    "text-[10px] text-slate-400 font-medium tracking-wider uppercase",
+                    "text-[8px] md:text-[10px] text-slate-400 font-medium tracking-wider uppercase",
                   ),
                 ],
                 [html.text("LAN Messenger")],
@@ -382,7 +405,7 @@ fn view(model: Model) -> Element(Message) {
           html.div(
             [
               attribute.class(
-                "flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold "
+                "flex items-center gap-1.5 md:gap-2 rounded-full px-2.5 md:px-3 py-0.5 md:py-1 text-[10px] md:text-xs font-semibold "
                 <> status_pill_classes(model.status),
               ),
             ],
@@ -390,7 +413,8 @@ fn view(model: Model) -> Element(Message) {
               html.span(
                 [
                   attribute.class(
-                    "h-2 w-2 rounded-full " <> status_dot_classes(model.status),
+                    "h-1.5 w-1.5 md:h-2 md:w-2 rounded-full "
+                    <> status_dot_classes(model.status),
                   ),
                 ],
                 [],
@@ -403,105 +427,96 @@ fn view(model: Model) -> Element(Message) {
       // Main Content Split-Pane
       html.div([attribute.class("flex-1 flex overflow-hidden")], [
         // Sidebar (Profile Settings & Active Peer List)
-        html.aside(
-          [
-            attribute.class(
-              "w-80 flex flex-col border-r border-slate-800/60 bg-slate-900/40 backdrop-blur-sm shrink-0",
-            ),
-          ],
-          [
-            // Profile Card (Configure Display Name)
+        html.aside([attribute.class(sidebar_class)], [
+          // Profile Card (Configure Display Name)
+          html.div(
+            [
+              attribute.class(
+                "p-4 md:p-5 border-b border-slate-800/50 flex flex-col gap-3",
+              ),
+            ],
+            [
+              html.label(
+                [
+                  attribute.for("display-name"),
+                  attribute.class(
+                    "text-[10px] font-bold uppercase tracking-wider text-slate-400",
+                  ),
+                ],
+                [html.text("Display Name")],
+              ),
+              html.div([attribute.class("flex gap-2")], [
+                html.input([
+                  attribute.id("display-name"),
+                  attribute.class(
+                    "flex-1 bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all",
+                  ),
+                  attribute.maxlength(64),
+                  attribute.autocomplete("name"),
+                  attribute.value(model.display_name),
+                  event.on_input(UserTypedDisplayName),
+                ]),
+                html.button(
+                  [
+                    attribute.id("connect-button"),
+                    attribute.type_("button"),
+                    attribute.class(
+                      "bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-sm rounded-lg px-4 py-2 shadow-md shadow-indigo-600/15 hover:shadow-indigo-600/25 transition-all cursor-pointer",
+                    ),
+                    event.on_click(UserClickedConnect),
+                  ],
+                  [html.text("Join")],
+                ),
+              ]),
+            ],
+          ),
+          // Peer list container
+          html.div([attribute.class("flex-1 flex flex-col min-h-0")], [
             html.div(
               [
                 attribute.class(
-                  "p-5 border-b border-slate-800/50 flex flex-col gap-3",
+                  "px-4 md:px-5 py-3 md:py-4 flex items-center justify-between border-b border-slate-800/20",
                 ),
               ],
               [
-                html.label(
+                html.span(
                   [
-                    attribute.for("display-name"),
                     attribute.class(
                       "text-[10px] font-bold uppercase tracking-wider text-slate-400",
                     ),
                   ],
-                  [html.text("Display Name")],
+                  [html.text("Active Peers")],
                 ),
-                html.div([attribute.class("flex gap-2")], [
-                  html.input([
-                    attribute.id("display-name"),
+                html.span(
+                  [
                     attribute.class(
-                      "flex-1 bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all",
+                      "bg-slate-800 text-slate-400 text-xs px-2.5 py-0.5 rounded-full font-semibold",
                     ),
-                    attribute.maxlength(64),
-                    attribute.autocomplete("name"),
-                    attribute.value(model.display_name),
-                    event.on_input(UserTypedDisplayName),
-                  ]),
-                  html.button(
-                    [
-                      attribute.id("connect-button"),
-                      attribute.type_("button"),
-                      attribute.class(
-                        "bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-sm rounded-lg px-4 py-2 shadow-md shadow-indigo-600/15 hover:shadow-indigo-600/25 transition-all cursor-pointer",
-                      ),
-                      event.on_click(UserClickedConnect),
-                    ],
-                    [html.text("Join")],
-                  ),
-                ]),
+                  ],
+                  [
+                    html.text(
+                      model.peers
+                      |> list.filter(fn(p) { p.id != model.device_id })
+                      |> list.length
+                      |> int.to_string,
+                    ),
+                  ],
+                ),
               ],
             ),
-            // Peer list container
-            html.div([attribute.class("flex-1 flex flex-col min-h-0")], [
-              html.div(
-                [
-                  attribute.class(
-                    "px-5 py-4 flex items-center justify-between border-b border-slate-800/20",
-                  ),
-                ],
-                [
-                  html.span(
-                    [
-                      attribute.class(
-                        "text-[10px] font-bold uppercase tracking-wider text-slate-400",
-                      ),
-                    ],
-                    [html.text("Active Peers")],
-                  ),
-                  html.span(
-                    [
-                      attribute.class(
-                        "bg-slate-800 text-slate-400 text-xs px-2.5 py-0.5 rounded-full font-semibold",
-                      ),
-                    ],
-                    [
-                      html.text(
-                        model.peers
-                        |> list.filter(fn(p) { p.id != model.device_id })
-                        |> list.length
-                        |> int.to_string,
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              html.ul(
-                [
-                  attribute.id("peers"),
-                  attribute.class(
-                    "flex-1 overflow-y-auto p-3 space-y-1 select-none scrollbar-none",
-                  ),
-                ],
-                view_peers(model),
-              ),
-            ]),
-          ],
-        ),
-        // Chat Window (Flex-1)
-        html.div([attribute.class("flex-1 flex flex-col bg-slate-950/20")], [
-          view_chat(model),
+            html.ul(
+              [
+                attribute.id("peers"),
+                attribute.class(
+                  "flex-1 overflow-y-auto p-2 md:p-3 space-y-1 select-none scrollbar-none",
+                ),
+              ],
+              view_peers(model),
+            ),
+          ]),
         ]),
+        // Chat Window (Flex-1)
+        html.div([attribute.class(chat_class)], [view_chat(model)]),
       ]),
       // Collapsible Log Drawer
       view_log_drawer(model),
@@ -689,15 +704,31 @@ fn view_chat(model: Model) -> Element(Message) {
           html.div(
             [
               attribute.class(
-                "flex items-center justify-between border-b border-slate-800/60 bg-slate-900/10 px-6 py-4",
+                "flex items-center justify-between border-b border-slate-800/60 bg-slate-900/10 px-4 md:px-6 py-3 md:py-4",
               ),
             ],
             [
-              html.div([attribute.class("flex items-center gap-3")], [
+              html.div([attribute.class("flex items-center gap-2 md:gap-3")], [
+                // Back Button (hidden on desktop, visible on mobile)
+                html.button(
+                  [
+                    attribute.type_("button"),
+                    attribute.class(
+                      "flex md:hidden h-8 w-8 items-center justify-center rounded-lg bg-slate-800/80 border border-slate-700/50 hover:bg-slate-700 text-slate-300 hover:text-white transition-all cursor-pointer shrink-0 mr-1",
+                    ),
+                    event.on_click(UserDeselectedPeer),
+                  ],
+                  [
+                    html.span(
+                      [attribute.class("text-xs relative -top-[0.5px]")],
+                      [html.text("◀")],
+                    ),
+                  ],
+                ),
                 html.div(
                   [
                     attribute.class(
-                      "h-2.5 w-2.5 rounded-full "
+                      "h-2.5 w-2.5 rounded-full shrink-0 "
                       <> case is_online {
                         True -> "bg-emerald-500 shadow-sm shadow-emerald-500/50"
                         False -> "bg-slate-600"
@@ -706,18 +737,18 @@ fn view_chat(model: Model) -> Element(Message) {
                   ],
                   [],
                 ),
-                html.div([], [
+                html.div([attribute.class("min-w-0")], [
                   html.h2(
                     [
                       attribute.id("chat-heading"),
-                      attribute.class("text-sm font-bold text-white"),
+                      attribute.class("text-sm font-bold text-white truncate"),
                     ],
                     [html.text(chat_heading(model))],
                   ),
                   html.p(
                     [
                       attribute.class(
-                        "text-[10px] text-slate-500 font-mono mt-0.5",
+                        "text-[10px] text-slate-500 font-mono mt-0.5 truncate",
                       ),
                     ],
                     [html.text(peer_id)],
@@ -729,7 +760,7 @@ fn view_chat(model: Model) -> Element(Message) {
                   html.span(
                     [
                       attribute.class(
-                        "bg-red-950/40 border border-red-800/40 text-red-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider",
+                        "bg-red-950/40 border border-red-800/40 text-red-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0",
                       ),
                     ],
                     [html.text("Offline")],
@@ -746,7 +777,7 @@ fn view_chat(model: Model) -> Element(Message) {
                 [
                   attribute.id("chat-notice"),
                   attribute.class(
-                    "mx-6 mt-4 p-3 rounded-lg bg-red-950/30 border border-red-900/30 text-xs text-red-400 flex items-center gap-2",
+                    "mx-4 md:mx-6 mt-4 p-3 rounded-lg bg-red-950/30 border border-red-900/30 text-xs text-red-400 flex items-center gap-2",
                   ),
                 ],
                 [
@@ -762,7 +793,7 @@ fn view_chat(model: Model) -> Element(Message) {
             [
               attribute.id("messages"),
               attribute.class(
-                "flex-1 overflow-y-auto px-6 py-6 space-y-4 flex flex-col-reverse",
+                "flex-1 overflow-y-auto px-4 md:px-6 py-4 md:py-6 space-y-4 flex flex-col-reverse",
               ),
             ],
             view_messages(model),
@@ -771,14 +802,14 @@ fn view_chat(model: Model) -> Element(Message) {
           html.div(
             [
               attribute.class(
-                "p-4 border-t border-slate-900/80 bg-slate-950/40 flex flex-col gap-2",
+                "p-3 md:p-4 border-t border-slate-900/80 bg-slate-950/40 flex flex-col gap-2",
               ),
             ],
             [
               html.div(
                 [
                   attribute.class(
-                    "flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-full pl-5 pr-2 py-1.5 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all",
+                    "flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-full pl-4 md:pl-5 pr-2 py-1.5 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all",
                   ),
                 ],
                 [
