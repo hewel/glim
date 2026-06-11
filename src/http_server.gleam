@@ -3,6 +3,7 @@ import gleam/erlang/process
 import gleam/http/request
 import gleam/http/response
 import gleam/option
+import gleam/string
 import mist
 import room
 import websocket
@@ -32,6 +33,7 @@ pub fn handle_request(
       serve_static_file("priv/static/style.css", "text/css; charset=utf-8")
     ["assets", "client.css"] ->
       serve_static_file("priv/static/client.css", "text/css; charset=utf-8")
+    ["assets", file_name] -> serve_static_asset(file_name)
     ["ws"] ->
       mist.websocket(
         request: req,
@@ -40,6 +42,36 @@ pub fn handle_request(
         handler: websocket.handle_message,
       )
     _ -> not_found()
+  }
+}
+
+fn serve_static_asset(file_name: String) {
+  case safe_asset_name(file_name) {
+    True ->
+      serve_static_file(
+        "priv/static/assets/" <> file_name,
+        asset_content_type(file_name),
+      )
+    False -> not_found()
+  }
+}
+
+fn safe_asset_name(file_name: String) -> Bool {
+  !string.contains(file_name, "/") && !string.contains(file_name, "..")
+}
+
+fn asset_content_type(file_name: String) -> String {
+  case
+    string.ends_with(file_name, ".js"),
+    string.ends_with(file_name, ".css"),
+    string.ends_with(file_name, ".svg"),
+    string.ends_with(file_name, ".woff2")
+  {
+    True, False, False, False -> "application/javascript; charset=utf-8"
+    False, True, False, False -> "text/css; charset=utf-8"
+    False, False, True, False -> "image/svg+xml"
+    False, False, False, True -> "font/woff2"
+    _, _, _, _ -> "application/octet-stream"
   }
 }
 

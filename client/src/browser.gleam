@@ -117,15 +117,15 @@ pub fn delay(milliseconds: Int, message: msg) -> Effect(msg) {
   })
 }
 
-@external(javascript, "./ffi.mjs", "streamSaveSupported")
+@external(javascript, "@browser/ffi", "streamSaveSupported")
 pub fn stream_save_supported() -> Bool
 
-@external(javascript, "./ffi.mjs", "loadIdentity")
+@external(javascript, "@browser/ffi", "loadIdentity")
 fn do_load_identity() -> Identity {
   Identity(device_id: "", display_name: "Glim Peer")
 }
 
-@external(javascript, "./ffi.mjs", "connect")
+@external(javascript, "@browser/ffi", "connect")
 fn do_connect(
   _display_name: String,
   _hello_json: String,
@@ -139,12 +139,12 @@ fn do_connect(
   Nil
 }
 
-@external(javascript, "./ffi.mjs", "send")
+@external(javascript, "@browser/ffi", "send")
 fn do_send(_payload: String, _on_error: fn() -> Nil) -> Nil {
   Nil
 }
 
-@external(javascript, "./ffi.mjs", "selectFile")
+@external(javascript, "@browser/ffi", "selectFile")
 fn do_select_file(
   _on_selected: fn(transfer.FileSelection) -> Nil,
   _on_error: fn() -> Nil,
@@ -152,7 +152,7 @@ fn do_select_file(
   Nil
 }
 
-@external(javascript, "./ffi.mjs", "startReceiveFile")
+@external(javascript, "@browser/ffi", "startReceiveFile")
 fn do_start_receive_file(
   _transfer_id: String,
   _name: String,
@@ -163,7 +163,7 @@ fn do_start_receive_file(
   Nil
 }
 
-@external(javascript, "./ffi.mjs", "sendFileChunk")
+@external(javascript, "@browser/ffi", "sendFileChunk")
 fn do_send_file_chunk(
   _file_id: String,
   _transfer_id: String,
@@ -175,15 +175,15 @@ fn do_send_file_chunk(
   Nil
 }
 
-@external(javascript, "./ffi.mjs", "closeReceiveFile")
+@external(javascript, "@browser/ffi", "closeReceiveFile")
 fn do_close_receive_file(_transfer_id: String) -> Nil {
   Nil
 }
 
-@external(javascript, "./ffi.mjs", "delay")
+@external(javascript, "@browser/ffi", "delay")
 fn do_delay(_milliseconds: Int, _callback: fn() -> Nil) -> Nil {
   Nil
 }
 
-@external(javascript, "./ffi.mjs", "formatTime")
+@external(javascript, "@browser/ffi", "formatTime")
 pub fn format_time(ms: Int) -> String

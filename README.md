@@ -2,7 +2,7 @@
 
 Experimental local-network instant messaging and file sharing service in Gleam.
 
-The current slice is a Lustre client bundle backed by a Mist WebSocket presence and peer-to-peer text chat server.
+The current slice is a Lustre client backed by a Mist WebSocket presence and peer-to-peer text chat server. Browser development is served by Vite.
 
 ## Development Run
 
@@ -12,19 +12,19 @@ Build and test the shared protocol package:
 cd shared && gleam test
 ```
 
-Build the Lustre browser client into the server static directory:
-
-```sh
-cd ../client && gleam run -m lustre/dev build --outdir=../priv/static
-```
-
 Start the server:
 
 ```sh
 cd .. && gleam run
 ```
 
-Open <http://localhost:9143> in a browser.
+Start the Vite client in another terminal:
+
+```sh
+cd client && bun run dev
+```
+
+Open <http://localhost:5173> in a browser. Vite proxies `/ws` to the Gleam server on <http://localhost:9143>.
 
 The server stores accepted text messages in `priv/glim.sqlite`. The schema is
 bootstrapped from `priv/schema.sql` at startup.
@@ -32,7 +32,7 @@ bootstrapped from `priv/schema.sql` at startup.
 ## Production Client Bundle
 
 ```sh
-cd client && gleam run -m lustre/dev build --minify --outdir=../priv/static
+cd client && bun run build
 ```
 
 ## WebSocket Endpoint
@@ -96,6 +96,7 @@ gleam run -m parrot -- --sqlite /tmp/glim_parrot_codegen.sqlite
 ```sh
 cd shared && gleam test
 cd ../client && gleam test
+cd ../client && bun run check
 cd .. && gleam test
 ```
 

@@ -6,6 +6,7 @@ erl_crash.dump
 /priv/static/client.js
 /priv/static/client.css
 /priv/static/index.html
+/priv/static/assets/
 
 /priv/glim.sqlite
 /priv/glim.sqlite-shm

@@ -1,0 +1,24 @@
+{
+  "name": "glim-client",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "check:ts": "gleam build --target=javascript && tsc --noEmit",
+    "test:ts": "bun test src/browser/transfer_frame.test.ts",
+    "test:e2e": "bun run build && playwright test",
+    "check": "bun run check:ts && bun run test:ts && gleam check && gleam test && bun run build"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/node": "^25.9.3",
+    "tailwindcss": "^4.3.0",
+    "ts-gleam": "^1.1.0",
+    "typescript": "6.0.3",
+    "vite": "8.0.16",
+    "vite-gleam": "^1.7.1"
+  }
+}
