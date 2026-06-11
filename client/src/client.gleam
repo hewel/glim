@@ -334,118 +334,499 @@ fn normalized_display_name(display_name: String) -> String {
 }
 
 fn view(model: Model) -> Element(Message) {
-  html.main([], [
-    html.h1([], [html.text("LAN Share IM")]),
-    html.p([], [
-      html.text(
-        "Lustre full-stack slice: connect, view LAN presence, and chat.",
+  html.div(
+    [
+      attribute.class(
+        "h-screen w-screen flex flex-col bg-slate-950 text-slate-100 font-sans overflow-hidden antialiased",
       ),
-    ]),
-    html.label([attribute.for("display-name")], [html.text("Display name")]),
-    html.input([
-      attribute.id("display-name"),
-      attribute.maxlength(64),
-      attribute.autocomplete("name"),
-      attribute.value(model.display_name),
-      event.on_input(UserTypedDisplayName),
-    ]),
-    html.button(
-      [
-        attribute.id("connect-button"),
-        attribute.type_("button"),
-        event.on_click(UserClickedConnect),
-      ],
-      [html.text("Connect")],
-    ),
-    html.p([attribute.id("status")], [html.text(status_text(model.status))]),
-    html.h2([attribute.class("text-3xl font-bold underline")], [
-      html.text("Peers"),
-    ]),
-    html.ul([attribute.id("peers")], view_peers(model)),
-    view_chat(model),
-    html.h2([], [html.text("Event log")]),
-    html.pre([attribute.id("log")], [
-      html.text(model.log |> string.join(with: "\n")),
-    ]),
-  ])
+    ],
+    [
+      // Top Navigation / Header
+      html.header(
+        [
+          attribute.class(
+            "flex items-center justify-between border-b border-slate-800/80 bg-slate-900/60 px-6 py-4 backdrop-blur-md z-10",
+          ),
+        ],
+        [
+          html.div([attribute.class("flex items-center gap-3")], [
+            // Styled logo icon
+            html.div(
+              [
+                attribute.class(
+                  "flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-tr from-violet-600 to-indigo-600 font-bold text-white shadow-lg shadow-indigo-500/25",
+                ),
+              ],
+              [html.text("G")],
+            ),
+            html.div([], [
+              html.h1(
+                [
+                  attribute.class(
+                    "text-lg font-bold tracking-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent",
+                  ),
+                ],
+                [html.text("Glim Share")],
+              ),
+              html.p(
+                [
+                  attribute.class(
+                    "text-[10px] text-slate-400 font-medium tracking-wider uppercase",
+                  ),
+                ],
+                [html.text("LAN Messenger")],
+              ),
+            ]),
+          ]),
+          // Status Indicator Pill
+          html.div(
+            [
+              attribute.class(
+                "flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold "
+                <> status_pill_classes(model.status),
+              ),
+            ],
+            [
+              html.span(
+                [
+                  attribute.class(
+                    "h-2 w-2 rounded-full " <> status_dot_classes(model.status),
+                  ),
+                ],
+                [],
+              ),
+              html.span([], [html.text(status_text(model.status))]),
+            ],
+          ),
+        ],
+      ),
+      // Main Content Split-Pane
+      html.div([attribute.class("flex-1 flex overflow-hidden")], [
+        // Sidebar (Profile Settings & Active Peer List)
+        html.aside(
+          [
+            attribute.class(
+              "w-80 flex flex-col border-r border-slate-800/60 bg-slate-900/40 backdrop-blur-sm shrink-0",
+            ),
+          ],
+          [
+            // Profile Card (Configure Display Name)
+            html.div(
+              [
+                attribute.class(
+                  "p-5 border-b border-slate-800/50 flex flex-col gap-3",
+                ),
+              ],
+              [
+                html.label(
+                  [
+                    attribute.for("display-name"),
+                    attribute.class(
+                      "text-[10px] font-bold uppercase tracking-wider text-slate-400",
+                    ),
+                  ],
+                  [html.text("Display Name")],
+                ),
+                html.div([attribute.class("flex gap-2")], [
+                  html.input([
+                    attribute.id("display-name"),
+                    attribute.class(
+                      "flex-1 bg-slate-800/60 border border-slate-700/50 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all",
+                    ),
+                    attribute.maxlength(64),
+                    attribute.autocomplete("name"),
+                    attribute.value(model.display_name),
+                    event.on_input(UserTypedDisplayName),
+                  ]),
+                  html.button(
+                    [
+                      attribute.id("connect-button"),
+                      attribute.type_("button"),
+                      attribute.class(
+                        "bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white font-semibold text-sm rounded-lg px-4 py-2 shadow-md shadow-indigo-600/15 hover:shadow-indigo-600/25 transition-all cursor-pointer",
+                      ),
+                      event.on_click(UserClickedConnect),
+                    ],
+                    [html.text("Join")],
+                  ),
+                ]),
+              ],
+            ),
+            // Peer list container
+            html.div([attribute.class("flex-1 flex flex-col min-h-0")], [
+              html.div(
+                [
+                  attribute.class(
+                    "px-5 py-4 flex items-center justify-between border-b border-slate-800/20",
+                  ),
+                ],
+                [
+                  html.span(
+                    [
+                      attribute.class(
+                        "text-[10px] font-bold uppercase tracking-wider text-slate-400",
+                      ),
+                    ],
+                    [html.text("Active Peers")],
+                  ),
+                  html.span(
+                    [
+                      attribute.class(
+                        "bg-slate-800 text-slate-400 text-xs px-2.5 py-0.5 rounded-full font-semibold",
+                      ),
+                    ],
+                    [
+                      html.text(
+                        model.peers
+                        |> list.filter(fn(p) { p.id != model.device_id })
+                        |> list.length
+                        |> int.to_string,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              html.ul(
+                [
+                  attribute.id("peers"),
+                  attribute.class(
+                    "flex-1 overflow-y-auto p-3 space-y-1 select-none scrollbar-none",
+                  ),
+                ],
+                view_peers(model),
+              ),
+            ]),
+          ],
+        ),
+        // Chat Window (Flex-1)
+        html.div([attribute.class("flex-1 flex flex-col bg-slate-950/20")], [
+          view_chat(model),
+        ]),
+      ]),
+      // Collapsible Log Drawer
+      view_log_drawer(model),
+    ],
+  )
 }
 
 fn view_peers(model: Model) -> List(Element(Message)) {
-  model.peers
-  |> list.filter(fn(peer) { peer.id != model.device_id })
-  |> list.map(fn(peer) { view_peer(model, peer) })
+  let other_peers =
+    model.peers
+    |> list.filter(fn(peer) { peer.id != model.device_id })
+
+  case other_peers {
+    [] -> [
+      html.div(
+        [
+          attribute.class(
+            "flex flex-col items-center justify-center p-8 text-center text-slate-500 space-y-2 mt-8",
+          ),
+        ],
+        [
+          html.span([attribute.class("text-3xl animate-pulse")], [
+            html.text("📡"),
+          ]),
+          html.p([attribute.class("text-sm font-semibold text-slate-400")], [
+            html.text("Waiting for other peers..."),
+          ]),
+          html.p(
+            [
+              attribute.class(
+                "text-xs text-slate-500 max-w-[200px] leading-relaxed",
+              ),
+            ],
+            [
+              html.text(
+                "Open this page on another local device to start chatting.",
+              ),
+            ],
+          ),
+        ],
+      ),
+    ]
+    _ ->
+      other_peers
+      |> list.map(fn(peer) { view_peer(model, peer) })
+  }
 }
 
 fn view_peer(model: Model, peer: shared_protocol.Peer) -> Element(Message) {
   let count = chat.unread_count(model.unread_by_peer, peer.id)
-  let label = case count {
-    0 -> peer.display_name <> " (" <> peer.id <> ")"
-    _ ->
-      peer.display_name
-      <> " ("
-      <> peer.id
-      <> ") — "
-      <> int.to_string(count)
-      <> " unread"
+  let is_selected = chat.is_selected(model.selected_peer_id, peer.id)
+
+  let item_class = case is_selected {
+    True ->
+      "flex items-center gap-3 p-3 rounded-xl bg-indigo-600/10 border border-indigo-500/20 text-white cursor-pointer transition-all"
+    False ->
+      "flex items-center gap-3 p-3 rounded-xl hover:bg-slate-800/40 text-slate-300 hover:text-white cursor-pointer transition-all"
   }
-  let class_name = case chat.is_selected(model.selected_peer_id, peer.id) {
-    True -> "selected font-bold"
-    False -> ""
+
+  // Get avatar initial
+  let initial =
+    peer.display_name
+    |> string.first
+    |> result.unwrap("P")
+    |> string.uppercase
+
+  // Dynamic gradient based on ID first character to give peers different colors
+  let avatar_gradient = case string.first(peer.id) {
+    Ok("a") | Ok("b") | Ok("c") | Ok("d") | Ok("e") | Ok("f") ->
+      "from-rose-500 to-orange-500"
+    Ok("g") | Ok("h") | Ok("i") | Ok("j") | Ok("k") | Ok("l") ->
+      "from-emerald-500 to-teal-500"
+    Ok("m") | Ok("n") | Ok("o") | Ok("p") | Ok("q") | Ok("r") ->
+      "from-sky-500 to-indigo-500"
+    _ -> "from-violet-500 to-fuchsia-500"
   }
 
   html.li(
     [
       attribute.data("device-id", peer.id),
-      attribute.class(class_name),
+      attribute.class(item_class),
       event.on_click(UserSelectedPeer(peer.id)),
     ],
-    [html.text(label)],
+    [
+      // Avatar
+      html.div(
+        [
+          attribute.class(
+            "flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-tr text-white font-bold text-sm shadow-md "
+            <> avatar_gradient,
+          ),
+        ],
+        [html.text(initial)],
+      ),
+      // Info
+      html.div([attribute.class("flex-1 min-w-0")], [
+        html.div([attribute.class("flex items-center justify-between")], [
+          html.span(
+            [
+              attribute.class(
+                "font-semibold text-sm truncate "
+                <> case is_selected {
+                  True -> "text-white"
+                  False -> "text-slate-200"
+                },
+              ),
+            ],
+            [html.text(peer.display_name)],
+          ),
+          // Unread badge
+          case count {
+            0 -> html.span([], [])
+            _ ->
+              html.span(
+                [
+                  attribute.class(
+                    "bg-rose-500 text-white text-[10px] font-bold h-5 min-w-5 px-1.5 flex items-center justify-center rounded-full shadow-sm shadow-rose-500/20",
+                  ),
+                ],
+                [html.text(int.to_string(count))],
+              )
+          },
+        ]),
+        html.p(
+          [
+            attribute.class(
+              "text-[10px] text-slate-500 truncate font-mono mt-0.5",
+            ),
+          ],
+          [html.text(peer.id)],
+        ),
+      ]),
+    ],
   )
 }
 
 fn view_chat(model: Model) -> Element(Message) {
-  let disabled = case model.selected_peer_id {
-    option.Some(peer_id) -> !chat.peer_is_online(model.peers, peer_id)
-    option.None -> False
-  }
+  case model.selected_peer_id {
+    option.None -> {
+      // Empty state
+      html.section(
+        [
+          attribute.id("chat"),
+          attribute.class(
+            "flex-1 flex flex-col items-center justify-center p-8 text-center",
+          ),
+        ],
+        [
+          html.div(
+            [
+              attribute.class(
+                "flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-900 border border-slate-800 text-indigo-400 mb-4 shadow-xl shadow-slate-950/40",
+              ),
+            ],
+            [
+              // Unicode icon
+              html.span([attribute.class("text-4xl")], [html.text("💬")]),
+            ],
+          ),
+          html.h3([attribute.class("text-lg font-bold text-white mb-1")], [
+            html.text("No Active Chat"),
+          ]),
+          html.p(
+            [attribute.class("text-sm text-slate-400 max-w-xs leading-relaxed")],
+            [
+              html.text(
+                "Select an active peer from the sidebar to begin instant messaging.",
+              ),
+            ],
+          ),
+        ],
+      )
+    }
+    option.Some(peer_id) -> {
+      let is_online = chat.peer_is_online(model.peers, peer_id)
+      let disabled = !is_online
 
-  html.section(
-    [
-      attribute.id("chat"),
-      attribute.class("my-8 border-y border-slate-300 py-4"),
-    ],
-    [
-      html.h2([attribute.id("chat-heading")], [html.text(chat_heading(model))]),
-      html.p(
-        [attribute.id("chat-notice"), attribute.class("min-h-5 text-red-700")],
+      html.section(
         [
-          html.text(chat_notice(model)),
+          attribute.id("chat"),
+          attribute.class("flex-1 flex flex-col min-h-0 overflow-hidden"),
         ],
-      ),
-      html.ol(
-        [attribute.id("messages"), attribute.class("min-h-24 pl-6")],
-        view_messages(model),
-      ),
-      html.input([
-        attribute.id("message-body"),
-        attribute.maxlength(10_000),
-        attribute.autocomplete("off"),
-        attribute.value(model.message_draft),
-        attribute.disabled(disabled),
-        event.on_input(UserTypedMessage),
-        event.on_keydown(UserPressedMessageKey),
-      ]),
-      html.button(
         [
-          attribute.id("send-message-button"),
-          attribute.type_("button"),
-          attribute.disabled(disabled),
-          event.on_click(UserClickedSendMessage),
+          // Chat Header
+          html.div(
+            [
+              attribute.class(
+                "flex items-center justify-between border-b border-slate-800/60 bg-slate-900/10 px-6 py-4",
+              ),
+            ],
+            [
+              html.div([attribute.class("flex items-center gap-3")], [
+                html.div(
+                  [
+                    attribute.class(
+                      "h-2.5 w-2.5 rounded-full "
+                      <> case is_online {
+                        True -> "bg-emerald-500 shadow-sm shadow-emerald-500/50"
+                        False -> "bg-slate-600"
+                      },
+                    ),
+                  ],
+                  [],
+                ),
+                html.div([], [
+                  html.h2(
+                    [
+                      attribute.id("chat-heading"),
+                      attribute.class("text-sm font-bold text-white"),
+                    ],
+                    [html.text(chat_heading(model))],
+                  ),
+                  html.p(
+                    [
+                      attribute.class(
+                        "text-[10px] text-slate-500 font-mono mt-0.5",
+                      ),
+                    ],
+                    [html.text(peer_id)],
+                  ),
+                ]),
+              ]),
+              case is_online {
+                False ->
+                  html.span(
+                    [
+                      attribute.class(
+                        "bg-red-950/40 border border-red-800/40 text-red-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider",
+                      ),
+                    ],
+                    [html.text("Offline")],
+                  )
+                True -> html.span([], [])
+              },
+            ],
+          ),
+          // Chat Notice banner (if any)
+          case chat_notice(model) {
+            "" -> html.span([], [])
+            notice ->
+              html.div(
+                [
+                  attribute.id("chat-notice"),
+                  attribute.class(
+                    "mx-6 mt-4 p-3 rounded-lg bg-red-950/30 border border-red-900/30 text-xs text-red-400 flex items-center gap-2",
+                  ),
+                ],
+                [
+                  html.span([], [html.text("⚠️")]),
+                  html.span([attribute.class("flex-1 font-medium")], [
+                    html.text(notice),
+                  ]),
+                ],
+              )
+          },
+          // Messages Pane (Col-Reverse anchors scrolling to bottom)
+          html.ol(
+            [
+              attribute.id("messages"),
+              attribute.class(
+                "flex-1 overflow-y-auto px-6 py-6 space-y-4 flex flex-col-reverse",
+              ),
+            ],
+            view_messages(model),
+          ),
+          // Message Input Bar
+          html.div(
+            [
+              attribute.class(
+                "p-4 border-t border-slate-900/80 bg-slate-950/40 flex flex-col gap-2",
+              ),
+            ],
+            [
+              html.div(
+                [
+                  attribute.class(
+                    "flex items-center gap-2 bg-slate-900 border border-slate-800 rounded-full pl-5 pr-2 py-1.5 focus-within:border-indigo-500 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all",
+                  ),
+                ],
+                [
+                  html.input([
+                    attribute.id("message-body"),
+                    attribute.class(
+                      "flex-1 bg-transparent text-sm text-slate-100 placeholder-slate-500 border-none outline-none focus:outline-none focus:ring-0 p-0 py-1",
+                    ),
+                    attribute.placeholder(case is_online {
+                      True -> "Type your message..."
+                      False -> "Peer is offline"
+                    }),
+                    attribute.maxlength(10_000),
+                    attribute.autocomplete("off"),
+                    attribute.value(model.message_draft),
+                    attribute.disabled(disabled),
+                    event.on_input(UserTypedMessage),
+                    event.on_keydown(UserPressedMessageKey),
+                  ]),
+                  html.button(
+                    [
+                      attribute.id("send-message-button"),
+                      attribute.type_("button"),
+                      attribute.disabled(disabled),
+                      attribute.class(
+                        "flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-600 hover:bg-indigo-500 active:bg-indigo-700 text-white shadow-md transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer",
+                      ),
+                      event.on_click(UserClickedSendMessage),
+                    ],
+                    [
+                      html.span(
+                        [
+                          attribute.class(
+                            "text-sm font-semibold relative left-[0.5px] -top-[0.5px]",
+                          ),
+                        ],
+                        [html.text("➔")],
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ],
+          ),
         ],
-        [html.text("Send")],
-      ),
-    ],
-  )
+      )
+    }
+  }
 }
 
 fn chat_heading(model: Model) -> String {
@@ -464,6 +845,7 @@ fn chat_notice(model: Model) -> String {
 
 fn view_messages(model: Model) -> List(Element(Message)) {
   chat.messages_for_peer(model.messages_by_peer, model.selected_peer_id)
+  |> list.reverse
   |> list.map(fn(message) { view_message(model, message) })
 }
 
@@ -471,12 +853,109 @@ fn view_message(
   model: Model,
   message: shared_protocol.TextMessage,
 ) -> Element(Message) {
-  let label = case message.from == model.device_id {
-    True -> "You: " <> message.body
-    False -> message_author(model, message.from) <> ": " <> message.body
-  }
+  let is_self = message.from == model.device_id
 
-  html.li([attribute.data("message-id", message.id)], [html.text(label)])
+  case is_self {
+    True -> {
+      html.li(
+        [
+          attribute.data("message-id", message.id),
+          attribute.class("flex justify-end"),
+        ],
+        [
+          html.div(
+            [
+              attribute.class(
+                "max-w-[75%] rounded-2xl rounded-tr-sm bg-gradient-to-br from-indigo-600 to-violet-600 px-4 py-2 text-sm text-white shadow-md shadow-indigo-600/10 leading-relaxed break-words",
+              ),
+            ],
+            [html.text(message.body)],
+          ),
+        ],
+      )
+    }
+    False -> {
+      let author_name = message_author(model, message.from)
+      html.li(
+        [
+          attribute.data("message-id", message.id),
+          attribute.class("flex justify-start flex-col gap-1"),
+        ],
+        [
+          html.span(
+            [
+              attribute.class(
+                "text-[10px] font-bold tracking-wider text-slate-500 uppercase ml-2",
+              ),
+            ],
+            [html.text(author_name)],
+          ),
+          html.div(
+            [
+              attribute.class(
+                "max-w-[75%] self-start rounded-2xl rounded-tl-sm bg-slate-900 border border-slate-800/80 px-4 py-2 text-sm text-slate-200 shadow-sm leading-relaxed break-words",
+              ),
+            ],
+            [html.text(message.body)],
+          ),
+        ],
+      )
+    }
+  }
+}
+
+fn view_log_drawer(model: Model) -> Element(Message) {
+  html.details(
+    [
+      attribute.class(
+        "border-t border-slate-900 bg-slate-950/80 backdrop-blur-md transition-all group shrink-0",
+      ),
+    ],
+    [
+      html.summary(
+        [
+          attribute.class(
+            "flex items-center justify-between px-6 py-3 cursor-pointer text-slate-400 hover:text-slate-200 select-none list-none font-bold text-[10px] uppercase tracking-wider",
+          ),
+        ],
+        [
+          html.div([attribute.class("flex items-center gap-2")], [
+            html.span(
+              [
+                attribute.class(
+                  "text-[8px] group-open:rotate-90 transition-transform inline-block",
+                ),
+              ],
+              [html.text("▶")],
+            ),
+            html.text("Developer Event Log"),
+          ]),
+          html.span(
+            [attribute.class("text-[9px] font-mono text-slate-500 font-normal")],
+            [html.text(int.to_string(list.length(model.log)) <> " events")],
+          ),
+        ],
+      ),
+      html.div(
+        [
+          attribute.class(
+            "px-6 pb-4 border-t border-slate-900/50 bg-slate-950/40",
+          ),
+        ],
+        [
+          html.pre(
+            [
+              attribute.id("log"),
+              attribute.class(
+                "mt-3 text-xs font-mono text-emerald-400 bg-black/40 rounded-lg p-4 max-h-48 overflow-y-auto leading-relaxed border border-slate-900/80 scrollbar-none",
+              ),
+            ],
+            [html.text(model.log |> string.join(with: "\n"))],
+          ),
+        ],
+      ),
+    ],
+  )
 }
 
 fn message_author(model: Model, peer_id: String) -> String {
@@ -491,5 +970,22 @@ fn status_text(status: Status) -> String {
     Disconnected -> "Disconnected"
     Connected -> "Connected"
     ConnectionError -> "Connection error"
+  }
+}
+
+fn status_pill_classes(status: Status) -> String {
+  case status {
+    Connected ->
+      "bg-emerald-950/40 border border-emerald-800/40 text-emerald-400"
+    Disconnected -> "bg-amber-950/40 border border-amber-800/40 text-amber-400"
+    ConnectionError -> "bg-red-950/40 border border-red-800/40 text-red-400"
+  }
+}
+
+fn status_dot_classes(status: Status) -> String {
+  case status {
+    Connected -> "bg-emerald-500 shadow-sm shadow-emerald-500/50 animate-pulse"
+    Disconnected -> "bg-amber-500 animate-pulse"
+    ConnectionError -> "bg-red-500 animate-pulse"
   }
 }

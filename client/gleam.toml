@@ -28,7 +28,7 @@ outdir = "../priv/static"
 
 [tools.lustre.html]
 stylesheets = [
-  { href = "/style.css" }
+  { href = "/client.css" }
 ]
 title = "LAN Share IM"
 body = "<main id=\"app\"></main>"
