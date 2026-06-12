@@ -15,3 +15,11 @@ _Avoid_: Contact, user, client
 **Message history**:
 Persisted text messages involving a device, available again when that device reconnects.
 _Avoid_: Chat cache, transcript, archive
+
+**File transfer**:
+An accepted file exchange between two peers in the shared room, regardless of how the bytes move.
+_Avoid_: Upload, download, file sync
+
+**Transfer mode**:
+The transport choice used for a file transfer, such as relay or peer-to-peer.
+_Avoid_: Transfer type, backend, protocol
