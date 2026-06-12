@@ -8,3 +8,66 @@ test("boots the Vite client and connects through the backend WebSocket", async (
     /Discovery Active|Mesh Online|Connecting|Reconnecting/,
   );
 });
+
+test("establishes RTC channels between two tabs after file accept", async ({ browser }) => {
+  const aliceContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const bobContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const alice = await aliceContext.newPage();
+  const bob = await bobContext.newPage();
+
+  await seedIdentity(alice, "alice-device", "Alice Laptop");
+  await seedIdentity(bob, "bob-device", "Bob Laptop");
+  await mockSavePicker(bob);
+
+  await alice.goto("/");
+  await bob.goto("/");
+
+  await expect(alice.getByText("Bob Laptop")).toBeVisible({ timeout: 10_000 });
+  await expect(bob.getByText("Alice Laptop")).toBeVisible({ timeout: 10_000 });
+
+  await alice.getByText("Bob Laptop").click();
+  await bob.getByText("Alice Laptop").click();
+
+  const chooserPromise = alice.waitForEvent("filechooser");
+  await alice.getByLabel("Attach file").click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({
+    name: "p2p-handshake.txt",
+    mimeType: "text/plain",
+    buffer: Buffer.from("hello p2p"),
+  });
+
+  const bobTransfer = bob.getByLabel("Transfer p2p-handshake.txt");
+  await expect(bobTransfer).toBeVisible({ timeout: 10_000 });
+  await bobTransfer.getByRole("button", { name: "Accept" }).click();
+
+  await expect(alice.getByText("P2P connected").first()).toBeVisible({ timeout: 15_000 });
+  await expect(bob.getByText("P2P connected").first()).toBeVisible({ timeout: 15_000 });
+
+  await aliceContext.close();
+  await bobContext.close();
+});
+
+async function seedIdentity(page: import("@playwright/test").Page, deviceId: string, name: string) {
+  await page.addInitScript(
+    ({ deviceId, name }) => {
+      localStorage.setItem("glim.device_id", deviceId);
+      localStorage.setItem("glim.display_name", name);
+    },
+    { deviceId, name },
+  );
+}
+
+async function mockSavePicker(page: import("@playwright/test").Page) {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, "showSaveFilePicker", {
+      configurable: true,
+      value: async () => ({
+        createWritable: async () => ({
+          write: async () => undefined,
+          close: async () => undefined,
+        }),
+      }),
+    });
+  });
+}
