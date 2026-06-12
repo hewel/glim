@@ -19,6 +19,8 @@ export function transferStatusLabel(transfer: TransferItem): string {
       return "Hashing";
     case "p2p_setup":
       return "P2P setup";
+    case "p2p_connected":
+      return "P2P connected";
     case "transferring":
       return "Transferring";
     case "interrupted":
@@ -48,6 +50,7 @@ export function isActiveTransferStatus(status: TransferItem["status"]): boolean 
     "awaiting_save",
     "hashing",
     "p2p_setup",
+    "p2p_connected",
     "transferring",
     "export_ready",
     "fallback",

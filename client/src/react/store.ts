@@ -11,6 +11,11 @@ import {
   startReceiveFile,
   streamSaveSupported,
 } from "../browser/ffi";
+import {
+  closePeerConnection,
+  handleRtcSignal,
+  startSenderPeerConnection,
+} from "../browser/rtc_peer";
 import type { FileSelection, WrittenChunk } from "../browser/types";
 import * as core from "../core.gleam";
 import * as reconnect from "../reconnect.gleam";
@@ -27,6 +32,7 @@ import {
   isPeerOnline,
   localFile,
   markConnectionLost,
+  markTransferModeAndStatus,
   markTransferProgress,
   markTransferStatus,
   otherPeers,
@@ -340,6 +346,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
     set((state) => {
       const nextLocalFiles = { ...state.localFiles };
       delete nextLocalFiles[transferId];
+      closePeerConnection(transferId);
       return {
         localFiles: nextLocalFiles,
         transfers: markTransferStatus(state.transfers, transferId, "cancelled", "Cancelled"),
@@ -435,6 +442,7 @@ function connectionLost(generation: number): void {
   const delay = reconnect.retry_delay_ms(attempt);
   for (const transferId of interruptedTransferIds(state.transfers)) {
     closeReceiveFile(transferId);
+    closePeerConnection(transferId);
   }
 
   useAppStore.setState({
@@ -542,6 +550,7 @@ function handleServerEvent(raw: string): void {
         ),
       }));
       closeReceiveFile(event.transfer_id);
+      closePeerConnection(event.transfer_id);
       break;
     case "file_chunk_ack":
       applyFileChunkAck(event.ack);
@@ -550,6 +559,7 @@ function handleServerEvent(raw: string): void {
       useAppStore.setState((state) => {
         const nextLocalFiles = { ...state.localFiles };
         delete nextLocalFiles[event.transfer_id];
+        closePeerConnection(event.transfer_id);
         return {
           localFiles: nextLocalFiles,
           transfers: markTransferStatus(
@@ -564,7 +574,23 @@ function handleServerEvent(raw: string): void {
     case "rtc_signal":
       useAppStore.setState((state) => ({
         rtcSignals: [...state.rtcSignals, event.signal],
+        transfers:
+          event.signal.description === "offer"
+            ? markTransferModeAndStatus(
+                state.transfers,
+                event.signal.transfer_id,
+                "p2p",
+                "p2p_setup",
+                "Opening peer channel",
+              )
+            : state.transfers,
       }));
+      void handleRtcSignal({
+        signal: event.signal,
+        sendSignal: useAppStore.getState().sendRtcSignal,
+        onConnected: rtcConnected,
+        onFailed: rtcSetupFailed,
+      });
       break;
     case "error":
       useAppStore.setState((state) => ({
@@ -605,9 +631,67 @@ function applyTextMessage(message: TextMessage): void {
 }
 
 function applyFileAccepted(transferId: string): void {
-  const file = useAppStore.getState().localFiles[transferId];
+  const state = useAppStore.getState();
+  const file = state.localFiles[transferId];
+  const transfer = state.transfers.find((item) => item.transfer_id === transferId);
+  useAppStore.setState((current) => ({
+    transfers: file
+      ? markTransferModeAndStatus(
+          current.transfers,
+          transferId,
+          "p2p",
+          "p2p_setup",
+          "Opening peer channel",
+        )
+      : markTransferStatus(current.transfers, transferId, "transferring", "Transferring"),
+  }));
+
+  if (file && transfer) {
+    void startSenderPeerConnection({
+      transferId,
+      to: transfer.peer_id,
+      sendSignal: useAppStore.getState().sendRtcSignal,
+      onConnected: rtcConnected,
+      onFailed: rtcSetupFailed,
+    }).catch(() => {
+      rtcSetupFailed(transferId, "P2P setup failed before transfer progress.");
+    });
+  }
+}
+
+function rtcConnected(transferId: string): void {
   useAppStore.setState((state) => ({
-    transfers: markTransferStatus(state.transfers, transferId, "transferring", "Transferring"),
+    transfers: markTransferModeAndStatus(
+      state.transfers,
+      transferId,
+      "p2p",
+      "p2p_connected",
+      "P2P channels connected",
+    ),
+  }));
+}
+
+function rtcSetupFailed(transferId: string, reason: string): void {
+  const state = useAppStore.getState();
+  const transfer = state.transfers.find((item) => item.transfer_id === transferId);
+  const file = state.localFiles[transferId];
+  closePeerConnection(transferId);
+
+  if (!transfer || transfer.transferred > 0) {
+    useAppStore.setState((current) => ({
+      transfers: markTransferStatus(current.transfers, transferId, "failed", reason),
+    }));
+    return;
+  }
+
+  useAppStore.setState((current) => ({
+    transfers: markTransferModeAndStatus(
+      current.transfers,
+      transferId,
+      "relay",
+      "fallback",
+      reason,
+    ),
   }));
 
   if (file) {

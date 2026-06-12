@@ -7,6 +7,7 @@ import type {
   PendingDraftClear,
   TextMessage,
   TransferItem,
+  TransferMode,
   TransferStatus,
 } from "./types";
 
@@ -162,6 +163,20 @@ export function markTransferStatus(
   );
 }
 
+export function markTransferModeAndStatus(
+  transfers: TransferItem[],
+  transferId: string,
+  mode: TransferMode,
+  status: TransferStatus,
+  notice: string,
+): TransferItem[] {
+  return transfers.map((transfer) =>
+    transfer.transfer_id === transferId
+      ? { ...transfer, mode, status, notice }
+      : transfer,
+  );
+}
+
 export function markTransferProgress(
   transfers: TransferItem[],
   ack: FileChunkAck,
@@ -223,5 +238,14 @@ function appendOrReplace(transfers: TransferItem[], item: TransferItem): Transfe
 }
 
 function isInterruptedStatus(status: TransferStatus): boolean {
-  return status === "offered" || status === "awaiting_save" || status === "transferring";
+  return [
+    "offered",
+    "awaiting_save",
+    "hashing",
+    "p2p_setup",
+    "p2p_connected",
+    "transferring",
+    "export_ready",
+    "fallback",
+  ].includes(status);
 }

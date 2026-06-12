@@ -66,6 +66,7 @@ export type TransferStatus =
   | "awaiting_save"
   | "hashing"
   | "p2p_setup"
+  | "p2p_connected"
   | "transferring"
   | "interrupted"
   | "resumable"
