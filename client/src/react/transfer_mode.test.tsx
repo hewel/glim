@@ -72,4 +72,26 @@ describe("transfer mode labels", () => {
     expect(transferCard).not.toBeNull();
     expect(screen.getByText("Relay")).toBeVisible();
   });
+
+  test("shows transfer cockpit details for an active transfer", () => {
+    render(<TransferQueue />);
+
+    const transferCard = screen.getByText("demo.bin").closest("article");
+    expect(transferCard).not.toBeNull();
+    const card = within(transferCard as HTMLElement);
+
+    expect(card.getByText("Relay")).toBeVisible();
+    expect(card.getByText(/Ada Laptop/)).toBeVisible();
+    expect(card.getByText("Transferring")).toBeVisible();
+    expect(card.getByText("256 B / 1.0 KB")).toBeVisible();
+    expect(card.getByRole("button", { name: "Cancel transfer" })).toBeVisible();
+  });
+
+  test("shows transfer cockpit empty state", () => {
+    useAppStore.setState({ transfers: [] });
+
+    render(<TransferQueue />);
+
+    expect(screen.getByText("No active transfers.")).toBeVisible();
+  });
 });

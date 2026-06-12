@@ -60,6 +60,9 @@ function QueueCard({ transfer, onCancel }: { transfer: TransferItem; onCancel: (
   const percent = progressPercent(transfer.transferred, transfer.size);
   const active = ["offered", "awaiting_save", "transferring"].includes(transfer.status);
   const modeLabel = transferModeLabel(transfer);
+  const peerLabel = transfer.direction === "sending"
+    ? `Sending to ${transfer.peer_name}`
+    : `Receiving from ${transfer.peer_name}`;
 
   return (
     <article className={`rounded-lg border p-5 transition-all ${
@@ -74,6 +77,7 @@ function QueueCard({ transfer, onCancel }: { transfer: TransferItem; onCancel: (
           {transfer.status === "completed" ? <IconCircleCheck size={22} /> : <IconFile size={22} />}
         </span>
         <div className="min-w-0 flex-1">
+          <p className="truncate font-code-sm text-on-surface-variant text-xs">{peerLabel}</p>
           <p className="truncate font-body-md font-semibold text-on-surface">{transfer.name}</p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <TransferModeBadge label={modeLabel} />
