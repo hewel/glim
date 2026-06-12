@@ -53,6 +53,7 @@ import {
   removePeer,
   retryPieceRequest,
   setDraft,
+  transferCanContinue,
   updateLocalFileAfterAck,
   upsertPeer,
   type ReceiverPieceRequest,
@@ -364,10 +365,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
   cancelFile(transferId) {
     set((state) => {
       const nextLocalFiles = { ...state.localFiles };
+      const nextReceiverSchedules = { ...state.receiverSchedules };
       delete nextLocalFiles[transferId];
+      delete nextReceiverSchedules[transferId];
       closePeerConnection(transferId);
       return {
         localFiles: nextLocalFiles,
+        receiverSchedules: nextReceiverSchedules,
         transfers: markTransferStatus(state.transfers, transferId, "cancelled", "Cancelled"),
       };
     });
@@ -471,6 +475,7 @@ function connectionLost(generation: number): void {
     knownPeers: {},
     transfers: markConnectionLost(state.transfers),
     localFiles: {},
+    receiverSchedules: {},
     chatNotice: "Mesh disconnected. Reconnecting...",
   });
 
@@ -560,14 +565,23 @@ function handleServerEvent(raw: string): void {
       }));
       break;
     case "file_cancelled":
-      useAppStore.setState((state) => ({
-        transfers: markTransferStatus(
-          state.transfers,
-          event.transfer_id,
-          "cancelled",
-          event.reason,
-        ),
-      }));
+      useAppStore.setState((state) => {
+        const nextLocalFiles = { ...state.localFiles };
+        const nextReceiverSchedules = { ...state.receiverSchedules };
+        delete nextLocalFiles[event.transfer_id];
+        delete nextReceiverSchedules[event.transfer_id];
+
+        return {
+          localFiles: nextLocalFiles,
+          receiverSchedules: nextReceiverSchedules,
+          transfers: markTransferStatus(
+            state.transfers,
+            event.transfer_id,
+            "cancelled",
+            event.reason,
+          ),
+        };
+      });
       closeReceiveFile(event.transfer_id);
       closePeerConnection(event.transfer_id);
       break;
@@ -714,7 +728,15 @@ function rtcConnected(transferId: string): void {
 
 async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Promise<void> {
   try {
+    if (!transferCanContinue(useAppStore.getState().transfers, transferId)) {
+      return;
+    }
+
     const chunk = await writeFrameToOpfs(frame);
+    if (!transferCanContinue(useAppStore.getState().transfers, transferId)) {
+      return;
+    }
+
     const schedule = useAppStore.getState().receiverSchedules[transferId];
     const receiverPiece = activeReceiverPieceForChunk(schedule, chunk.offset);
     useAppStore.setState((state) => ({
@@ -760,6 +782,9 @@ async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Pro
         send(core.encode_file_cancel(transferId), sendFailed);
         return;
       }
+      if (!transferCanContinue(useAppStore.getState().transfers, transferId)) {
+        return;
+      }
 
       useAppStore.setState((state) => {
         const nextReceiverSchedules = { ...state.receiverSchedules };
@@ -786,6 +811,10 @@ async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Pro
 }
 
 function retryOrFailPiece(transferId: string, piece: ReceiverPieceRequest): void {
+  if (!transferCanContinue(useAppStore.getState().transfers, transferId)) {
+    return;
+  }
+
   const retry = retryPieceRequest(piece);
   if (!retry) {
     useAppStore.setState((state) => ({
@@ -925,6 +954,10 @@ function rtcControlMessageReceived(transferId: string, raw: string): void {
 function requestFirstMissingPiece(
   event: Extract<RtcControlEvent, { kind: "transfer_manifest_accepted" }>,
 ): void {
+  if (!transferCanContinue(useAppStore.getState().transfers, event.transfer_id)) {
+    return;
+  }
+
   const firstRequest = firstMissingPieceRequest(event);
   if (!firstRequest) {
     return;
@@ -960,6 +993,9 @@ function requestFirstMissingPiece(
     send(core.encode_file_cancel(event.transfer_id), sendFailed);
     return;
   }
+  if (!transferCanContinue(useAppStore.getState().transfers, event.transfer_id)) {
+    return;
+  }
 
   useAppStore.setState((state) => ({
     receiverSchedules: {
@@ -978,6 +1014,10 @@ function requestFirstMissingPiece(
 
 function sendPieceRequests(transferId: string, requests: ReceiverPieceRequest[]): boolean {
   for (const request of requests) {
+    if (!transferCanContinue(useAppStore.getState().transfers, transferId)) {
+      return true;
+    }
+
     const controlMessage = core.encode_piece_request_control(
       request.manifest_id,
       request.file_id,
@@ -1073,6 +1113,10 @@ async function sendRequestedPiece(
 
   try {
     for (const chunk of chunks) {
+      if (!transferCanContinue(useAppStore.getState().transfers, transferId)) {
+        return;
+      }
+
       const frame = await prepareOutgoingFrame(
         file.file_id,
         transferId,
@@ -1080,10 +1124,18 @@ async function sendRequestedPiece(
         chunk.offset,
         chunk.byte_length,
       );
+      if (!transferCanContinue(useAppStore.getState().transfers, transferId)) {
+        return;
+      }
+
       const sent = await sendDataFrameWithBackpressure(transferId, frame);
       if (!sent) {
         throw new Error("RTC data channel was not open.");
       }
+    }
+
+    if (!transferCanContinue(useAppStore.getState().transfers, transferId)) {
+      return;
     }
 
     useAppStore.setState((current) => ({

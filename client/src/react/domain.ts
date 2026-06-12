@@ -278,6 +278,22 @@ export function markPieceVerified(
   );
 }
 
+export function transferCanContinue(transfers: TransferItem[], transferId: string): boolean {
+  const transfer = transfers.find((item) => item.transfer_id === transferId);
+  if (!transfer) {
+    return false;
+  }
+
+  return ![
+    "cancelled",
+    "completed",
+    "declined",
+    "export_ready",
+    "failed",
+    "unsupported",
+  ].includes(transfer.status);
+}
+
 export function markConnectionLost(transfers: TransferItem[]): TransferItem[] {
   return transfers.map((transfer) =>
     isInterruptedStatus(transfer.status)

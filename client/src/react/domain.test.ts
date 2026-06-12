@@ -12,6 +12,7 @@ import {
   otherPeers,
   pieceChunkPlan,
   retryPieceRequest,
+  transferCanContinue,
 } from "./domain";
 import type { Peer, TextMessage, TransferItem } from "./types";
 
@@ -150,6 +151,27 @@ describe("React domain helpers", () => {
       status: "transferring",
       notice: "Transferring",
     });
+  });
+
+  test("stops transfer work after cancellation", () => {
+    const transfer: TransferItem = {
+      transfer_id: "transfer_1",
+      peer_id: "peer_1",
+      peer_name: "Peer",
+      name: "demo.bin",
+      mime_type: "application/octet-stream",
+      size: 4,
+      transferred: 2,
+      direction: "sending",
+      mode: "p2p",
+      status: "cancelled",
+      notice: "Cancelled",
+    };
+
+    expect(transferCanContinue([transfer], "transfer_1")).toBe(false);
+    expect(transferCanContinue([{ ...transfer, status: "transferring" }], "transfer_1")).toBe(
+      true,
+    );
   });
 
   test("falls back to relay when P2P setup fails before progress", () => {
