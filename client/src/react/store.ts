@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   closeReceiveFile,
   connect,
+  exportReceivedFile,
   hashOutgoingFile,
   loadDetectedProfile,
   loadIdentity,
@@ -115,6 +116,7 @@ interface AppState {
   acceptFile: (transferId: string) => void;
   declineFile: (transferId: string) => void;
   cancelFile: (transferId: string) => void;
+  exportFile: (transferId: string) => void;
   sendRtcSignal: (signal: OutgoingRtcSignal) => void;
   clearLog: () => void;
   activePeer: () => Peer | null;
@@ -377,6 +379,43 @@ export const useAppStore = create<AppState>()((set, get) => ({
     });
     send(core.encode_file_cancel(transferId), sendFailed);
     closeReceiveFile(transferId);
+  },
+
+  exportFile(transferId) {
+    const item = get().transfers.find((transfer) => transfer.transfer_id === transferId);
+    if (!item || item.direction !== "receiving" || item.status !== "export_ready") {
+      return;
+    }
+
+    set((state) => ({
+      transfers: markTransferStatus(state.transfers, transferId, "export_ready", "Exporting"),
+    }));
+
+    void exportReceivedFile(
+      transferId,
+      item.name,
+      item.mime_type,
+      (method) => {
+        set((state) => ({
+          transfers: markTransferStatus(
+            state.transfers,
+            transferId,
+            "completed",
+            method === "save_picker" ? "Saved" : "Download started",
+          ),
+        }));
+      },
+      (reason) => {
+        set((state) => ({
+          transfers: markTransferStatus(
+            state.transfers,
+            transferId,
+            reason === "Save cancelled." ? "export_ready" : "failed",
+            reason,
+          ),
+        }));
+      },
+    );
   },
 
   sendRtcSignal(signal) {

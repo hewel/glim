@@ -37,6 +37,7 @@ export function ChatPanel() {
   const acceptFile = useAppStore((state) => state.acceptFile);
   const declineFile = useAppStore((state) => state.declineFile);
   const cancelFile = useAppStore((state) => state.cancelFile);
+  const exportFile = useAppStore((state) => state.exportFile);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   if (!selectedPeerId) {
@@ -113,6 +114,7 @@ export function ChatPanel() {
               onAccept={() => acceptFile(transfer.transfer_id)}
               onCancel={() => cancelFile(transfer.transfer_id)}
               onDecline={() => declineFile(transfer.transfer_id)}
+              onExport={() => exportFile(transfer.transfer_id)}
               transfer={transfer}
             />
           ))}
@@ -205,11 +207,13 @@ function TransferCard({
   onAccept,
   onDecline,
   onCancel,
+  onExport,
 }: {
   transfer: TransferItem;
   onAccept: () => void;
   onDecline: () => void;
   onCancel: () => void;
+  onExport: () => void;
 }) {
   const percent = progressPercent(transfer.transferred, transfer.size);
   const isSending = transfer.direction === "sending";
@@ -290,6 +294,9 @@ function TransferCard({
             <ActionButton label="Accept" onClick={onAccept} />
             <ActionButton label="Decline" quiet onClick={onDecline} />
           </>
+        ) : null}
+        {transfer.direction === "receiving" && transfer.status === "export_ready" ? (
+          <ActionButton label="Save" onClick={onExport} />
         ) : null}
         {isActiveTransferStatus(transfer.status) ? (
           <ActionButton label="Cancel" quiet onClick={onCancel} />

@@ -8,6 +8,7 @@ import type { TransferItem } from "./types";
 export function TransferQueue({ isDrawer = false }: { isDrawer?: boolean }) {
   const transfers = useAppStore((state) => state.transfers);
   const cancelFile = useAppStore((state) => state.cancelFile);
+  const exportFile = useAppStore((state) => state.exportFile);
   const setTransfersOpen = useAppStore((state) => state.setTransfersOpen);
   const activeCount = activeTransferCount(transfers);
 
@@ -44,6 +45,7 @@ export function TransferQueue({ isDrawer = false }: { isDrawer?: boolean }) {
             <QueueCard
               key={transfer.transfer_id}
               onCancel={() => cancelFile(transfer.transfer_id)}
+              onExport={() => exportFile(transfer.transfer_id)}
               transfer={transfer}
             />
           ))
@@ -57,7 +59,15 @@ export function TransferQueue({ isDrawer = false }: { isDrawer?: boolean }) {
   );
 }
 
-function QueueCard({ transfer, onCancel }: { transfer: TransferItem; onCancel: () => void }) {
+function QueueCard({
+  transfer,
+  onCancel,
+  onExport,
+}: {
+  transfer: TransferItem;
+  onCancel: () => void;
+  onExport: () => void;
+}) {
   const percent = progressPercent(transfer.transferred, transfer.size);
   const active = isActiveTransferStatus(transfer.status);
   const modeLabel = transferModeLabel(transfer);
@@ -95,6 +105,15 @@ function QueueCard({ transfer, onCancel }: { transfer: TransferItem; onCancel: (
             type="button"
           >
             <IconX size={16} />
+          </button>
+        ) : null}
+        {transfer.direction === "receiving" && transfer.status === "export_ready" ? (
+          <button
+            className="rounded-sm border border-primary bg-primary px-3 py-2 font-label-md text-on-primary transition hover:bg-primary-hover"
+            onClick={onExport}
+            type="button"
+          >
+            Save
           </button>
         ) : null}
       </div>

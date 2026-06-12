@@ -5,6 +5,7 @@ import type {
   VoidCallback,
   WrittenChunkCallback,
 } from "./types";
+import { readOpfsTransferBlob } from "./opfs_store";
 import {
   decodeIncomingChunk,
   encodeOutgoingChunk,
@@ -42,7 +43,7 @@ export function selectFile(
 }
 
 export function streamSaveSupported(): boolean {
-  return typeof savePickerWindow().showSaveFilePicker === "function";
+  return typeof navigator.storage?.getDirectory === "function";
 }
 
 export async function startReceiveFile(
@@ -54,6 +55,11 @@ export async function startReceiveFile(
 ): Promise<void> {
   if (!streamSaveSupported()) {
     onUnsupported();
+    return;
+  }
+
+  if (typeof navigator.storage?.getDirectory === "function") {
+    onReady();
     return;
   }
 
@@ -72,6 +78,63 @@ export async function startReceiveFile(
     onError(error instanceof DOMException && error.name === "AbortError"
       ? "Save cancelled."
       : "Save target could not be opened.");
+  }
+}
+
+export type ExportMethod = "save_picker" | "blob";
+
+export async function exportReceivedFile(
+  transferId: string,
+  name: string,
+  mimeType: string,
+  onExported: (method: ExportMethod) => void,
+  onError: (reason: string) => void,
+): Promise<void> {
+  try {
+    const blob = await readOpfsTransferBlob(transferId, mimeType);
+    const method = await exportBlob(name, blob);
+    onExported(method);
+  } catch (error) {
+    onError(error instanceof DOMException && error.name === "AbortError"
+      ? "Save cancelled."
+      : "File could not be exported.");
+  }
+}
+
+export async function exportBlob(name: string, blob: Blob): Promise<ExportMethod> {
+  const picker = savePickerWindow().showSaveFilePicker;
+  if (picker) {
+    const handle = await picker({ suggestedName: name || "download" });
+    const writer = await handle.createWritable();
+    await writeBlobToStream(blob, writer);
+    return "save_picker";
+  }
+
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = name || "download";
+  anchor.rel = "noopener";
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+  return "blob";
+}
+
+async function writeBlobToStream(blob: Blob, writer: WritableFileStream): Promise<void> {
+  const reader = blob.stream().getReader();
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) {
+        break;
+      }
+      await writer.write(next.value);
+    }
+  } finally {
+    reader.releaseLock();
+    await writer.close();
   }
 }
 

@@ -61,6 +61,16 @@ export async function verifyOpfsPieceHash(
   return hex(hash) === expectedHash.toLowerCase();
 }
 
+export async function readOpfsTransferBlob(
+  transferId: string,
+  mimeType: string,
+  root?: OpfsDirectoryHandle,
+): Promise<Blob> {
+  const part = await transferPartFile(transferId, root);
+  const file = await part.getFile();
+  return file.slice(0, file.size, mimeType || "application/octet-stream");
+}
+
 async function transferPartFile(
   transferId: string,
   root?: OpfsDirectoryHandle,

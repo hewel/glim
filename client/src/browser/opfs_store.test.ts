@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { verifyOpfsPieceHash, writeChunkToOpfs } from "./opfs_store";
+import { readOpfsTransferBlob, verifyOpfsPieceHash, writeChunkToOpfs } from "./opfs_store";
 import type { DecodedFileChunk } from "./transfer_frame";
 
 class FakeWritable {
@@ -135,6 +135,23 @@ describe("OPFS transfer storage", () => {
         root,
       ),
     ).resolves.toBe(false);
+  });
+
+  test("reads the completed OPFS part file for export", async () => {
+    const root = new FakeDirectoryHandle();
+    await writeChunkToOpfs({
+      transfer_id: "transfer_1",
+      sequence: 0,
+      offset: 0,
+      byte_length: 3,
+      final: true,
+      bytes: new Uint8Array([1, 2, 3]).buffer,
+    }, root);
+
+    const blob = await readOpfsTransferBlob("transfer_1", "application/octet-stream", root);
+
+    await expect(blob.arrayBuffer()).resolves.toEqual(new Uint8Array([1, 2, 3]).buffer);
+    expect(blob.type).toBe("application/octet-stream");
   });
 });
 
