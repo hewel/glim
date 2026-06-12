@@ -76,7 +76,7 @@ typography:
     fontSize: 12px
     fontWeight: '500'
     lineHeight: '1.0'
-    letterSpacing: 0.05em
+    letterSpacing: 0
   code-sm:
     fontFamily: JetBrains Mono
     fontSize: 12px
@@ -204,6 +204,7 @@ Avoid consumer/social copy such as "friends", "profiles", "upload to cloud", "in
 
 ## Current Constraints
 
+- The browser UI is React with Zustand state; Gleam remains the pure protocol and domain helper layer.
 - The server persists accepted text messages in SQLite.
 - File transfers are relayed over WebSocket only while both peers are online.
 - Browser clients auto-reconnect with bounded backoff after WebSocket loss.

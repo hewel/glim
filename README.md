@@ -2,7 +2,7 @@
 
 Experimental local-network instant messaging and file sharing service in Gleam.
 
-The current slice is a Lustre client backed by a Mist WebSocket presence and peer-to-peer text chat server. Browser development is served by Vite.
+The current slice is a React client backed by Gleam protocol helpers, a Mist WebSocket presence server, and peer-to-peer text chat. Browser development is served by Vite.
 
 ## Development Run
 

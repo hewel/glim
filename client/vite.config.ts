@@ -1,28 +1,21 @@
 import tailwindcss from "@tailwindcss/vite";
-import { fileURLToPath } from "node:url";
 import { defineConfig, type Plugin } from "vite";
+import react from '@vitejs/plugin-react';
 import gleam from "vite-gleam";
 
-function patchGeneratedLustreJs(): Plugin {
+function stripBaseUiClientDirective(): Plugin {
   return {
-    name: "patch-generated-lustre-js",
+    name: "strip-base-ui-client-directive",
     enforce: "pre",
     transform(code, id) {
-      if (id.endsWith("lustre/lustre/internals/constants.ffi.mjs")) {
-        return {
-          code: code.replace("/* @__PURE__ */ ", ""),
-          map: null,
-        };
+      if (!id.includes("@base-ui")) {
+        return null;
       }
 
-      if (id.endsWith("lustre/lustre/runtime/server/runtime.ffi.mjs")) {
-        return {
-          code: code.replaceAll("Dict.delete(", "Dict.delete$("),
-          map: null,
-        };
-      }
-
-      return null;
+      return {
+        code: code.replace(/^((?:\/\*[\s\S]*?\*\/\s*)*)(['"])use client\2;\s*/, "$1"),
+        map: null,
+      };
     },
   };
 }
@@ -32,12 +25,7 @@ export default defineConfig({
     emptyOutDir: true,
     outDir: "../priv/static",
   },
-  plugins: [gleam(), patchGeneratedLustreJs(), tailwindcss()],
-  resolve: {
-    alias: {
-      "@browser/ffi": fileURLToPath(new URL("./src/browser/ffi.ts", import.meta.url)),
-    },
-  },
+  plugins: [gleam(), stripBaseUiClientDirective(), react(), tailwindcss()],
   server: {
     port: 5173,
     proxy: {

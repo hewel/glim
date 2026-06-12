@@ -1,4 +1,4 @@
 declare module "*.css" {
-  type path = string
-  export default path
+  const path: string;
+  export default path;
 }

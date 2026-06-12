@@ -2,6 +2,7 @@
   "compilerOptions": {
     "allowJs": false,
     "isolatedModules": true,
+    "jsx": "react-jsx",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
@@ -9,9 +10,10 @@
     "noFallthroughCasesInSwitch": true,
     "noImplicitOverride": true,
     "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
     "strict": true,
     "target": "ES2022",
-    "types": ["node"],
+    "types": ["node", "vitest/globals"],
     "plugins": [{ "name": "ts-gleam" }],
     "paths": {
       "vite-gleam": ["./src/types/vite-gleam-shim.d.ts"]
@@ -19,8 +21,11 @@
   },
   "include": [
     "src/**/*.ts",
+    "src/**/*.tsx",
     "src/**/*.d.ts",
     "e2e/**/*.ts",
+    "e2e/**/*.tsx",
+    "vitest.config.ts",
     "vite.config.ts",
     "playwright.config.ts"
   ]

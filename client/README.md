@@ -1,6 +1,6 @@
 # LAN Share IM Client
 
-Lustre browser client for the LAN Share IM presence and text chat slice.
+React browser client for the LAN Share IM presence, text chat, and online file transfer slice.
 
 This package targets JavaScript and uses Vite for browser development and production static bundles consumed by the root Mist server.
 
@@ -48,13 +48,14 @@ bun run test:e2e
 
 ## Package Layout
 
-- `src/client.gleam` renders the Lustre UI and owns browser update wiring.
+- `src/react/*.tsx` renders the React UI and owns browser presentation state.
+- `src/core.gleam` exposes framework-neutral protocol helpers for the React shell.
 - `src/chat.gleam` owns pure peer-list and per-peer chat bookkeeping.
 - `src/transfer.gleam` owns pure file-transfer state transitions.
-- `src/browser.gleam` wraps browser effects as Lustre effects.
 - `src/browser/*.ts` contains direct `localStorage`, file picker, save stream, WebSocket, and file-frame worker access.
-- `src/main.ts` is the Vite entrypoint that starts the Gleam app.
-- `test/client_test.gleam` covers pure peer-list and per-peer chat behavior.
+- `src/main.tsx` is the Vite entrypoint that starts the React app.
+- `test/client_test.gleam` covers pure Gleam peer-list, chat, reconnect, and transfer behavior.
+- `src/**/*.test.ts` covers TypeScript browser and React-domain helpers with Vitest.
 
 ## Current Scope
 

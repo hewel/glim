@@ -87,7 +87,7 @@
   font-size: 32px;
   font-weight: 600;
   line-height: 1.2;
-  letter-spacing: -0.02em;
+  letter-spacing: 0;
 }
 
 .font-headline-md {
@@ -95,7 +95,7 @@
   font-size: 24px;
   font-weight: 600;
   line-height: 1.3;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 .font-headline-sm {
@@ -103,7 +103,7 @@
   font-size: 20px;
   font-weight: 600;
   line-height: 1.4;
-  letter-spacing: -0.01em;
+  letter-spacing: 0;
 }
 
 .font-body-lg {
@@ -125,7 +125,7 @@
   font-size: 12px;
   font-weight: 500;
   line-height: 1.0;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
 }
 
 .font-code-sm {
@@ -140,7 +140,7 @@
   font-size: 12px;
   font-weight: 500;
   line-height: 1.2;
-  letter-spacing: 0.05em;
+  letter-spacing: 0;
 }
 
 .font-mono-data {
