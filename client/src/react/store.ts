@@ -12,6 +12,7 @@ import {
   saveDisplayName,
   startReceiveFile,
   streamSaveSupported,
+  writeFrameToOpfs,
 } from "../browser/ffi";
 import {
   closePeerConnection,
@@ -599,6 +600,7 @@ function handleServerEvent(raw: string): void {
         onConnected: rtcConnected,
         onFailed: rtcSetupFailed,
         onControlMessage: rtcControlMessageReceived,
+        onDataFrame: rtcDataFrameReceived,
       });
       break;
     case "error":
@@ -663,6 +665,7 @@ function applyFileAccepted(transferId: string): void {
       onConnected: rtcConnected,
       onFailed: rtcSetupFailed,
       onControlMessage: rtcControlMessageReceived,
+      onDataFrame: rtcDataFrameReceived,
     }).catch(() => {
       rtcSetupFailed(transferId, "P2P setup failed before transfer progress.");
     });
@@ -697,6 +700,32 @@ function rtcConnected(transferId: string): void {
       "P2P channels connected",
     ),
   }));
+}
+
+async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Promise<void> {
+  try {
+    const chunk = await writeFrameToOpfs(frame);
+    useAppStore.setState((state) => ({
+      transfers: markTransferProgress(state.transfers, {
+        transfer_id: transferId,
+        sequence: chunk.sequence,
+        offset: chunk.offset,
+        byte_length: chunk.byte_length,
+        final: chunk.final,
+      }),
+    }));
+  } catch (_error) {
+    useAppStore.setState((state) => ({
+      transfers: markTransferStatus(
+        state.transfers,
+        transferId,
+        "failed",
+        "Received piece chunk could not be written.",
+      ),
+    }));
+    closePeerConnection(transferId);
+    send(core.encode_file_cancel(transferId), sendFailed);
+  }
 }
 
 async function sendTransferManifest(

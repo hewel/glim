@@ -1,4 +1,5 @@
 export { loadDetectedProfile, loadIdentity, saveDisplayName } from "./identity";
+export { writeFrameToOpfs } from "./opfs_store";
 export { delay, formatTime } from "./timer";
 export {
   closeReceiveFile,

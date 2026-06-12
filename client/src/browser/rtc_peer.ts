@@ -11,6 +11,7 @@ export interface RtcPeerCallbacks {
   onConnected?: (transferId: string) => void;
   onFailed?: (transferId: string, reason: string) => void;
   onControlMessage?: (transferId: string, raw: string) => void;
+  onDataFrame?: (transferId: string, frame: ArrayBuffer) => void;
 }
 
 interface SenderOptions extends RtcPeerCallbacks {
@@ -37,6 +38,7 @@ export async function startSenderPeerConnection(options: SenderOptions): Promise
   const dataChannel = connection.createDataChannel("data", {
     ordered: false,
   });
+  configureDataChannel(options.transferId, dataChannel, options);
   peerHandles.set(options.transferId, {
     connection,
     controlChannel,
@@ -140,6 +142,7 @@ async function acceptOffer(
     }
 
     if (event.channel.label === "data") {
+      configureDataChannel(options.signal.transfer_id, event.channel, options);
       peerHandles.set(options.signal.transfer_id, {
         ...handle,
         dataChannel: event.channel,
@@ -232,6 +235,21 @@ function configureControlChannel(
     }
 
     callbacks.onFailed?.(transferId, "RTC control message was invalid.");
+  };
+}
+
+function configureDataChannel(
+  transferId: string,
+  channel: RTCDataChannel,
+  callbacks: RtcPeerOptions,
+): void {
+  channel.onmessage = (event) => {
+    if (event.data instanceof ArrayBuffer) {
+      callbacks.onDataFrame?.(transferId, event.data);
+      return;
+    }
+
+    callbacks.onFailed?.(transferId, "RTC data message was invalid.");
   };
 }
 

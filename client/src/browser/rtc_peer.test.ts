@@ -18,6 +18,7 @@ class FakeDataChannel {
 
   onmessage: ((event: MessageEvent) => void) | null = null;
   onbufferedamountlow: ((event: Event) => void) | null = null;
+  onopen: (() => void) | null = null;
   readyState: RTCDataChannelState = "open";
   bufferedAmount = 0;
   bufferedAmountLowThreshold = 0;
@@ -215,6 +216,36 @@ describe("rtc peer sender setup", () => {
       "transfer_1",
       "{\"type\":\"transfer.offer\"}",
     );
+  });
+
+  test("receiver forwards data channel frames with the transfer id", async () => {
+    const sendSignal = vi.fn();
+    const onDataFrame = vi.fn();
+
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "alice",
+        to: "bob",
+        description: "offer",
+        payload: "{\"type\":\"offer\",\"sdp\":\"opaque-offer\"}",
+      },
+      sendSignal,
+      onDataFrame,
+    });
+
+    const instance = FakePeerConnection.instances[0];
+    if (!instance) {
+      throw new Error("expected fake connection");
+    }
+
+    const channel = new FakeDataChannel("data");
+    const frame = new Uint8Array([1, 2, 3]).buffer;
+    instance.ondatachannel?.({ channel } as unknown as RTCDataChannelEvent);
+    channel.onmessage?.({ data: frame } as MessageEvent);
+
+    expect(onDataFrame).toHaveBeenCalledWith("transfer_1", frame);
   });
 
   test("sends control messages over the transfer control channel", async () => {
