@@ -1,5 +1,10 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { closePeerConnection, startSenderPeerConnection } from "./rtc_peer";
+import {
+  closePeerConnection,
+  handleRtcSignal,
+  hasPeerConnection,
+  startSenderPeerConnection,
+} from "./rtc_peer";
 
 type FakeDescription = {
   type: "offer" | "answer";
@@ -16,6 +21,7 @@ class FakePeerConnection {
   static instances: FakePeerConnection[] = [];
 
   localDescription: FakeDescription | null = null;
+  remoteDescription: RTCSessionDescriptionInit | null = null;
   connectionState: RTCPeerConnectionState = "new";
   onconnectionstatechange: (() => void) | null = null;
   ondatachannel: ((event: RTCDataChannelEvent) => void) | null = null;
@@ -35,9 +41,19 @@ class FakePeerConnection {
     return { type: "offer", sdp: "opaque-offer" };
   }
 
+  async createAnswer(): Promise<RTCSessionDescriptionInit> {
+    return { type: "answer", sdp: "opaque-answer" };
+  }
+
   async setLocalDescription(description: RTCSessionDescriptionInit): Promise<void> {
     this.localDescription = description as FakeDescription;
   }
+
+  async setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void> {
+    this.remoteDescription = description;
+  }
+
+  async addIceCandidate(_candidate: RTCIceCandidateInit): Promise<void> {}
 
   close = vi.fn();
 }
@@ -86,6 +102,75 @@ describe("rtc peer sender setup", () => {
       correlation_id: "rtc_transfer_1",
       description: "offer",
       payload: "{\"type\":\"offer\",\"sdp\":\"opaque-offer\"}",
+    });
+  });
+
+  test("receiver accepts an offer and sends an answer signal", async () => {
+    const sendSignal = vi.fn();
+
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "alice",
+        to: "bob",
+        description: "offer",
+        payload: "{\"type\":\"offer\",\"sdp\":\"opaque-offer\"}",
+      },
+      sendSignal,
+    });
+
+    const instance = FakePeerConnection.instances[0];
+    if (!instance) {
+      throw new Error("expected fake connection");
+    }
+
+    expect(hasPeerConnection("transfer_1")).toBe(true);
+    expect(instance.remoteDescription).toEqual({
+      type: "offer",
+      sdp: "opaque-offer",
+    });
+    expect(instance.localDescription).toEqual({
+      type: "answer",
+      sdp: "opaque-answer",
+    });
+    expect(sendSignal).toHaveBeenCalledWith({
+      to: "alice",
+      transfer_id: "transfer_1",
+      correlation_id: "rtc_transfer_1",
+      description: "answer",
+      payload: "{\"type\":\"answer\",\"sdp\":\"opaque-answer\"}",
+    });
+  });
+
+  test("sender accepts an answer on the existing peer connection", async () => {
+    const sendSignal = vi.fn();
+
+    await startSenderPeerConnection({
+      transferId: "transfer_1",
+      to: "bob",
+      sendSignal,
+    });
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "bob",
+        to: "alice",
+        description: "answer",
+        payload: "{\"type\":\"answer\",\"sdp\":\"opaque-answer\"}",
+      },
+      sendSignal,
+    });
+
+    const instance = FakePeerConnection.instances[0];
+    if (!instance) {
+      throw new Error("expected fake connection");
+    }
+
+    expect(instance.remoteDescription).toEqual({
+      type: "answer",
+      sdp: "opaque-answer",
     });
   });
 });
