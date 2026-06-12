@@ -104,6 +104,7 @@ pub type ManifestError {
   InvalidManifestPieceSizeForFile(file_id: String, index: Int)
   InvalidManifestPieceHash(file_id: String, index: Int)
   ManifestPieceSizeMismatch(file_id: String)
+  ManifestIdentityMismatch(expected: String, actual: String)
 }
 
 pub type RtcControlMessage {
@@ -284,8 +285,15 @@ pub fn validate_manifest(
   use Nil <- result.try(validate_manifest_header(manifest))
   use files <- result.try(validate_manifest_files(manifest.files))
   let normalized = Manifest(..manifest, files: files, manifest_id: "")
+  let expected_id = derive_manifest_id(normalized)
 
-  Ok(Manifest(..normalized, manifest_id: derive_manifest_id(normalized)))
+  case string.trim(manifest.manifest_id) {
+    "" -> Ok(Manifest(..normalized, manifest_id: expected_id))
+    actual if actual == expected_id ->
+      Ok(Manifest(..normalized, manifest_id: expected_id))
+    actual ->
+      Error(ManifestIdentityMismatch(expected: expected_id, actual: actual))
+  }
 }
 
 pub fn derive_manifest_id(manifest: Manifest) -> String {

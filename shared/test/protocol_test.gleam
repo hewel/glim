@@ -246,6 +246,26 @@ pub fn rtc_control_piece_request_round_trips_request_test() {
   let assert True = message == decoded
 }
 
+pub fn rtc_control_transfer_offer_rejects_manifest_identity_mismatch_test() {
+  let manifest = valid_manifest()
+  let assert Ok(validated) = protocol.validate_manifest(manifest)
+  let stale_manifest =
+    protocol.Manifest(..validated, manifest_id: "manifest_stale")
+  let message =
+    protocol.TransferOffer(
+      room_transfer_id: "transfer_1",
+      manifest: stale_manifest,
+    )
+
+  let assert Error(protocol.InvalidRtcControlManifest(protocol.ManifestIdentityMismatch(
+    actual: "manifest_stale",
+    ..,
+  ))) =
+    message
+    |> protocol.encode_rtc_control_message
+    |> protocol.decode_rtc_control_message
+}
+
 pub fn decode_malformed_text_message_test() {
   let assert Error(Nil) =
     protocol.decode_server_event(
