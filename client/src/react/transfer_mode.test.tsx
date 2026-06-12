@@ -82,7 +82,7 @@ describe("transfer mode labels", () => {
 
     expect(card.getByText("Relay")).toBeVisible();
     expect(card.getByText(/Ada Laptop/)).toBeVisible();
-    expect(card.getByText("Transferring")).toBeVisible();
+    expect(card.getAllByText("Transferring")[0]).toBeVisible();
     expect(card.getByText("256 B / 1.0 KB")).toBeVisible();
     expect(card.getByRole("button", { name: "Cancel transfer" })).toBeVisible();
   });
@@ -93,5 +93,40 @@ describe("transfer mode labels", () => {
     render(<TransferQueue />);
 
     expect(screen.getByText("No active transfers.")).toBeVisible();
+  });
+
+  test("reserves transfer cockpit states for P2P progress", () => {
+    const futureStates: TransferItem[] = [
+      { ...relayTransfer, transfer_id: "hashing", name: "hashing.bin", status: "hashing", notice: "Preparing manifest" },
+      { ...relayTransfer, transfer_id: "setup", name: "setup.bin", mode: "p2p", status: "p2p_setup", notice: "Opening peer channel" },
+      {
+        ...relayTransfer,
+        transfer_id: "active",
+        name: "active.bin",
+        mode: "p2p",
+        piece_summary: { active: 2, verified: 7, failed: 1, total: 12 },
+      },
+      { ...relayTransfer, transfer_id: "interrupted", name: "interrupted.bin", mode: "p2p", status: "interrupted", notice: "Peer disconnected" },
+      { ...relayTransfer, transfer_id: "resumable", name: "resumable.bin", mode: "p2p", status: "resumable", notice: "Resume available" },
+      { ...relayTransfer, transfer_id: "export", name: "export.bin", mode: "p2p", status: "export_ready", notice: "Ready to save" },
+      { ...relayTransfer, transfer_id: "fallback", name: "fallback.bin", status: "fallback", notice: "Using relay fallback" },
+      { ...relayTransfer, transfer_id: "complete", name: "complete.bin", status: "completed", notice: "Complete" },
+      { ...relayTransfer, transfer_id: "cancelled", name: "cancelled.bin", status: "cancelled", notice: "Cancelled" },
+    ];
+    useAppStore.setState({ transfers: futureStates });
+
+    render(<TransferQueue />);
+
+    expect(screen.getByText("Hashing")).toBeVisible();
+    expect(screen.getByText("P2P setup")).toBeVisible();
+    expect(screen.getByText("Active 2")).toBeVisible();
+    expect(screen.getByText("Verified 7 / 12")).toBeVisible();
+    expect(screen.getByText("Failed 1")).toBeVisible();
+    expect(screen.getByText("Interrupted")).toBeVisible();
+    expect(screen.getByText("Resumable")).toBeVisible();
+    expect(screen.getByText("Export ready")).toBeVisible();
+    expect(screen.getByText("Fallback")).toBeVisible();
+    expect(screen.getByText("Completed")).toBeVisible();
+    expect(screen.getAllByText("Cancelled")[0]).toBeVisible();
   });
 });

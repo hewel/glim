@@ -47,12 +47,25 @@ export type TransferMode = "relay" | "p2p";
 export type TransferStatus =
   | "offered"
   | "awaiting_save"
+  | "hashing"
+  | "p2p_setup"
   | "transferring"
+  | "interrupted"
+  | "resumable"
+  | "export_ready"
+  | "fallback"
   | "completed"
   | "failed"
   | "cancelled"
   | "declined"
   | "unsupported";
+
+export interface TransferPieceSummary {
+  active: number;
+  verified: number;
+  failed: number;
+  total: number;
+}
 
 export interface TransferItem {
   transfer_id: string;
@@ -64,6 +77,7 @@ export interface TransferItem {
   transferred: number;
   direction: TransferDirection;
   mode: TransferMode;
+  piece_summary?: TransferPieceSummary;
   status: TransferStatus;
   notice: string;
 }

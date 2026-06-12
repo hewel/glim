@@ -58,8 +58,9 @@ export function TransferQueue({ isDrawer = false }: { isDrawer?: boolean }) {
 
 function QueueCard({ transfer, onCancel }: { transfer: TransferItem; onCancel: () => void }) {
   const percent = progressPercent(transfer.transferred, transfer.size);
-  const active = ["offered", "awaiting_save", "transferring"].includes(transfer.status);
+  const active = isActiveTransferStatus(transfer.status);
   const modeLabel = transferModeLabel(transfer);
+  const statusLabel = transferStatusLabel(transfer);
   const peerLabel = transfer.direction === "sending"
     ? `Sending to ${transfer.peer_name}`
     : `Receiving from ${transfer.peer_name}`;
@@ -81,6 +82,7 @@ function QueueCard({ transfer, onCancel }: { transfer: TransferItem; onCancel: (
           <p className="truncate font-body-md font-semibold text-on-surface">{transfer.name}</p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <TransferModeBadge label={modeLabel} />
+            <TransferStatusBadge label={statusLabel} />
             <p className="font-code-sm text-on-surface-variant text-xs">{transfer.notice}</p>
           </div>
         </div>
@@ -108,6 +110,19 @@ function QueueCard({ transfer, onCancel }: { transfer: TransferItem; onCancel: (
         <span>{formatBytes(transfer.transferred)} / {formatBytes(transfer.size)}</span>
         <span>{percent}%</span>
       </div>
+      {transfer.piece_summary ? (
+        <div className="mt-3 flex flex-wrap gap-2 font-code-sm text-xs">
+          <span className="rounded-sm bg-primary-fixed px-2 py-1 text-primary">
+            Active {transfer.piece_summary.active}
+          </span>
+          <span className="rounded-sm bg-emerald-50 px-2 py-1 text-emerald-700">
+            Verified {transfer.piece_summary.verified} / {transfer.piece_summary.total}
+          </span>
+          <span className="rounded-sm bg-rose-50 px-2 py-1 text-rose-700">
+            Failed {transfer.piece_summary.failed}
+          </span>
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -120,6 +135,14 @@ function TransferModeBadge({ label }: { label: string }) {
   );
 }
 
+function TransferStatusBadge({ label }: { label: string }) {
+  return (
+    <span className="rounded-sm border border-outline-variant bg-surface-container-low px-2 py-1 font-label-md text-on-surface-variant">
+      {label}
+    </span>
+  );
+}
+
 function transferModeLabel(transfer: TransferItem): string {
   switch (transfer.mode) {
     case "p2p":
@@ -127,4 +150,49 @@ function transferModeLabel(transfer: TransferItem): string {
     case "relay":
       return "Relay";
   }
+}
+
+function transferStatusLabel(transfer: TransferItem): string {
+  switch (transfer.status) {
+    case "offered":
+      return "Offered";
+    case "awaiting_save":
+      return "Awaiting save";
+    case "hashing":
+      return "Hashing";
+    case "p2p_setup":
+      return "P2P setup";
+    case "transferring":
+      return "Transferring";
+    case "interrupted":
+      return "Interrupted";
+    case "resumable":
+      return "Resumable";
+    case "export_ready":
+      return "Export ready";
+    case "fallback":
+      return "Fallback";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+    case "declined":
+      return "Declined";
+    case "unsupported":
+      return "Unsupported";
+  }
+}
+
+function isActiveTransferStatus(status: TransferItem["status"]): boolean {
+  return [
+    "offered",
+    "awaiting_save",
+    "hashing",
+    "p2p_setup",
+    "transferring",
+    "export_ready",
+    "fallback",
+  ].includes(status);
 }
