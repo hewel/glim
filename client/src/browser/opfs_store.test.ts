@@ -112,6 +112,30 @@ describe("OPFS transfer storage", () => {
       ),
     ).resolves.toBe(true);
   });
+
+  test("reports hash mismatch for a completed OPFS piece", async () => {
+    const root = new FakeDirectoryHandle();
+    const chunk: DecodedFileChunk = {
+      transfer_id: "transfer_1",
+      sequence: 0,
+      offset: 0,
+      byte_length: 2,
+      final: false,
+      bytes: new Uint8Array([97, 98]).buffer,
+    };
+
+    await writeChunkToOpfs(chunk, root);
+
+    await expect(
+      verifyOpfsPieceHash(
+        "transfer_1",
+        0,
+        2,
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        root,
+      ),
+    ).resolves.toBe(false);
+  });
 });
 
 function isWriteCommand(value: unknown): value is {
