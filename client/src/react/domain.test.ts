@@ -7,6 +7,7 @@ import {
   markP2pSetupFailed,
   markTransferProgress,
   otherPeers,
+  pieceChunkPlan,
 } from "./domain";
 import type { Peer, TextMessage, TransferItem } from "./types";
 
@@ -186,5 +187,17 @@ describe("React domain helpers", () => {
       file_id: "file_1",
       piece_index: 0,
     });
+  });
+
+  test("plans chunks inside a requested piece boundary", () => {
+    expect(pieceChunkPlan({
+      piece_index: 1,
+      piece_size: 5,
+      file_size: 12,
+      chunk_size: 3,
+    })).toEqual([
+      { sequence: 0, offset: 5, byte_length: 3 },
+      { sequence: 1, offset: 8, byte_length: 2 },
+    ]);
   });
 });

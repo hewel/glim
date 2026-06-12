@@ -4,6 +4,7 @@ import {
   handleRtcSignal,
   hasPeerConnection,
   sendControlMessage,
+  sendDataFrameWithBackpressure,
   startSenderPeerConnection,
 } from "./rtc_peer";
 
@@ -16,7 +17,10 @@ class FakeDataChannel {
   constructor(readonly label: string) {}
 
   onmessage: ((event: MessageEvent) => void) | null = null;
+  onbufferedamountlow: ((event: Event) => void) | null = null;
   readyState: RTCDataChannelState = "open";
+  bufferedAmount = 0;
+  bufferedAmountLowThreshold = 0;
   send = vi.fn();
   close = vi.fn();
 }
@@ -229,5 +233,40 @@ describe("rtc peer sender setup", () => {
     expect(controlChannel).toBeDefined();
     expect(sendControlMessage("transfer_1", "{\"type\":\"transfer.offer\"}")).toBe(true);
     expect(controlChannel?.send).toHaveBeenCalledWith("{\"type\":\"transfer.offer\"}");
+  });
+
+  test("waits for data channel backpressure before sending frames", async () => {
+    await startSenderPeerConnection({
+      transferId: "transfer_1",
+      to: "bob",
+      sendSignal: vi.fn(),
+    });
+
+    const instance = FakePeerConnection.instances[0];
+    if (!instance) {
+      throw new Error("expected fake connection");
+    }
+    const dataChannel = instance.channels.find((channel) => channel.label === "data");
+    if (!dataChannel) {
+      throw new Error("expected data channel");
+    }
+
+    dataChannel.bufferedAmount = 20;
+    const frame = new Uint8Array([1, 2, 3]).buffer;
+    const sendPromise = sendDataFrameWithBackpressure("transfer_1", frame, {
+      highWaterMark: 16,
+      lowWaterMark: 4,
+    });
+
+    await Promise.resolve();
+
+    expect(dataChannel.bufferedAmountLowThreshold).toBe(4);
+    expect(dataChannel.send).not.toHaveBeenCalled();
+
+    dataChannel.bufferedAmount = 4;
+    dataChannel.onbufferedamountlow?.(new Event("bufferedamountlow"));
+
+    await expect(sendPromise).resolves.toBe(true);
+    expect(dataChannel.send).toHaveBeenCalledWith(frame);
   });
 });

@@ -267,6 +267,34 @@ export function firstMissingPieceRequest(
   };
 }
 
+export function pieceChunkPlan(options: {
+  piece_index: number;
+  piece_size: number;
+  file_size: number;
+  chunk_size: number;
+}): Array<{ sequence: number; offset: number; byte_length: number }> {
+  if (
+    options.piece_index < 0 ||
+    options.piece_size <= 0 ||
+    options.file_size <= 0 ||
+    options.chunk_size <= 0
+  ) {
+    return [];
+  }
+
+  const pieceStart = options.piece_index * options.piece_size;
+  const pieceEnd = Math.min(pieceStart + options.piece_size, options.file_size);
+  const chunks: Array<{ sequence: number; offset: number; byte_length: number }> = [];
+
+  for (let offset = pieceStart, sequence = 0; offset < pieceEnd; sequence += 1) {
+    const byteLength = Math.min(options.chunk_size, pieceEnd - offset);
+    chunks.push({ sequence, offset, byte_length: byteLength });
+    offset += byteLength;
+  }
+
+  return chunks;
+}
+
 export function isPeerOnline(peers: Peer[], peerId: string): boolean {
   return peers.some((peer) => peer.id === peerId);
 }

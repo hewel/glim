@@ -25,6 +25,8 @@ interface ReceiverOptions extends RtcPeerCallbacks {
 type RtcPeerOptions = SenderOptions | ReceiverOptions;
 
 const peerHandles = new Map<string, RtcPeerHandle>();
+const defaultHighWaterMark = 16 * 1024 * 1024;
+const defaultLowWaterMark = 4 * 1024 * 1024;
 
 export async function startSenderPeerConnection(options: SenderOptions): Promise<void> {
   const connection = createPeerConnection(options.transferId, options);
@@ -87,6 +89,33 @@ export function sendControlMessage(transferId: string, raw: string): boolean {
   }
 
   channel.send(raw);
+  return true;
+}
+
+export async function sendDataFrameWithBackpressure(
+  transferId: string,
+  frame: ArrayBuffer,
+  thresholds: {
+    highWaterMark?: number;
+    lowWaterMark?: number;
+  } = {},
+): Promise<boolean> {
+  const channel = peerHandles.get(transferId)?.dataChannel;
+  if (!channel || channel.readyState !== "open") {
+    return false;
+  }
+
+  const highWaterMark = thresholds.highWaterMark ?? defaultHighWaterMark;
+  const lowWaterMark = thresholds.lowWaterMark ?? defaultLowWaterMark;
+  if (channel.bufferedAmount > highWaterMark) {
+    await waitForBufferedAmountLow(channel, lowWaterMark);
+  }
+
+  if (channel.readyState !== "open") {
+    return false;
+  }
+
+  channel.send(frame);
   return true;
 }
 
@@ -204,6 +233,26 @@ function configureControlChannel(
 
     callbacks.onFailed?.(transferId, "RTC control message was invalid.");
   };
+}
+
+function waitForBufferedAmountLow(
+  channel: RTCDataChannel,
+  lowWaterMark: number,
+): Promise<void> {
+  if (channel.bufferedAmount <= lowWaterMark) {
+    return Promise.resolve();
+  }
+
+  channel.bufferedAmountLowThreshold = lowWaterMark;
+  return new Promise((resolve) => {
+    const previousHandler = channel.onbufferedamountlow;
+    channel.onbufferedamountlow = (event) => {
+      if (previousHandler) {
+        previousHandler.call(channel, event);
+      }
+      resolve();
+    };
+  });
 }
 
 function sendDescription(

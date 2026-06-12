@@ -5,6 +5,7 @@ import {
   hashOutgoingFile,
   loadDetectedProfile,
   loadIdentity,
+  prepareOutgoingFrame,
   selectFile,
   send,
   sendFileChunk,
@@ -15,6 +16,7 @@ import {
 import {
   closePeerConnection,
   handleRtcSignal,
+  sendDataFrameWithBackpressure,
   sendControlMessage,
   startSenderPeerConnection,
 } from "../browser/rtc_peer";
@@ -40,6 +42,7 @@ import {
   markTransferProgress,
   markTransferStatus,
   otherPeers,
+  pieceChunkPlan,
   rememberPeer,
   rememberPeers,
   removePeer,
@@ -776,6 +779,7 @@ function rtcControlMessageReceived(transferId: string, raw: string): void {
       requestFirstMissingPiece(event);
       break;
     case "piece_request":
+      void sendRequestedPiece(transferId, event);
       break;
   }
 }
@@ -816,6 +820,61 @@ function requestFirstMissingPiece(
       "Requested first piece",
     ),
   }));
+}
+
+async function sendRequestedPiece(
+  transferId: string,
+  event: Extract<RtcControlEvent, { kind: "piece_request" }>,
+): Promise<void> {
+  const state = useAppStore.getState();
+  const file = state.localFiles[transferId];
+  if (!file) {
+    return;
+  }
+
+  const chunks = pieceChunkPlan({
+    piece_index: event.piece_index,
+    piece_size: core.default_manifest_piece_size(),
+    file_size: file.size,
+    chunk_size: chunkSize,
+  });
+
+  try {
+    for (const chunk of chunks) {
+      const frame = await prepareOutgoingFrame(
+        file.file_id,
+        transferId,
+        chunk.sequence,
+        chunk.offset,
+        chunk.byte_length,
+      );
+      const sent = await sendDataFrameWithBackpressure(transferId, frame);
+      if (!sent) {
+        throw new Error("RTC data channel was not open.");
+      }
+    }
+
+    useAppStore.setState((current) => ({
+      transfers: markTransferModeAndStatus(
+        current.transfers,
+        transferId,
+        "p2p",
+        "transferring",
+        "Sending requested piece",
+      ),
+    }));
+  } catch (_error) {
+    useAppStore.setState((current) => ({
+      transfers: markTransferStatus(
+        current.transfers,
+        transferId,
+        "failed",
+        "Requested piece could not be sent.",
+      ),
+    }));
+    closePeerConnection(transferId);
+    send(core.encode_file_cancel(transferId), sendFailed);
+  }
 }
 
 function rtcSetupFailed(transferId: string, reason: string): void {

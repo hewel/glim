@@ -3,6 +3,7 @@ export { delay, formatTime } from "./timer";
 export {
   closeReceiveFile,
   hashOutgoingFile,
+  prepareOutgoingFrame,
   selectFile,
   startReceiveFile,
   streamSaveSupported,
