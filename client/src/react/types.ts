@@ -130,5 +130,10 @@ export type ServerEvent =
   | { kind: "unknown"; event_type: string }
   | { kind: "invalid"; message: string };
 
+export type RtcControlEvent =
+  | { kind: "transfer_manifest_accepted"; transfer_id: string; manifest_id: string }
+  | { kind: "transfer_manifest_rejected"; transfer_id: string; reason: string }
+  | { kind: "piece_request"; manifest_id: string; file_id: string; piece_index: number };
+
 export type { FileSelection, WrittenChunk };
 export type { BrowserFamily, DeviceKind, DeviceOs, DeviceProfile };

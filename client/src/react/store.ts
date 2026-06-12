@@ -51,6 +51,7 @@ import type {
   Peer,
   PendingDraftClear,
   OutgoingRtcSignal,
+  RtcControlEvent,
   RtcSignal,
   ServerEvent,
   TextMessage,
@@ -591,6 +592,7 @@ function handleServerEvent(raw: string): void {
         sendSignal: useAppStore.getState().sendRtcSignal,
         onConnected: rtcConnected,
         onFailed: rtcSetupFailed,
+        onControlMessage: rtcControlMessageReceived,
       });
       break;
     case "error":
@@ -654,6 +656,7 @@ function applyFileAccepted(transferId: string): void {
       sendSignal: useAppStore.getState().sendRtcSignal,
       onConnected: rtcConnected,
       onFailed: rtcSetupFailed,
+      onControlMessage: rtcControlMessageReceived,
     }).catch(() => {
       rtcSetupFailed(transferId, "P2P setup failed before transfer progress.");
     });
@@ -670,6 +673,43 @@ function rtcConnected(transferId: string): void {
       "P2P channels connected",
     ),
   }));
+}
+
+function rtcControlMessageReceived(transferId: string, raw: string): void {
+  const state = useAppStore.getState();
+  const transfer = state.transfers.find((item) => item.transfer_id === transferId);
+  if (!transfer) {
+    return;
+  }
+
+  const event = JSON.parse(
+    core.rtc_control_event_json(
+      raw,
+      transfer.transfer_id,
+      transfer.name,
+      transfer.size,
+      transfer.mime_type,
+    ),
+  ) as RtcControlEvent;
+
+  switch (event.kind) {
+    case "transfer_manifest_rejected":
+      useAppStore.setState((current) => ({
+        transfers: markTransferStatus(
+          current.transfers,
+          event.transfer_id,
+          "failed",
+          event.reason,
+        ),
+      }));
+      closeReceiveFile(event.transfer_id);
+      closePeerConnection(event.transfer_id);
+      send(core.encode_file_cancel(event.transfer_id), sendFailed);
+      break;
+    case "transfer_manifest_accepted":
+    case "piece_request":
+      break;
+  }
 }
 
 function rtcSetupFailed(transferId: string, reason: string): void {

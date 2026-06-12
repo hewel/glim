@@ -282,6 +282,56 @@ pub fn core_decodes_routed_rtc_signal_for_browser_test() {
   let assert True = string.contains(json, "opaque")
 }
 
+pub fn core_rejects_rtc_transfer_offer_manifest_mismatch_test() {
+  let assert Ok(manifest) =
+    shared_protocol.validate_manifest(
+      shared_protocol.Manifest(
+        version: 1,
+        manifest_id: "",
+        piece_size: 4,
+        files: [
+          shared_protocol.ManifestFile(
+            file_id: "file_1",
+            name: "other.mov",
+            size: 4,
+            mime_type: "video/quicktime",
+            pieces: [
+              shared_protocol.ManifestPiece(
+                index: 0,
+                size: 4,
+                sha256: hash("a"),
+              ),
+            ],
+          ),
+        ],
+      ),
+    )
+  let control_json =
+    shared_protocol.TransferOffer(
+      room_transfer_id: "transfer_1",
+      manifest: manifest,
+    )
+    |> shared_protocol.encode_rtc_control_message
+
+  let json =
+    core.rtc_control_event_json(
+      control_json,
+      "transfer_1",
+      "clip.mov",
+      4,
+      "video/quicktime",
+    )
+
+  let assert True =
+    string.contains(json, "\"kind\":\"transfer_manifest_rejected\"")
+  let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
+  let assert True =
+    string.contains(
+      json,
+      "\"reason\":\"Manifest does not match the accepted file offer.\"",
+    )
+}
+
 pub fn transfer_connection_loss_marks_active_transfers_failed_test() {
   let selection =
     transfer.FileSelection(
@@ -338,4 +388,8 @@ fn peer(id: String, display_name: String) -> shared_protocol.Peer {
     browser: "unknown",
     model: option.None,
   )
+}
+
+fn hash(prefix: String) -> String {
+  prefix <> "000000000000000000000000000000000000000000000000000000000000000"
 }

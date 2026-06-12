@@ -14,6 +14,7 @@ type FakeDescription = {
 class FakeDataChannel {
   constructor(readonly label: string) {}
 
+  onmessage: ((event: MessageEvent) => void) | null = null;
   close = vi.fn();
 }
 
@@ -172,5 +173,37 @@ describe("rtc peer sender setup", () => {
       type: "answer",
       sdp: "opaque-answer",
     });
+  });
+
+  test("receiver forwards control channel messages with the transfer id", async () => {
+    const sendSignal = vi.fn();
+    const onControlMessage = vi.fn();
+
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "alice",
+        to: "bob",
+        description: "offer",
+        payload: "{\"type\":\"offer\",\"sdp\":\"opaque-offer\"}",
+      },
+      sendSignal,
+      onControlMessage,
+    });
+
+    const instance = FakePeerConnection.instances[0];
+    if (!instance) {
+      throw new Error("expected fake connection");
+    }
+
+    const channel = new FakeDataChannel("control");
+    instance.ondatachannel?.({ channel } as unknown as RTCDataChannelEvent);
+    channel.onmessage?.({ data: "{\"type\":\"transfer.offer\"}" } as MessageEvent);
+
+    expect(onControlMessage).toHaveBeenCalledWith(
+      "transfer_1",
+      "{\"type\":\"transfer.offer\"}",
+    );
   });
 });

@@ -123,6 +123,28 @@ describe("transfer mode labels", () => {
     expect(screen.getByText("No active transfers.")).toBeVisible();
   });
 
+  test("shows manifest rejection as a failed transfer", () => {
+    useAppStore.setState({
+      transfers: [
+        {
+          ...relayTransfer,
+          mode: "p2p",
+          status: "failed",
+          notice: "Manifest does not match the accepted file offer.",
+        },
+      ],
+    });
+
+    render(<TransferQueue />);
+
+    const transferCard = screen.getByText("demo.bin").closest("article");
+    expect(transferCard).not.toBeNull();
+    const card = within(transferCard as HTMLElement);
+
+    expect(card.getByText("Failed")).toBeVisible();
+    expect(card.getByText("Manifest does not match the accepted file offer.")).toBeVisible();
+  });
+
   test("reserves transfer cockpit states for P2P progress", () => {
     const futureStates: TransferItem[] = [
       { ...relayTransfer, transfer_id: "hashing", name: "hashing.bin", status: "hashing", notice: "Preparing manifest" },

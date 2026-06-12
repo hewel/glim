@@ -107,6 +107,39 @@ pub fn encode_rtc_signal(
   )
 }
 
+pub fn rtc_control_event_json(
+  raw: String,
+  expected_transfer_id: String,
+  expected_name: String,
+  expected_size: Int,
+  expected_mime_type: String,
+) -> String {
+  case shared_protocol.decode_rtc_control_message(raw) {
+    Ok(shared_protocol.TransferOffer(room_transfer_id:, manifest:)) ->
+      transfer_offer_control_event(
+        expected_transfer_id,
+        expected_name,
+        expected_size,
+        expected_mime_type,
+        room_transfer_id,
+        manifest,
+      )
+    Ok(shared_protocol.PieceRequest(manifest_id:, file_id:, piece_index:)) ->
+      json.object([
+        #("kind", json.string("piece_request")),
+        #("manifest_id", json.string(manifest_id)),
+        #("file_id", json.string(file_id)),
+        #("piece_index", json.int(piece_index)),
+      ])
+    Error(_) ->
+      rejected_manifest_event(
+        expected_transfer_id,
+        "Manifest control message could not be decoded.",
+      )
+  }
+  |> json.to_string
+}
+
 pub fn server_error_notice(
   code: String,
   message: String,
@@ -201,6 +234,60 @@ fn encode_server_event(event: shared_protocol.ServerEvent) -> String {
       ])
   }
   |> json.to_string
+}
+
+fn transfer_offer_control_event(
+  expected_transfer_id: String,
+  expected_name: String,
+  expected_size: Int,
+  expected_mime_type: String,
+  room_transfer_id: String,
+  manifest: shared_protocol.Manifest,
+) -> json.Json {
+  case
+    expected_transfer_id == room_transfer_id,
+    manifest_matches_offer(
+      manifest,
+      expected_name,
+      expected_size,
+      expected_mime_type,
+    )
+  {
+    True, True ->
+      json.object([
+        #("kind", json.string("transfer_manifest_accepted")),
+        #("transfer_id", json.string(expected_transfer_id)),
+        #("manifest_id", json.string(manifest.manifest_id)),
+      ])
+    _, _ ->
+      rejected_manifest_event(
+        expected_transfer_id,
+        "Manifest does not match the accepted file offer.",
+      )
+  }
+}
+
+fn manifest_matches_offer(
+  manifest: shared_protocol.Manifest,
+  expected_name: String,
+  expected_size: Int,
+  expected_mime_type: String,
+) -> Bool {
+  case manifest.files {
+    [file] ->
+      file.name == expected_name
+      && file.size == expected_size
+      && file.mime_type == expected_mime_type
+    _ -> False
+  }
+}
+
+fn rejected_manifest_event(transfer_id: String, reason: String) -> json.Json {
+  json.object([
+    #("kind", json.string("transfer_manifest_rejected")),
+    #("transfer_id", json.string(transfer_id)),
+    #("reason", json.string(reason)),
+  ])
 }
 
 fn peer_json(peer: shared_protocol.Peer) -> json.Json {
