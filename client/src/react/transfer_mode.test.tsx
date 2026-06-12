@@ -73,6 +73,34 @@ describe("transfer mode labels", () => {
     expect(screen.getByText("Relay")).toBeVisible();
   });
 
+  test("keeps essential transfer state visible in the compact chat card", () => {
+    useAppStore.setState({
+      transfers: [
+        {
+          ...relayTransfer,
+          transfer_id: "p2p_setup",
+          mode: "p2p",
+          status: "p2p_setup",
+          transferred: 512,
+          notice: "Opening peer channel",
+          piece_summary: { active: 2, verified: 3, failed: 1, total: 8 },
+        },
+      ],
+    });
+
+    render(<ChatPanel />);
+
+    const card = within(screen.getByRole("group", { name: "Transfer demo.bin" }));
+
+    expect(card.getByText("P2P")).toBeVisible();
+    expect(card.getByText("P2P setup")).toBeVisible();
+    expect(card.getByText(/512 B \/ 1.0 KB/)).toBeVisible();
+    expect(card.getByText("Active 2")).toBeVisible();
+    expect(card.getByText("Verified 3 / 8")).toBeVisible();
+    expect(card.getByText("Failed 1")).toBeVisible();
+    expect(card.getByRole("button", { name: "Cancel" })).toBeVisible();
+  });
+
   test("shows transfer cockpit details for an active transfer", () => {
     render(<TransferQueue />);
 
