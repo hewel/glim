@@ -1,3 +1,4 @@
+import gleam/option
 import gleam/string
 import gleeunit
 import shared/protocol
@@ -7,11 +8,12 @@ pub fn main() -> Nil {
 }
 
 pub fn encode_peer_hello_contains_wire_fields_test() {
-  let json = protocol.encode_peer_hello("device_abc", "Zed")
+  let json = protocol.encode_peer_hello("device_abc", "Zed", "desktop")
 
   let assert True = string.contains(json, "\"type\":\"peer.hello\"")
   let assert True = string.contains(json, "\"device_id\":\"device_abc\"")
   let assert True = string.contains(json, "\"display_name\":\"Zed\"")
+  let assert True = string.contains(json, "\"device_kind\":\"desktop\"")
 }
 
 pub fn encode_text_send_contains_wire_fields_test() {
@@ -40,22 +42,37 @@ pub fn encode_file_offer_contains_wire_fields_test() {
 }
 
 pub fn decode_peer_list_test() {
-  let assert Ok(protocol.PeerList([
-    protocol.Peer(id: "device_abc", display_name: "Zed"),
-    protocol.Peer(id: "device_xyz", display_name: "Ada"),
-  ])) =
+  let assert Ok(protocol.PeerList(decoded_peers)) =
     protocol.decode_server_event(
-      "{\"type\":\"peer.list\",\"peers\":[{\"id\":\"device_abc\",\"display_name\":\"Zed\"},{\"id\":\"device_xyz\",\"display_name\":\"Ada\"}]}",
+      "{\"type\":\"peer.list\",\"peers\":[{\"id\":\"device_abc\",\"display_name\":\"Zed\",\"device_kind\":\"desktop\",\"os\":\"linux\",\"browser\":\"firefox\",\"model\":null},{\"id\":\"device_xyz\",\"display_name\":\"Ada\",\"device_kind\":\"phone\",\"os\":\"android\",\"browser\":\"chrome\",\"model\":\"Pixel 8\"}]}",
     )
+  let assert True =
+    decoded_peers
+    == [
+      peer("device_abc", "Zed", "desktop"),
+      peer("device_xyz", "Ada", "phone"),
+    ]
 }
 
 pub fn decode_peer_joined_test() {
-  let assert Ok(protocol.PeerJoined(protocol.Peer(
+  let assert Ok(protocol.PeerJoined(decoded_peer)) =
+    protocol.decode_server_event(
+      "{\"type\":\"peer.joined\",\"peer\":{\"id\":\"device_abc\",\"display_name\":\"Zed\",\"device_kind\":\"desktop\",\"os\":\"linux\",\"browser\":\"firefox\",\"model\":null}}",
+    )
+  let assert True = decoded_peer == peer("device_abc", "Zed", "desktop")
+}
+
+pub fn decode_peer_updated_test() {
+  let assert Ok(protocol.PeerUpdated(protocol.Peer(
     id: "device_abc",
     display_name: "Zed",
+    device_kind: "phone",
+    os: "android",
+    browser: "chrome",
+    model: option.Some("Pixel 8"),
   ))) =
     protocol.decode_server_event(
-      "{\"type\":\"peer.joined\",\"peer\":{\"id\":\"device_abc\",\"display_name\":\"Zed\"}}",
+      "{\"type\":\"peer.updated\",\"peer\":{\"id\":\"device_abc\",\"display_name\":\"Zed\",\"device_kind\":\"phone\",\"os\":\"android\",\"browser\":\"chrome\",\"model\":\"Pixel 8\"}}",
     )
 }
 
@@ -154,4 +171,32 @@ pub fn decode_malformed_message_history_test() {
 
 pub fn decode_malformed_json_test() {
   let assert Error(Nil) = protocol.decode_server_event("{bad json")
+}
+
+fn peer(
+  id: String,
+  display_name: String,
+  device_kind: String,
+) -> protocol.Peer {
+  let os = case device_kind {
+    "phone" -> "android"
+    _ -> "linux"
+  }
+  let browser = case device_kind {
+    "phone" -> "chrome"
+    _ -> "firefox"
+  }
+  let model = case device_kind {
+    "phone" -> option.Some("Pixel 8")
+    _ -> option.None
+  }
+
+  protocol.Peer(
+    id: id,
+    display_name: display_name,
+    device_kind: device_kind,
+    os: os,
+    browser: browser,
+    model: model,
+  )
 }

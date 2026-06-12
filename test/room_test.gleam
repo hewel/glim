@@ -1,6 +1,7 @@
 import file_frame
 import gleam/bit_array
 import gleam/erlang/process
+import gleam/option
 import gleam/otp/actor
 import gleam/result
 import gleeunit
@@ -18,12 +19,17 @@ pub fn joining_alice_sends_self_peer_list_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "alice", display_name: "Alice", client: alice),
+    room.Join(
+      device_id: "alice",
+      display_name: "Alice",
+      device_kind: "unknown",
+      client: alice,
+    ),
   )
 
-  let assert Ok(room.SendPeerList([
-    shared_protocol.Peer(id: "alice", display_name: "Alice"),
-  ])) = process.receive(from: alice, within: 1000)
+  let assert Ok(room.SendPeerList(alice_peers)) =
+    process.receive(from: alice, within: 1000)
+  let assert True = alice_peers == [peer("alice", "Alice")]
   let assert Ok(room.SendMessageHistory([])) =
     process.receive(from: alice, within: 1000)
 }
@@ -35,29 +41,37 @@ pub fn joining_bob_sends_full_list_and_joined_event_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "alice", display_name: "Alice", client: alice),
+    room.Join(
+      device_id: "alice",
+      display_name: "Alice",
+      device_kind: "unknown",
+      client: alice,
+    ),
   )
-  let assert Ok(room.SendPeerList([
-    shared_protocol.Peer(id: "alice", display_name: "Alice"),
-  ])) = process.receive(from: alice, within: 1000)
+  let assert Ok(room.SendPeerList(alice_peers)) =
+    process.receive(from: alice, within: 1000)
+  let assert True = alice_peers == [peer("alice", "Alice")]
   let assert Ok(room.SendMessageHistory([])) =
     process.receive(from: alice, within: 1000)
 
   process.send(
     room_subject,
-    room.Join(device_id: "bob", display_name: "Bob", client: bob),
+    room.Join(
+      device_id: "bob",
+      display_name: "Bob",
+      device_kind: "unknown",
+      client: bob,
+    ),
   )
 
-  let assert Ok(room.SendPeerList([
-    shared_protocol.Peer(id: "alice", display_name: "Alice"),
-    shared_protocol.Peer(id: "bob", display_name: "Bob"),
-  ])) = process.receive(from: bob, within: 1000)
+  let assert Ok(room.SendPeerList(bob_peers)) =
+    process.receive(from: bob, within: 1000)
+  let assert True = bob_peers == [peer("alice", "Alice"), peer("bob", "Bob")]
   let assert Ok(room.SendMessageHistory([])) =
     process.receive(from: bob, within: 1000)
-  let assert Ok(room.SendPeerJoined(shared_protocol.Peer(
-    id: "bob",
-    display_name: "Bob",
-  ))) = process.receive(from: alice, within: 1000)
+  let assert Ok(room.SendPeerJoined(joined_peer)) =
+    process.receive(from: alice, within: 1000)
+  let assert True = joined_peer == peer("bob", "Bob")
 }
 
 pub fn leaving_bob_sends_alice_left_event_test() {
@@ -67,7 +81,12 @@ pub fn leaving_bob_sends_alice_left_event_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "alice", display_name: "Alice", client: alice),
+    room.Join(
+      device_id: "alice",
+      display_name: "Alice",
+      device_kind: "unknown",
+      client: alice,
+    ),
   )
   let assert Ok(room.SendPeerList(_)) =
     process.receive(from: alice, within: 1000)
@@ -76,7 +95,12 @@ pub fn leaving_bob_sends_alice_left_event_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "bob", display_name: "Bob", client: bob),
+    room.Join(
+      device_id: "bob",
+      display_name: "Bob",
+      device_kind: "unknown",
+      client: bob,
+    ),
   )
   let assert Ok(room.SendPeerList(_)) = process.receive(from: bob, within: 1000)
   let assert Ok(room.SendMessageHistory(_)) =
@@ -90,6 +114,39 @@ pub fn leaving_bob_sends_alice_left_event_test() {
     process.receive(from: alice, within: 1000)
 }
 
+pub fn peer_update_broadcasts_metadata_to_other_peers_test() {
+  let assert Ok(room_subject) = room.start()
+  let alice = process.new_subject()
+  let bob = process.new_subject()
+
+  join_alice_and_bob(room_subject, alice, bob)
+
+  process.send(
+    room_subject,
+    room.UpdatePeer(
+      from: "bob",
+      patch: shared_protocol.PeerMetadataPatch(
+        display_name: option.Some("Bob Phone"),
+        device_kind: option.Some("phone"),
+        os: option.Some("android"),
+        browser: option.Some("chrome"),
+        model: option.Some("Pixel 8"),
+      ),
+      client: bob,
+    ),
+  )
+
+  let assert Ok(room.SendPeerUpdated(shared_protocol.Peer(
+    id: "bob",
+    display_name: "Bob Phone",
+    device_kind: "phone",
+    os: "android",
+    browser: "chrome",
+    model: option.Some("Pixel 8"),
+  ))) = process.receive(from: alice, within: 1000)
+  let assert Error(_) = process.receive(from: bob, within: 50)
+}
+
 pub fn replacing_alice_sends_replaced_and_ignores_stale_leave_test() {
   let assert Ok(room_subject) = room.start()
   let old_alice = process.new_subject()
@@ -98,42 +155,55 @@ pub fn replacing_alice_sends_replaced_and_ignores_stale_leave_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "alice", display_name: "Alice", client: old_alice),
+    room.Join(
+      device_id: "alice",
+      display_name: "Alice",
+      device_kind: "unknown",
+      client: old_alice,
+    ),
   )
-  let assert Ok(room.SendPeerList([
-    shared_protocol.Peer(id: "alice", display_name: "Alice"),
-  ])) = process.receive(from: old_alice, within: 1000)
+  let assert Ok(room.SendPeerList(old_alice_peers)) =
+    process.receive(from: old_alice, within: 1000)
+  let assert True = old_alice_peers == [peer("alice", "Alice")]
   let assert Ok(room.SendMessageHistory([])) =
     process.receive(from: old_alice, within: 1000)
 
   process.send(
     room_subject,
-    room.Join(device_id: "alice", display_name: "Alice 2", client: new_alice),
+    room.Join(
+      device_id: "alice",
+      display_name: "Alice 2",
+      device_kind: "unknown",
+      client: new_alice,
+    ),
   )
   let assert Ok(room.SessionReplaced) =
     process.receive(from: old_alice, within: 1000)
-  let assert Ok(room.SendPeerList([
-    shared_protocol.Peer(id: "alice", display_name: "Alice 2"),
-  ])) = process.receive(from: new_alice, within: 1000)
+  let assert Ok(room.SendPeerList(new_alice_peers)) =
+    process.receive(from: new_alice, within: 1000)
+  let assert True = new_alice_peers == [peer("alice", "Alice 2")]
   let assert Ok(room.SendMessageHistory([])) =
     process.receive(from: new_alice, within: 1000)
 
   process.send(room_subject, room.Leave(device_id: "alice", client: old_alice))
   process.send(
     room_subject,
-    room.Join(device_id: "bob", display_name: "Bob", client: bob),
+    room.Join(
+      device_id: "bob",
+      display_name: "Bob",
+      device_kind: "unknown",
+      client: bob,
+    ),
   )
 
-  let assert Ok(room.SendPeerList([
-    shared_protocol.Peer(id: "alice", display_name: "Alice 2"),
-    shared_protocol.Peer(id: "bob", display_name: "Bob"),
-  ])) = process.receive(from: bob, within: 1000)
+  let assert Ok(room.SendPeerList(bob_peers)) =
+    process.receive(from: bob, within: 1000)
+  let assert True = bob_peers == [peer("alice", "Alice 2"), peer("bob", "Bob")]
   let assert Ok(room.SendMessageHistory([])) =
     process.receive(from: bob, within: 1000)
-  let assert Ok(room.SendPeerJoined(shared_protocol.Peer(
-    id: "bob",
-    display_name: "Bob",
-  ))) = process.receive(from: new_alice, within: 1000)
+  let assert Ok(room.SendPeerJoined(joined_peer)) =
+    process.receive(from: new_alice, within: 1000)
+  let assert True = joined_peer == peer("bob", "Bob")
 }
 
 pub fn text_send_routes_to_receiver_and_sender_test() {
@@ -143,7 +213,12 @@ pub fn text_send_routes_to_receiver_and_sender_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "alice", display_name: "Alice", client: alice),
+    room.Join(
+      device_id: "alice",
+      display_name: "Alice",
+      device_kind: "unknown",
+      client: alice,
+    ),
   )
   let assert Ok(room.SendPeerList(_)) =
     process.receive(from: alice, within: 1000)
@@ -152,7 +227,12 @@ pub fn text_send_routes_to_receiver_and_sender_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "bob", display_name: "Bob", client: bob),
+    room.Join(
+      device_id: "bob",
+      display_name: "Bob",
+      device_kind: "unknown",
+      client: bob,
+    ),
   )
   let assert Ok(room.SendPeerList(_)) = process.receive(from: bob, within: 1000)
   let assert Ok(room.SendMessageHistory(_)) =
@@ -187,7 +267,12 @@ pub fn text_send_to_offline_peer_sends_error_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "alice", display_name: "Alice", client: alice),
+    room.Join(
+      device_id: "alice",
+      display_name: "Alice",
+      device_kind: "unknown",
+      client: alice,
+    ),
   )
   let assert Ok(room.SendPeerList(_)) =
     process.receive(from: alice, within: 1000)
@@ -212,7 +297,12 @@ pub fn text_send_to_self_sends_error_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "alice", display_name: "Alice", client: alice),
+    room.Join(
+      device_id: "alice",
+      display_name: "Alice",
+      device_kind: "unknown",
+      client: alice,
+    ),
   )
   let assert Ok(room.SendPeerList(_)) =
     process.receive(from: alice, within: 1000)
@@ -238,7 +328,12 @@ pub fn text_send_does_not_deliver_when_persistence_fails_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "alice", display_name: "Alice", client: alice),
+    room.Join(
+      device_id: "alice",
+      display_name: "Alice",
+      device_kind: "unknown",
+      client: alice,
+    ),
   )
   let assert Ok(room.SendPeerList(_)) =
     process.receive(from: alice, within: 1000)
@@ -247,7 +342,12 @@ pub fn text_send_does_not_deliver_when_persistence_fails_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "bob", display_name: "Bob", client: bob),
+    room.Join(
+      device_id: "bob",
+      display_name: "Bob",
+      device_kind: "unknown",
+      client: bob,
+    ),
   )
   let assert Ok(room.SendPeerList(_)) = process.receive(from: bob, within: 1000)
   let assert Ok(room.SendMessageHistory(_)) =
@@ -276,7 +376,12 @@ pub fn join_replays_persisted_device_history_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "alice", display_name: "Alice", client: alice),
+    room.Join(
+      device_id: "alice",
+      display_name: "Alice",
+      device_kind: "unknown",
+      client: alice,
+    ),
   )
   let assert Ok(room.SendPeerList(_)) =
     process.receive(from: alice, within: 1000)
@@ -285,7 +390,12 @@ pub fn join_replays_persisted_device_history_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "bob", display_name: "Bob", client: bob),
+    room.Join(
+      device_id: "bob",
+      display_name: "Bob",
+      device_kind: "unknown",
+      client: bob,
+    ),
   )
   let assert Ok(room.SendPeerList(_)) = process.receive(from: bob, within: 1000)
   let assert Ok(room.SendMessageHistory([])) =
@@ -308,7 +418,12 @@ pub fn join_replays_persisted_device_history_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "bob", display_name: "Bob", client: reconnected_bob),
+    room.Join(
+      device_id: "bob",
+      display_name: "Bob",
+      device_kind: "unknown",
+      client: reconnected_bob,
+    ),
   )
 
   let assert Ok(room.SendPeerList(_)) =
@@ -331,12 +446,17 @@ pub fn history_load_failure_still_joins_test() {
 
   process.send(
     room_subject,
-    room.Join(device_id: "alice", display_name: "Alice", client: alice),
+    room.Join(
+      device_id: "alice",
+      display_name: "Alice",
+      device_kind: "unknown",
+      client: alice,
+    ),
   )
 
-  let assert Ok(room.SendPeerList([
-    shared_protocol.Peer(id: "alice", display_name: "Alice"),
-  ])) = process.receive(from: alice, within: 1000)
+  let assert Ok(room.SendPeerList(alice_peers)) =
+    process.receive(from: alice, within: 1000)
+  let assert True = alice_peers == [peer("alice", "Alice")]
   let assert Ok(room.SendError(
     code: "history_load_failed",
     message: "Message history could not be loaded.",
@@ -456,7 +576,12 @@ fn join_alice_and_bob(
 ) -> Nil {
   process.send(
     room_subject,
-    room.Join(device_id: "alice", display_name: "Alice", client: alice),
+    room.Join(
+      device_id: "alice",
+      display_name: "Alice",
+      device_kind: "unknown",
+      client: alice,
+    ),
   )
   let assert Ok(room.SendPeerList(_)) =
     process.receive(from: alice, within: 1000)
@@ -465,7 +590,12 @@ fn join_alice_and_bob(
 
   process.send(
     room_subject,
-    room.Join(device_id: "bob", display_name: "Bob", client: bob),
+    room.Join(
+      device_id: "bob",
+      display_name: "Bob",
+      device_kind: "unknown",
+      client: bob,
+    ),
   )
   let assert Ok(room.SendPeerList(_)) = process.receive(from: bob, within: 1000)
   let assert Ok(room.SendMessageHistory(_)) =
@@ -505,6 +635,17 @@ fn offer_and_accept(
   let assert Ok(room.SendFileAccepted(_)) =
     process.receive(from: bob, within: 1000)
   Nil
+}
+
+fn peer(id: String, display_name: String) -> shared_protocol.Peer {
+  shared_protocol.Peer(
+    id: id,
+    display_name: display_name,
+    device_kind: "unknown",
+    os: "unknown",
+    browser: "unknown",
+    model: option.None,
+  )
 }
 
 fn failing_message_store() -> Result(

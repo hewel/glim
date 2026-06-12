@@ -1,8 +1,35 @@
 import { describe, expect, test } from "vitest";
-import { addTextMessage, clearPendingDraft, markTransferProgress } from "./domain";
-import type { TextMessage, TransferItem } from "./types";
+import {
+  addTextMessage,
+  clearPendingDraft,
+  forgetPeer,
+  markTransferProgress,
+  otherPeers,
+} from "./domain";
+import type { Peer, TextMessage, TransferItem } from "./types";
 
 describe("React domain helpers", () => {
+  test("filters the local device out of peer lists", () => {
+    const self: Peer = {
+      id: "self",
+      display_name: "Self",
+      device_kind: "desktop",
+      os: "linux",
+      browser: "firefox",
+      model: null,
+    };
+    const peer: Peer = {
+      id: "peer_1",
+      display_name: "Peer",
+      device_kind: "phone",
+      os: "android",
+      browser: "chrome",
+      model: null,
+    };
+
+    expect(otherPeers([self, peer], "self")).toEqual([peer]);
+  });
+
   test("groups messages by the remote peer and ignores duplicate ids", () => {
     const message: TextMessage = {
       id: "msg_1",
@@ -35,6 +62,27 @@ describe("React domain helpers", () => {
       messageDrafts: { peer_2: "keep" },
       pendingDraftClear: null,
     });
+  });
+
+  test("forgets stale peer metadata", () => {
+    const bob: Peer = {
+      id: "bob",
+      display_name: "Bob Phone",
+      device_kind: "phone",
+      os: "android",
+      browser: "chrome",
+      model: "Pixel 8",
+    };
+    const ada: Peer = {
+      id: "ada",
+      display_name: "Ada",
+      device_kind: "desktop",
+      os: "linux",
+      browser: "firefox",
+      model: null,
+    };
+
+    expect(forgetPeer({ bob, ada }, "bob")).toEqual({ ada });
   });
 
   test("marks final file acknowledgements as completed", () => {

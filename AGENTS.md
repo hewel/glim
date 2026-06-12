@@ -1,6 +1,6 @@
 # AGENTS.md
 
-## Project: LAN Share IM
+## Project: Glim
 
 Build an experimental local-network instant messaging and file sharing service in Gleam. The project is intentionally experimental: prefer a small, understandable, working vertical slice over a polished production system.
 

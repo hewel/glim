@@ -10,10 +10,12 @@ import {
   IconVideo,
   IconX,
 } from "@tabler/icons-react";
+import { useState } from "react";
+import { DeviceKindIcon, peerDeviceDetails } from "./devicePresentation";
 import { IconButton } from "./IconButton";
-import { formatBytes, formatTime, initials, progressPercent } from "./format";
+import { formatBytes, formatTime, progressPercent } from "./format";
 import { useAppStore } from "./store";
-import type { TextMessage, TransferItem } from "./types";
+import type { Peer, TextMessage, TransferItem } from "./types";
 
 export function ChatPanel() {
   const deviceId = useAppStore((state) => state.deviceId);
@@ -34,6 +36,7 @@ export function ChatPanel() {
   const acceptFile = useAppStore((state) => state.acceptFile);
   const declineFile = useAppStore((state) => state.declineFile);
   const cancelFile = useAppStore((state) => state.cancelFile);
+  const [detailsOpen, setDetailsOpen] = useState(false);
 
   if (!selectedPeerId) {
     return (
@@ -48,7 +51,14 @@ export function ChatPanel() {
     );
   }
 
-  const peer = knownPeers[selectedPeerId] ?? { id: selectedPeerId, display_name: selectedPeerId };
+  const peer = knownPeers[selectedPeerId] ?? {
+    id: selectedPeerId,
+    display_name: selectedPeerId,
+    device_kind: "unknown" as const,
+    os: "unknown" as const,
+    browser: "unknown" as const,
+    model: null,
+  };
   const online = peers.some((item) => item.id === selectedPeerId);
   const messages = messagesByPeer[selectedPeerId] ?? [];
   const threadTransfers = transfers.filter((transfer) => transfer.peer_id === selectedPeerId);
@@ -66,17 +76,23 @@ export function ChatPanel() {
             <IconArrowLeft size={20} />
           </button>
           <span className="grid size-11 shrink-0 place-items-center rounded-full border border-outline-variant bg-surface-container-high font-label-md">
-            {initials(peer.display_name)}
+            <DeviceKindIcon kind={peer.device_kind} size={20} />
           </span>
           <div className="min-w-0">
             <h2 className="truncate font-headline-sm">{peer.display_name}</h2>
             <p className="font-code-sm text-on-surface-variant">
-              {online ? "P2P Encrypted · low latency" : "Offline peer"}
+              {online ? "Online peer" : "Offline peer"}
             </p>
           </div>
         </div>
-        <div className="flex gap-3">
-          <IconButton icon={IconInfoCircle} label="Peer info" />
+        <div className="relative flex gap-3">
+          <IconButton
+            active={detailsOpen}
+            icon={IconInfoCircle}
+            label="Peer info"
+            onClick={() => setDetailsOpen(!detailsOpen)}
+          />
+          {detailsOpen ? <PeerInfo peer={peer} /> : null}
         </div>
       </header>
 
@@ -138,22 +154,32 @@ export function ChatPanel() {
   );
 }
 
-function MessageBubble({ message, deviceId }: { message: TextMessage; deviceId: string }) {
-  const displayName = useAppStore((state) => state.displayName);
-  const knownPeers = useAppStore((state) => state.knownPeers);
-  const own = message.from === deviceId;
-  const senderName = own ? displayName : (knownPeers[message.from]?.display_name ?? message.from);
+function PeerInfo({ peer }: { peer: Peer }) {
+  const details = peerDeviceDetails(peer);
 
   return (
-    <div className={`flex items-end gap-3 ${own ? "justify-end" : "justify-start"}`}>
-      {!own ? (
-        <span
-          className="grid size-10 place-items-center rounded-full bg-slate-950 text-white font-label-md uppercase cursor-help"
-          title={senderName}
-        >
-          {initials(senderName)}
-        </span>
-      ) : null}
+    <div className="absolute right-0 top-12 z-20 w-64 rounded-lg border border-outline-variant bg-surface-container-low p-4 text-left shadow-xl">
+      <p className="font-label-md text-on-surface">{peer.display_name}</p>
+      <div className="mt-3 space-y-2 font-body-md text-on-surface-variant">
+        {details.length > 0 ? (
+          details.map((detail) => (
+            <div key={detail} className="flex items-center justify-between gap-3">
+              <span className="truncate">{detail}</span>
+            </div>
+          ))
+        ) : (
+          <span>Device details unavailable</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function MessageBubble({ message, deviceId }: { message: TextMessage; deviceId: string }) {
+  const own = message.from === deviceId;
+
+  return (
+    <div className={`flex items-end ${own ? "justify-end" : "justify-start"}`}>
       <div className={own ? "text-right" : "text-left"}>
         <div
           className={[

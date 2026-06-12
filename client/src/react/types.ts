@@ -1,4 +1,5 @@
 import type { FileSelection, WrittenChunk } from "../browser/types";
+import type { BrowserFamily, DeviceKind, DeviceOs, DeviceProfile } from "../browser/device_profile";
 
 export type ConnectionStatus =
   | "disconnected"
@@ -10,6 +11,10 @@ export type ConnectionStatus =
 export interface Peer {
   id: string;
   display_name: string;
+  device_kind: DeviceKind;
+  os: DeviceOs;
+  browser: BrowserFamily;
+  model: string | null;
 }
 
 export interface TextMessage {
@@ -76,6 +81,7 @@ export interface PendingDraftClear {
 export type ServerEvent =
   | { kind: "peer_list"; peers: Peer[] }
   | { kind: "peer_joined"; peer: Peer }
+  | { kind: "peer_updated"; peer: Peer }
   | { kind: "peer_left"; device_id: string }
   | { kind: "text_message"; message: TextMessage }
   | { kind: "message_history"; messages: TextMessage[] }
@@ -90,3 +96,4 @@ export type ServerEvent =
   | { kind: "invalid"; message: string };
 
 export type { FileSelection, WrittenChunk };
+export type { BrowserFamily, DeviceKind, DeviceOs, DeviceProfile };

@@ -13,6 +13,7 @@ const message_store_timeout_ms = 1000
 pub type ClientMessage {
   SendPeerList(peers: List(shared_protocol.Peer))
   SendPeerJoined(peer: shared_protocol.Peer)
+  SendPeerUpdated(peer: shared_protocol.Peer)
   SendPeerLeft(device_id: String)
   SendTextMessage(message: shared_protocol.TextMessage)
   SendMessageHistory(messages: List(shared_protocol.TextMessage))
@@ -31,6 +32,12 @@ pub type Message {
   Join(
     device_id: String,
     display_name: String,
+    device_kind: String,
+    client: process.Subject(ClientMessage),
+  )
+  UpdatePeer(
+    from: String,
+    patch: shared_protocol.PeerMetadataPatch,
     client: process.Subject(ClientMessage),
   )
   Leave(device_id: String, client: process.Subject(ClientMessage))
@@ -163,8 +170,10 @@ fn handle_message(
   message: Message,
 ) -> actor.Next(State, Message) {
   case message {
-    Join(device_id:, display_name:, client:) ->
-      join(state, device_id, display_name, client)
+    Join(device_id:, display_name:, device_kind:, client:) ->
+      join(state, device_id, display_name, device_kind, client)
+    UpdatePeer(from:, patch:, client:) ->
+      update_peer(state, from, patch, client)
     Leave(device_id:, client:) -> leave(state, device_id, client)
     SendText(from:, to:, body:, client:) ->
       send_text(state, from, to, body, client)
@@ -187,9 +196,18 @@ fn join(
   state: State,
   device_id: String,
   display_name: String,
+  device_kind: String,
   client: process.Subject(ClientMessage),
 ) -> actor.Next(State, Message) {
-  let peer = shared_protocol.Peer(id: device_id, display_name: display_name)
+  let peer =
+    shared_protocol.Peer(
+      id: device_id,
+      display_name: display_name,
+      device_kind: device_kind,
+      os: "unknown",
+      browser: "unknown",
+      model: option.None,
+    )
   let session = PeerSession(peer: peer, client: client)
 
   case dict.get(state.peers, device_id) {
@@ -216,6 +234,77 @@ fn join(
       actor.continue(new_state)
     }
   }
+}
+
+fn update_peer(
+  state: State,
+  from: String,
+  patch: shared_protocol.PeerMetadataPatch,
+  client: process.Subject(ClientMessage),
+) -> actor.Next(State, Message) {
+  case find_sender(state.peers, from, client) {
+    Ok(session) ->
+      case session.client == client {
+        False ->
+          reject_send_text(
+            state,
+            SendTextRejection(
+              client: client,
+              code: "not_joined",
+              message: "Send peer.hello before updating presence.",
+            ),
+          )
+        True -> {
+          let peer = apply_peer_patch(session.peer, patch)
+          let peers =
+            dict.insert(
+              into: state.peers,
+              for: from,
+              insert: PeerSession(peer: peer, client: client),
+            )
+          let new_state = State(..state, peers: peers)
+
+          broadcast_updated_to_others(peers, from, peer)
+          actor.continue(new_state)
+        }
+      }
+    Error(rejection) -> reject_send_text(state, rejection)
+  }
+}
+
+fn apply_peer_patch(
+  peer: shared_protocol.Peer,
+  patch: shared_protocol.PeerMetadataPatch,
+) -> shared_protocol.Peer {
+  let display_name = case patch.display_name {
+    option.Some(value) -> value
+    option.None -> peer.display_name
+  }
+  let device_kind = case patch.device_kind {
+    option.Some(value) -> value
+    option.None -> peer.device_kind
+  }
+  let os = case patch.os {
+    option.Some(value) -> value
+    option.None -> peer.os
+  }
+  let browser = case patch.browser {
+    option.Some(value) -> value
+    option.None -> peer.browser
+  }
+  let model = case patch.model {
+    option.Some(value) -> option.Some(value)
+    option.None -> peer.model
+  }
+
+  shared_protocol.Peer(
+    id: peer.id,
+    display_name: display_name,
+    device_kind: device_kind,
+    os: os,
+    browser: browser,
+    model: model,
+  )
 }
 
 fn send_join_snapshot(
@@ -810,6 +899,21 @@ fn broadcast_joined_to_others(
     case session.peer.id == device_id {
       True -> Nil
       False -> process.send(session.client, SendPeerJoined(peer))
+    }
+  })
+}
+
+fn broadcast_updated_to_others(
+  peers: dict.Dict(String, PeerSession),
+  device_id: String,
+  peer: shared_protocol.Peer,
+) -> Nil {
+  peers
+  |> dict.values
+  |> list.each(fn(session) {
+    case session.peer.id == device_id {
+      True -> Nil
+      False -> process.send(session.client, SendPeerUpdated(peer))
     }
   })
 }

@@ -1,16 +1,30 @@
-import { IconDeviceLaptop, IconServer, IconX } from "@tabler/icons-react";
+import { IconServer, IconX } from "@tabler/icons-react";
+import { DeviceKindIcon, peerDeviceTitle } from "./devicePresentation";
 import { useAppStore } from "./store";
 
 export function TopologyModal() {
   const deviceId = useAppStore((state) => state.deviceId);
   const displayName = useAppStore((state) => state.displayName);
+  const deviceProfile = useAppStore((state) => state.deviceProfile);
   const peers = useAppStore((state) => state.peers);
   const setTopologyOpen = useAppStore((state) => state.setTopologyOpen);
   const selectPeer = useAppStore((state) => state.selectPeer);
 
   const nodes = [
-    { id: deviceId, name: `${displayName} (You)`, isSelf: true },
-    ...peers.map((p) => ({ id: p.id, name: p.display_name, isSelf: false })),
+    {
+      id: deviceId,
+      name: `${displayName} (You)`,
+      isSelf: true,
+      kind: deviceProfile.kind,
+      title: deviceProfile.model ?? displayName,
+    },
+    ...peers.map((p) => ({
+      id: p.id,
+      name: p.display_name,
+      isSelf: false,
+      kind: p.device_kind,
+      title: peerDeviceTitle(p),
+    })),
   ];
 
   const cx = 250;
@@ -129,11 +143,12 @@ export function TopologyModal() {
                   />
                   <foreignObject x="-12" y="-12" width="24" height="24">
                     <div
+                      title={node.title}
                       className={`grid h-full w-full place-items-center ${
                         node.isSelf ? "text-primary" : "text-on-surface"
                       }`}
                     >
-                      <IconDeviceLaptop size={16} />
+                      <DeviceKindIcon kind={node.kind} size={16} />
                     </div>
                   </foreignObject>
                   {/* Label */}

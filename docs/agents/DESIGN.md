@@ -1,5 +1,5 @@
 ---
-name: LocalLink
+name: Glim
 colors:
   surface: '#fbf9ff'
   surface-dim: '#dbd8e4'
@@ -102,11 +102,11 @@ spacing:
   margin-mobile: 16px
 ---
 
-# LocalLink Design System
+# Glim Design System
 
 ## Product Direction
 
-LocalLink is the browser client for LAN Share IM: a local-network messaging and file-sharing tool for devices in the same shared room. The interface should feel like a focused operations console for nearby devices, not a social network or cloud drive.
+Glim is the browser client for local-network messaging and file sharing between devices in the same shared room. The interface should feel like a focused operations console for nearby devices, not a social network or cloud drive.
 
 The product language is built around the domain terms in `CONTEXT.md`:
 

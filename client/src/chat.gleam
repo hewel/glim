@@ -41,6 +41,7 @@ pub fn apply_server_event_to_peers(
   case shared_protocol.decode_server_event(raw) {
     Ok(shared_protocol.PeerList(peers: next_peers)) -> next_peers
     Ok(shared_protocol.PeerJoined(peer: peer)) -> upsert_peer(peers, peer)
+    Ok(shared_protocol.PeerUpdated(peer: peer)) -> upsert_peer(peers, peer)
     Ok(shared_protocol.PeerLeft(device_id: device_id)) ->
       remove_peer(peers, device_id)
     Ok(shared_protocol.TextMessageEvent(message: _)) -> peers

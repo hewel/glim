@@ -16,6 +16,6 @@ pub fn main() -> Nil {
     |> mist.port(9143)
     |> mist.start
 
-  io.println("LAN Share IM listening on http://localhost:9143")
+  io.println("Glim listening on http://localhost:9143")
   process.sleep_forever()
 }

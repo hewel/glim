@@ -1,6 +1,6 @@
-# LAN Share IM Client
+# Glim Client
 
-React browser client for the LAN Share IM presence, text chat, and online file transfer slice.
+React browser client for the Glim presence, text chat, and online file transfer slice.
 
 This package targets JavaScript and uses Vite for browser development and production static bundles consumed by the root Mist server.
 

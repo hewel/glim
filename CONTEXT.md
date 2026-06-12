@@ -1,4 +1,4 @@
-# LAN Share IM
+# Glim
 
 Local-network messaging and file sharing between devices that join the same shared room without account registration.
 

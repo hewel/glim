@@ -1,4 +1,3 @@
-import { saveDisplayName } from "./identity";
 import {
   prepareOutgoingFrame,
   writeIncomingFrame,
@@ -21,8 +20,6 @@ export function connect(
   onChunkWritten: WrittenChunkCallback,
   onReceiveError: ReceiveErrorCallback,
 ): void {
-  saveDisplayName(displayName);
-
   if (socket) {
     socket.close();
   }

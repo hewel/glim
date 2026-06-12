@@ -49,6 +49,24 @@ pub fn validate_text_body_rejects_too_long_test() {
     validation.validate_text_body(body)
 }
 
+pub fn validate_device_metadata_enums_test() {
+  let assert Ok("phone") = validation.validate_device_kind(" phone ")
+  let assert Ok("android") = validation.validate_device_os("android")
+  let assert Ok("chrome") = validation.validate_device_browser("chrome")
+  let assert Error(validation.InvalidDeviceKind) =
+    validation.validate_device_kind("watch")
+  let assert Error(validation.InvalidDeviceOs) =
+    validation.validate_device_os("solaris")
+  let assert Error(validation.InvalidDeviceBrowser) =
+    validation.validate_device_browser("opera")
+}
+
+pub fn validate_device_model_rejects_too_long_test() {
+  let model = repeat_char("A", 81)
+  let assert Error(validation.DeviceModelTooLong(max: 80)) =
+    validation.validate_device_model(model)
+}
+
 fn repeat_char(char: String, count: Int) -> String {
   case count {
     0 -> ""

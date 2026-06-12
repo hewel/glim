@@ -1,3 +1,4 @@
+import gleam/option
 import gleam/string
 import gleeunit
 import protocol
@@ -8,9 +9,40 @@ pub fn main() -> Nil {
 }
 
 pub fn decode_valid_peer_hello_test() {
-  let assert Ok(protocol.PeerHello(device_id: "device_abc", display_name: "Zed")) =
+  let assert Ok(protocol.PeerHello(
+    device_id: "device_abc",
+    display_name: "Zed",
+    device_kind: "desktop",
+  )) =
+    protocol.decode_client_event(
+      "{\"type\":\"peer.hello\",\"device_id\":\"device_abc\",\"display_name\":\"Zed\",\"device_kind\":\"desktop\"}",
+    )
+}
+
+pub fn decode_peer_hello_requires_device_kind_test() {
+  let assert Error(protocol.InvalidPayload) =
     protocol.decode_client_event(
       "{\"type\":\"peer.hello\",\"device_id\":\"device_abc\",\"display_name\":\"Zed\"}",
+    )
+}
+
+pub fn decode_peer_update_accepts_partial_metadata_test() {
+  let assert Ok(protocol.PeerUpdate(shared_protocol.PeerMetadataPatch(
+    display_name: option.None,
+    device_kind: option.Some("phone"),
+    os: option.Some("android"),
+    browser: option.Some("chrome"),
+    model: option.Some("Pixel 8"),
+  ))) =
+    protocol.decode_client_event(
+      "{\"type\":\"peer.update\",\"device_kind\":\"phone\",\"os\":\"android\",\"browser\":\"chrome\",\"model\":\"Pixel 8\"}",
+    )
+}
+
+pub fn decode_peer_update_rejects_invalid_metadata_test() {
+  let assert Error(protocol.InvalidPayload) =
+    protocol.decode_client_event(
+      "{\"type\":\"peer.update\",\"device_kind\":\"watch\"}",
     )
 }
 
@@ -90,31 +122,44 @@ pub fn decode_text_send_rejects_too_long_body_test() {
 pub fn decode_blank_display_name_test() {
   let assert Error(protocol.InvalidPayload) =
     protocol.decode_client_event(
-      "{\"type\":\"peer.hello\",\"device_id\":\"device_abc\",\"display_name\":\"   \"}",
+      "{\"type\":\"peer.hello\",\"device_id\":\"device_abc\",\"display_name\":\"   \",\"device_kind\":\"desktop\"}",
     )
 }
 
 pub fn encode_peer_list_contains_fields_test() {
   let json =
     protocol.encode_peer_list([
-      shared_protocol.Peer(id: "device_abc", display_name: "Zed"),
+      peer("device_abc", "Zed"),
     ])
 
   let assert True = string.contains(json, "\"type\":\"peer.list\"")
   let assert True = string.contains(json, "\"id\":\"device_abc\"")
   let assert True = string.contains(json, "\"display_name\":\"Zed\"")
+  let assert True = string.contains(json, "\"device_kind\":\"unknown\"")
 }
 
 pub fn encode_peer_joined_contains_fields_test() {
-  let json =
-    protocol.encode_peer_joined(shared_protocol.Peer(
-      id: "device_abc",
-      display_name: "Zed",
-    ))
+  let json = protocol.encode_peer_joined(peer("device_abc", "Zed"))
 
   let assert True = string.contains(json, "\"type\":\"peer.joined\"")
   let assert True = string.contains(json, "\"id\":\"device_abc\"")
   let assert True = string.contains(json, "\"display_name\":\"Zed\"")
+}
+
+pub fn encode_peer_updated_contains_fields_test() {
+  let json =
+    protocol.encode_peer_updated(shared_protocol.Peer(
+      id: "device_abc",
+      display_name: "Zed",
+      device_kind: "phone",
+      os: "android",
+      browser: "chrome",
+      model: option.Some("Pixel 8"),
+    ))
+
+  let assert True = string.contains(json, "\"type\":\"peer.updated\"")
+  let assert True = string.contains(json, "\"device_kind\":\"phone\"")
+  let assert True = string.contains(json, "\"model\":\"Pixel 8\"")
 }
 
 pub fn encode_peer_left_contains_fields_test() {
@@ -166,4 +211,15 @@ fn repeat_char(char: String, count: Int) -> String {
     0 -> ""
     n -> char <> repeat_char(char, n - 1)
   }
+}
+
+fn peer(id: String, display_name: String) -> shared_protocol.Peer {
+  shared_protocol.Peer(
+    id: id,
+    display_name: display_name,
+    device_kind: "unknown",
+    os: "unknown",
+    browser: "unknown",
+    model: option.None,
+  )
 }

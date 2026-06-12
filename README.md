@@ -1,4 +1,4 @@
-# LAN Share IM
+# Glim
 
 Experimental local-network instant messaging and file sharing service in Gleam.
 
@@ -42,13 +42,19 @@ cd client && bun run build
 This slice supports presence, text chat, message history, and online-only binary file transfer events. The UI sends a JSON hello message:
 
 ```json
-{"type":"peer.hello","device_id":"device_abc","display_name":"Zed"}
+{"type":"peer.hello","device_id":"device_abc","display_name":"Zed","device_kind":"desktop"}
 ```
 
 The server replies with:
 
 ```json
-{"type":"peer.list","peers":[{"id":"device_abc","display_name":"Zed"}]}
+{"type":"peer.list","peers":[{"id":"device_abc","display_name":"Zed","device_kind":"desktop","os":"linux","browser":"firefox","model":null}]}
+```
+
+The browser may later send a partial metadata patch:
+
+```json
+{"type":"peer.update","device_kind":"phone","os":"android","browser":"chrome","model":"Pixel 8"}
 ```
 
 Text messages are sent as:

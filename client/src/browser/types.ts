@@ -1,6 +1,10 @@
+import type { DeviceProfile } from "./device_profile";
+
 export interface Identity {
   device_id: string;
   display_name: string;
+  display_name_is_default: boolean;
+  device_profile: DeviceProfile;
 }
 
 export interface FileSelection {

@@ -1,4 +1,10 @@
 import type { Identity } from "./types";
+import {
+  detectDeviceProfile,
+  generatedDisplayName,
+  unknownDeviceProfile,
+  type DeviceProfile,
+} from "./device_profile";
 
 const deviceIdKey = "glim.device_id";
 const displayNameKey = "glim.display_name";
@@ -11,14 +17,29 @@ export function loadIdentity(): Identity {
     localStorage.setItem(deviceIdKey, deviceId);
   }
 
+  const savedDisplayName = localStorage.getItem(displayNameKey);
+
   return {
     device_id: deviceId,
-    display_name: localStorage.getItem(displayNameKey) || defaultDisplayName,
+    display_name: savedDisplayName || defaultDisplayName,
+    display_name_is_default: !savedDisplayName || savedDisplayName === defaultDisplayName,
+    device_profile: unknownDeviceProfile(),
   };
 }
 
 export function saveDisplayName(displayName: string): void {
   localStorage.setItem(displayNameKey, displayName);
+}
+
+export async function loadDetectedProfile(): Promise<{
+  profile: DeviceProfile;
+  generated_display_name: string;
+}> {
+  const profile = await detectDeviceProfile();
+  return {
+    profile,
+    generated_display_name: generatedDisplayName(profile),
+  };
 }
 
 function randomDeviceId(): string {

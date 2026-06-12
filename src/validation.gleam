@@ -10,6 +10,8 @@ pub const max_file_name_length = 255
 
 pub const max_mime_type_length = 128
 
+pub const max_device_model_length = 80
+
 pub type ValidationError {
   EmptyDeviceId
   EmptyDisplayName
@@ -22,6 +24,10 @@ pub type ValidationError {
   FileNameTooLong(max: Int)
   NegativeFileSize
   MimeTypeTooLong(max: Int)
+  InvalidDeviceKind
+  InvalidDeviceOs
+  InvalidDeviceBrowser
+  DeviceModelTooLong(max: Int)
 }
 
 pub fn validate_device_id(
@@ -103,6 +109,54 @@ pub fn validate_mime_type(
   let trimmed = string.trim(mime_type)
   case string.length(trimmed) > max_mime_type_length {
     True -> Error(MimeTypeTooLong(max: max_mime_type_length))
+    False -> Ok(trimmed)
+  }
+}
+
+pub fn validate_device_kind(kind: String) -> Result(String, ValidationError) {
+  let trimmed = string.trim(kind)
+  case trimmed {
+    "phone" -> Ok(trimmed)
+    "tablet" -> Ok(trimmed)
+    "desktop" -> Ok(trimmed)
+    "tv" -> Ok(trimmed)
+    "unknown" -> Ok(trimmed)
+    _ -> Error(InvalidDeviceKind)
+  }
+}
+
+pub fn validate_device_os(os: String) -> Result(String, ValidationError) {
+  let trimmed = string.trim(os)
+  case trimmed {
+    "android" -> Ok(trimmed)
+    "ios" -> Ok(trimmed)
+    "ipados" -> Ok(trimmed)
+    "windows" -> Ok(trimmed)
+    "macos" -> Ok(trimmed)
+    "linux" -> Ok(trimmed)
+    "unknown" -> Ok(trimmed)
+    _ -> Error(InvalidDeviceOs)
+  }
+}
+
+pub fn validate_device_browser(
+  browser: String,
+) -> Result(String, ValidationError) {
+  let trimmed = string.trim(browser)
+  case trimmed {
+    "chrome" -> Ok(trimmed)
+    "firefox" -> Ok(trimmed)
+    "safari" -> Ok(trimmed)
+    "edge" -> Ok(trimmed)
+    "unknown" -> Ok(trimmed)
+    _ -> Error(InvalidDeviceBrowser)
+  }
+}
+
+pub fn validate_device_model(model: String) -> Result(String, ValidationError) {
+  let trimmed = string.trim(model)
+  case string.length(trimmed) > max_device_model_length {
+    True -> Error(DeviceModelTooLong(max: max_device_model_length))
     False -> Ok(trimmed)
   }
 }

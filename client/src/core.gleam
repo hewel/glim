@@ -21,11 +21,31 @@ pub fn server_event_json(raw: String) -> String {
   }
 }
 
-pub fn encode_peer_hello(device_id: String, display_name: String) -> String {
+pub fn encode_peer_hello(
+  device_id: String,
+  display_name: String,
+  device_kind: String,
+) -> String {
   shared_protocol.encode_peer_hello(
     device_id,
     normalize_display_name(display_name),
+    device_kind,
   )
+}
+
+pub fn encode_peer_update_display_name(display_name: String) -> String {
+  shared_protocol.encode_peer_update_display_name(normalize_display_name(
+    display_name,
+  ))
+}
+
+pub fn encode_peer_update_metadata(
+  device_kind: String,
+  os: String,
+  browser: String,
+  model: String,
+) -> String {
+  shared_protocol.encode_peer_update_metadata(device_kind, os, browser, model)
 }
 
 pub fn encode_text_send(to: String, body: String) -> String {
@@ -103,6 +123,11 @@ fn encode_server_event(event: shared_protocol.ServerEvent) -> String {
     shared_protocol.PeerJoined(peer:) ->
       json.object([
         #("kind", json.string("peer_joined")),
+        #("peer", peer_json(peer)),
+      ])
+    shared_protocol.PeerUpdated(peer:) ->
+      json.object([
+        #("kind", json.string("peer_updated")),
         #("peer", peer_json(peer)),
       ])
     shared_protocol.PeerLeft(device_id:) ->

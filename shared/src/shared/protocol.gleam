@@ -1,9 +1,28 @@
 import gleam/dynamic/decode
 import gleam/json
+import gleam/list
+import gleam/option
 import gleam/result
 
 pub type Peer {
-  Peer(id: String, display_name: String)
+  Peer(
+    id: String,
+    display_name: String,
+    device_kind: String,
+    os: String,
+    browser: String,
+    model: option.Option(String),
+  )
+}
+
+pub type PeerMetadataPatch {
+  PeerMetadataPatch(
+    display_name: option.Option(String),
+    device_kind: option.Option(String),
+    os: option.Option(String),
+    browser: option.Option(String),
+    model: option.Option(String),
+  )
 }
 
 pub type TextMessage {
@@ -40,6 +59,7 @@ pub type FileChunkAck {
 pub type ServerEvent {
   PeerList(peers: List(Peer))
   PeerJoined(peer: Peer)
+  PeerUpdated(peer: Peer)
   PeerLeft(device_id: String)
   TextMessageEvent(message: TextMessage)
   MessageHistory(messages: List(TextMessage))
@@ -56,6 +76,7 @@ pub type ServerEvent {
 type ServerEventType {
   PeerListEvent
   PeerJoinedEvent
+  PeerUpdatedEvent
   PeerLeftEvent
   TextMessageServerEvent
   MessageHistoryEvent
@@ -69,11 +90,45 @@ type ServerEventType {
   UnknownEventType(raw: String)
 }
 
-pub fn encode_peer_hello(device_id: String, display_name: String) -> String {
+pub fn encode_peer_hello(
+  device_id: String,
+  display_name: String,
+  device_kind: String,
+) -> String {
   json.object([
     #("type", json.string("peer.hello")),
     #("device_id", json.string(device_id)),
     #("display_name", json.string(display_name)),
+    #("device_kind", json.string(device_kind)),
+  ])
+  |> json.to_string
+}
+
+pub fn encode_peer_update_display_name(display_name: String) -> String {
+  json.object([
+    #("type", json.string("peer.update")),
+    #("display_name", json.string(display_name)),
+  ])
+  |> json.to_string
+}
+
+pub fn encode_peer_update_metadata(
+  device_kind: String,
+  os: String,
+  browser: String,
+  model: String,
+) -> String {
+  let model_json = case model {
+    "" -> json.null()
+    value -> json.string(value)
+  }
+
+  json.object([
+    #("type", json.string("peer.update")),
+    #("device_kind", json.string(device_kind)),
+    #("os", json.string(os)),
+    #("browser", json.string(browser)),
+    #("model", model_json),
   ])
   |> json.to_string
 }
@@ -162,6 +217,10 @@ pub fn encode_peer(peer: Peer) -> json.Json {
   json.object([
     #("id", json.string(peer.id)),
     #("display_name", json.string(peer.display_name)),
+    #("device_kind", json.string(peer.device_kind)),
+    #("os", json.string(peer.os)),
+    #("browser", json.string(peer.browser)),
+    #("model", json.nullable(peer.model, json.string)),
   ])
 }
 
@@ -199,7 +258,22 @@ pub fn encode_file_chunk_ack_payload(ack: FileChunkAck) -> json.Json {
 fn peer_decoder() -> decode.Decoder(Peer) {
   use id <- decode.field("id", decode.string)
   use display_name <- decode.field("display_name", decode.string)
-  decode.success(Peer(id: id, display_name: display_name))
+  use device_kind <- decode.field("device_kind", decode.string)
+  use os <- decode.field("os", decode.string)
+  use browser <- decode.field("browser", decode.string)
+  use model <- decode.optional_field(
+    "model",
+    option.None,
+    decode.optional(decode.string),
+  )
+  decode.success(Peer(
+    id: id,
+    display_name: display_name,
+    device_kind: device_kind,
+    os: os,
+    browser: browser,
+    model: model,
+  ))
 }
 
 fn text_message_decoder() -> decode.Decoder(TextMessage) {
@@ -265,6 +339,13 @@ fn decode_known_server_event(
       let decoder = {
         use peer <- decode.field("peer", peer_decoder())
         decode.success(PeerJoined(peer: peer))
+      }
+      json.parse(from: input, using: decoder)
+    }
+    PeerUpdatedEvent -> {
+      let decoder = {
+        use peer <- decode.field("peer", peer_decoder())
+        decode.success(PeerUpdated(peer: peer))
       }
       json.parse(from: input, using: decoder)
     }
@@ -349,6 +430,7 @@ fn classify_server_event_type(event_type: String) -> ServerEventType {
   case event_type {
     "peer.list" -> PeerListEvent
     "peer.joined" -> PeerJoinedEvent
+    "peer.updated" -> PeerUpdatedEvent
     "peer.left" -> PeerLeftEvent
     "text.message" -> TextMessageServerEvent
     "message.history" -> MessageHistoryEvent
@@ -368,4 +450,21 @@ fn result_nil_error(result: Result(a, b)) -> Result(a, Nil) {
     Ok(value) -> Ok(value)
     Error(_) -> Error(Nil)
   }
+}
+
+pub fn patch_has_updates(patch: PeerMetadataPatch) -> Bool {
+  let fields = [
+    patch.display_name,
+    patch.device_kind,
+    patch.os,
+    patch.browser,
+    patch.model,
+  ]
+
+  list.any(fields, fn(field) {
+    case field {
+      option.Some(_) -> True
+      option.None -> False
+    }
+  })
 }

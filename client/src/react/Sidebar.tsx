@@ -1,28 +1,22 @@
 import {
-  IconFolder,
   IconHelpCircle,
   IconMessageCircle,
   IconSettings,
   IconShare,
   IconTerminal2,
-  IconUsers,
 } from "@tabler/icons-react";
 import { type ReactNode, useState, useEffect } from "react";
-import { initials } from "./format";
+import { DeviceKindIcon, deviceKindLabel, peerDeviceTitle } from "./devicePresentation";
 import { useAppStore } from "./store";
 import type { ConnectionStatus, Peer } from "./types";
 
 export function Sidebar() {
   const status = useAppStore((state) => state.status);
   const peers = useAppStore((state) => state.peers);
-  const knownPeers = useAppStore((state) => state.knownPeers);
   const selectedPeerId = useAppStore((state) => state.selectedPeerId);
   const unreadByPeer = useAppStore((state) => state.unreadByPeer);
   const selectPeer = useAppStore((state) => state.selectPeer);
   const setLogOpen = useAppStore((state) => state.setLogOpen);
-
-  const knownPeerList = Object.values(knownPeers);
-  const visiblePeers = knownPeerList.length > 0 ? knownPeerList : peers;
 
   return (
     <div className="flex h-full min-h-[calc(100vh-5rem)] flex-col p-5">
@@ -37,19 +31,17 @@ export function Sidebar() {
       </section>
 
       <nav className="space-y-2">
-        <NavItem icon={<IconUsers size={23} />} label="Peers" />
         <NavItem active icon={<IconMessageCircle size={23} />} label="Chats" badge={unreadTotal(unreadByPeer)} />
-        <NavItem icon={<IconFolder size={23} />} label="Library" />
         <NavItem icon={<IconSettings size={23} />} label="Settings" />
       </nav>
 
       <section className="mt-7 min-h-0 flex-1 space-y-2 overflow-y-auto custom-scrollbar">
-        {visiblePeers.length === 0 ? (
+        {peers.length === 0 ? (
           <div className="rounded-md border border-outline-variant bg-surface-container p-4 text-sm text-on-surface-variant">
             Waiting for peers.
           </div>
         ) : (
-          visiblePeers.map((peer) => (
+          peers.map((peer) => (
             <PeerButton
               key={peer.id}
               online={peers.some((onlinePeer) => onlinePeer.id === peer.id)}
@@ -66,7 +58,7 @@ export function Sidebar() {
         <UserProfileCard />
         <div className="flex gap-2 pt-2 border-t border-outline-variant/50">
           <button
-            onClick={() => alert("LocalLink Help:\n\n1. Make sure your devices are on the same Wi-Fi / Local Area Network.\n2. Open this page on another device.\n3. Type your message and click Send.\n4. To transfer a file, select a peer, click 'Share File', and wait for them to accept it.")}
+            onClick={() => alert("Glim Help:\n\n1. Make sure your devices are on the same Wi-Fi / Local Area Network.\n2. Open this page on another device.\n3. Type your message and click Send.\n4. To transfer a file, select a peer, click 'Share File', and wait for them to accept it.")}
             className="flex flex-1 items-center justify-center gap-2 rounded-lg py-2 font-body-md text-on-surface-variant hover:bg-surface-container transition border border-transparent hover:border-outline-variant/30"
             type="button"
           >
@@ -89,6 +81,7 @@ export function Sidebar() {
 
 export function UserProfileCard() {
   const displayName = useAppStore((state) => state.displayName);
+  const deviceProfile = useAppStore((state) => state.deviceProfile);
   const setDisplayName = useAppStore((state) => state.setDisplayName);
   const [isEditing, setIsEditing] = useState(false);
   const [val, setVal] = useState(displayName);
@@ -135,15 +128,17 @@ export function UserProfileCard() {
       onClick={() => setIsEditing(true)}
       className="flex w-full items-center justify-between rounded-lg bg-surface-container px-4 py-3 hover:bg-surface-container-high border border-outline-variant/40 hover:border-outline-variant transition text-left"
       type="button"
-      title="Click to edit display name"
+      title={`${deviceKindLabel(deviceProfile.kind)} · click to edit display name`}
     >
       <div className="flex items-center gap-3 min-w-0">
         <span className="grid size-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary border border-primary/20 font-label-md uppercase">
-          {initials(displayName)}
+          <DeviceKindIcon kind={deviceProfile.kind} size={18} />
         </span>
         <div className="min-w-0">
           <span className="block truncate font-body-md font-semibold text-on-surface">{displayName}</span>
-          <span className="block text-[11px] font-mono text-tertiary">Edit Display Name</span>
+          <span className="block text-[11px] font-mono text-tertiary">
+            {deviceKindLabel(deviceProfile.kind)}
+          </span>
         </div>
       </div>
       <IconSettings size={18} className="text-on-surface-variant opacity-60 hover:opacity-100 transition" />
@@ -176,11 +171,13 @@ function PeerButton({
       type="button"
     >
       <span className="grid size-10 shrink-0 place-items-center rounded-full border border-outline-variant bg-surface-container-high font-label-md">
-        {initials(peer.display_name)}
+        <DeviceKindIcon kind={peer.device_kind} size={18} />
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate font-body-md font-medium">{peer.display_name}</span>
-        <span className="block truncate font-code-sm opacity-75">{online ? "Online" : "Offline history"}</span>
+        <span className="block truncate font-code-sm opacity-75" title={peerDeviceTitle(peer)}>
+          {online ? "Online" : "Offline history"}
+        </span>
       </span>
       {unread > 0 ? (
         <span className="grid min-w-7 place-items-center rounded-full bg-on-primary px-2 py-1 text-primary text-xs">

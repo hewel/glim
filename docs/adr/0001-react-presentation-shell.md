@@ -16,7 +16,7 @@ Use React for the browser presentation shell and local UI state. Keep Gleam modu
 
 The client architecture is:
 
-- React components render the three-pane LocalLink interface.
+- React components render the three-pane Glim interface.
 - Zustand owns browser UI state and event handlers.
 - TypeScript browser adapters wrap WebSocket, identity, worker, file picker, and stream-to-save APIs.
 - Gleam modules expose protocol encoders/decoders and pure domain helpers through Vite's Gleam build path.

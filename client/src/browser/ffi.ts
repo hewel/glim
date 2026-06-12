@@ -1,4 +1,4 @@
-export { loadIdentity } from "./identity";
+export { loadDetectedProfile, loadIdentity, saveDisplayName } from "./identity";
 export { delay, formatTime } from "./timer";
 export {
   closeReceiveFile,

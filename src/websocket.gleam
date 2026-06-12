@@ -36,8 +36,10 @@ pub fn handle_message(
   case message {
     mist.Text(text) -> {
       case protocol.decode_client_event(text) {
-        Ok(protocol.PeerHello(device_id:, display_name:)) ->
-          handle_peer_hello(state, device_id, display_name)
+        Ok(protocol.PeerHello(device_id:, display_name:, device_kind:)) ->
+          handle_peer_hello(state, device_id, display_name, device_kind)
+        Ok(protocol.PeerUpdate(patch:)) ->
+          handle_peer_update(state, conn, patch)
         Ok(protocol.TextSend(to:, body:)) ->
           handle_text_send(state, conn, to, body)
         Ok(protocol.FileOffer(to:, transfer_id:, name:, size:, mime_type:)) ->
@@ -63,6 +65,10 @@ pub fn handle_message(
     }
     mist.Custom(room.SendPeerJoined(peer)) -> {
       let _ = mist.send_text_frame(conn, protocol.encode_peer_joined(peer))
+      mist.continue(state)
+    }
+    mist.Custom(room.SendPeerUpdated(peer)) -> {
+      let _ = mist.send_text_frame(conn, protocol.encode_peer_updated(peer))
       mist.continue(state)
     }
     mist.Custom(room.SendPeerLeft(device_id)) -> {
@@ -147,6 +153,7 @@ fn handle_peer_hello(
   state: State,
   device_id: String,
   display_name: String,
+  device_kind: String,
 ) -> mist.Next(State, room.ClientMessage) {
   case state.device_id {
     option.Some(previous) ->
@@ -162,10 +169,31 @@ fn handle_peer_hello(
     room.Join(
       device_id: device_id,
       display_name: display_name,
+      device_kind: device_kind,
       client: state.client,
     ),
   )
   mist.continue(State(..state, device_id: option.Some(device_id)))
+}
+
+fn handle_peer_update(
+  state: State,
+  conn: mist.WebsocketConnection,
+  patch: shared_protocol.PeerMetadataPatch,
+) -> mist.Next(State, room.ClientMessage) {
+  case state.device_id {
+    option.None -> {
+      send_not_joined(conn)
+      mist.continue(state)
+    }
+    option.Some(from) -> {
+      process.send(
+        state.room,
+        room.UpdatePeer(from: from, patch: patch, client: state.client),
+      )
+      mist.continue(state)
+    }
+  }
 }
 
 fn handle_text_send(

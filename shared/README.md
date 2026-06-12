@@ -1,6 +1,6 @@
-# LAN Share IM Shared Protocol
+# Glim Shared Protocol
 
-Shared Gleam package for JSON protocol helpers used by both the root Mist server and the Lustre browser client.
+Shared Gleam package for JSON protocol helpers used by both the root Mist server and the React browser client.
 
 This package is local to the monorepo. It is not intended to be published to Hex.
 
@@ -24,16 +24,20 @@ shared = { path = "shared" }    # root gleam.toml
 
 `shared/protocol.gleam` defines:
 
-- `Peer(id, display_name)`
+- `Peer(id, display_name, device_kind, os, browser, model)`
+- `PeerMetadataPatch(display_name, device_kind, os, browser, model)`
 - `TextMessage(id, from, to, body, created_at_ms)`
 - `ServerEvent`
   - `PeerList(peers)`
   - `PeerJoined(peer)`
+  - `PeerUpdated(peer)`
   - `PeerLeft(device_id)`
   - `TextMessageEvent(message)`
   - `ErrorEvent(code, message)`
   - `UnknownServerEvent(event_type)`
-- `encode_peer_hello(device_id, display_name)`
+- `encode_peer_hello(device_id, display_name, device_kind)`
+- `encode_peer_update_display_name(display_name)`
+- `encode_peer_update_metadata(device_kind, os, browser, model)`
 - `encode_text_send(to, body)`
 - `decode_server_event(input)`
 - `peer_list_decoder()`
@@ -45,8 +49,8 @@ Wire event `type` fields remain strings in JSON. Internally the decoder classifi
 
 Supported wire events:
 
-- client to server: `peer.hello`, `text.send`
-- server to client: `peer.list`, `peer.joined`, `peer.left`, `text.message`, `error`
+- client to server: `peer.hello`, `peer.update`, `text.send`, file control events
+- server to client: `peer.list`, `peer.joined`, `peer.updated`, `peer.left`, `text.message`, file control events, `error`
 
 Not included in this slice:
 

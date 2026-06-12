@@ -22,12 +22,22 @@ export function removePeer(peers: Peer[], deviceId: string): Peer[] {
   return peers.filter((peer) => peer.id !== deviceId);
 }
 
+export function otherPeers(peers: Peer[], ownDeviceId: string): Peer[] {
+  return peers.filter((peer) => peer.id !== ownDeviceId);
+}
+
 export function rememberPeer(knownPeers: Record<string, Peer>, peer: Peer): Record<string, Peer> {
   return { ...knownPeers, [peer.id]: peer };
 }
 
 export function rememberPeers(knownPeers: Record<string, Peer>, peers: Peer[]): Record<string, Peer> {
   return peers.reduce((acc, peer) => rememberPeer(acc, peer), knownPeers);
+}
+
+export function forgetPeer(knownPeers: Record<string, Peer>, peerId: string): Record<string, Peer> {
+  const next = { ...knownPeers };
+  delete next[peerId];
+  return next;
 }
 
 export function conversationPeerId(ownDeviceId: string, message: TextMessage): string {
