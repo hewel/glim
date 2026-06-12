@@ -767,7 +767,7 @@ async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Pro
 
         return {
           receiverSchedules: nextReceiverSchedules,
-          transfers: markPieceVerified(state.transfers, transferId),
+          transfers: markPieceVerified(state.transfers, transferId, filled.state),
         };
       });
     }

@@ -122,6 +122,36 @@ describe("React domain helpers", () => {
     });
   });
 
+  test("does not complete a P2P transfer from the final chunk alone", () => {
+    const transfer: TransferItem = {
+      transfer_id: "transfer_1",
+      peer_id: "peer_1",
+      peer_name: "Peer",
+      name: "demo.bin",
+      mime_type: "application/octet-stream",
+      size: 4,
+      transferred: 0,
+      direction: "receiving",
+      mode: "p2p",
+      status: "transferring",
+      notice: "Transferring",
+    };
+
+    const updated = markTransferProgress([transfer], {
+      transfer_id: "transfer_1",
+      sequence: 0,
+      offset: 0,
+      byte_length: 4,
+      final: true,
+    });
+
+    expect(updated[0]).toMatchObject({
+      transferred: 4,
+      status: "transferring",
+      notice: "Transferring",
+    });
+  });
+
   test("falls back to relay when P2P setup fails before progress", () => {
     const transfer: TransferItem = {
       transfer_id: "transfer_1",
@@ -211,7 +241,7 @@ describe("React domain helpers", () => {
     ]);
   });
 
-  test("marks a verified piece in the transfer summary", () => {
+  test("keeps transfer pending until every piece is verified", () => {
     const transfer: TransferItem = {
       transfer_id: "transfer_1",
       peer_id: "peer_1",
@@ -226,12 +256,63 @@ describe("React domain helpers", () => {
       notice: "Transferring",
     };
 
-    const updated = markPieceVerified([transfer], "transfer_1");
+    const updated = markPieceVerified([transfer], "transfer_1", {
+      manifest_id: "manifest_1",
+      file_id: "file_1",
+      pieces: [
+        { piece_index: 0, piece_size: 4, piece_sha256: "hash_0" },
+        { piece_index: 1, piece_size: 4, piece_sha256: "hash_1" },
+      ],
+      active: [
+        {
+          manifest_id: "manifest_1",
+          file_id: "file_1",
+          piece_index: 1,
+          piece_size: 4,
+          piece_sha256: "hash_1",
+          attempts: 1,
+        },
+      ],
+      verified: [0],
+    });
 
     expect(updated[0]).toMatchObject({
       status: "p2p_connected",
       notice: "Piece verified",
-      piece_summary: { active: 0, verified: 1, failed: 0, total: 1 },
+      piece_summary: { active: 1, verified: 1, failed: 0, total: 2 },
+    });
+  });
+
+  test("marks transfer export-ready after every piece is verified", () => {
+    const transfer: TransferItem = {
+      transfer_id: "transfer_1",
+      peer_id: "peer_1",
+      peer_name: "Peer",
+      name: "demo.bin",
+      mime_type: "application/octet-stream",
+      size: 8,
+      transferred: 8,
+      direction: "receiving",
+      mode: "p2p",
+      status: "transferring",
+      notice: "Transferring",
+    };
+
+    const updated = markPieceVerified([transfer], "transfer_1", {
+      manifest_id: "manifest_1",
+      file_id: "file_1",
+      pieces: [
+        { piece_index: 0, piece_size: 4, piece_sha256: "hash_0" },
+        { piece_index: 1, piece_size: 4, piece_sha256: "hash_1" },
+      ],
+      active: [],
+      verified: [0, 1],
+    });
+
+    expect(updated[0]).toMatchObject({
+      status: "export_ready",
+      notice: "Ready to export",
+      piece_summary: { active: 0, verified: 2, failed: 0, total: 2 },
     });
   });
 

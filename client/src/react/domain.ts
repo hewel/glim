@@ -229,26 +229,50 @@ export function markTransferProgress(
   ack: FileChunkAck,
 ): TransferItem[] {
   const transferred = ack.offset + ack.byte_length;
-  return transfers.map((transfer) =>
-    transfer.transfer_id === ack.transfer_id
-      ? {
-          ...transfer,
-          transferred,
-          status: ack.final ? "completed" : "transferring",
-          notice: ack.final ? "Complete" : "Transferring",
-        }
-      : transfer,
-  );
+  return transfers.map((transfer) => {
+    if (transfer.transfer_id !== ack.transfer_id) {
+      return transfer;
+    }
+
+    if (transfer.mode === "p2p") {
+      return {
+        ...transfer,
+        transferred,
+        status: "transferring",
+        notice: "Transferring",
+      };
+    }
+
+    return {
+      ...transfer,
+      transferred,
+      status: ack.final ? "completed" : "transferring",
+      notice: ack.final ? "Complete" : "Transferring",
+    };
+  });
 }
 
-export function markPieceVerified(transfers: TransferItem[], transferId: string): TransferItem[] {
+export function markPieceVerified(
+  transfers: TransferItem[],
+  transferId: string,
+  schedule: ReceiverPieceSchedule,
+): TransferItem[] {
+  const verified = schedule.verified.length;
+  const total = schedule.pieces.length;
+  const complete = total > 0 && verified >= total;
+
   return transfers.map((transfer) =>
     transfer.transfer_id === transferId
       ? {
           ...transfer,
-          status: "p2p_connected",
-          notice: "Piece verified",
-          piece_summary: { active: 0, verified: 1, failed: 0, total: 1 },
+          status: complete ? "export_ready" : "p2p_connected",
+          notice: complete ? "Ready to export" : "Piece verified",
+          piece_summary: {
+            active: schedule.active.length,
+            verified,
+            failed: 0,
+            total,
+          },
         }
       : transfer,
   );
