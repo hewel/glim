@@ -5,8 +5,14 @@
   "workspaces": [
     "client"
   ],
+  "scripts": {
+    "server": "gleam run",
+    "client": "cd client && bun run dev",
+    "dev": "concurrently -n server,client \"bun run server\" \"bun run client\""
+  },
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "concurrently": "^10.0.3"
   },
   "peerDependencies": {
     "typescript": "^6.0.3"

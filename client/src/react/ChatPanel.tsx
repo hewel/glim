@@ -1,11 +1,14 @@
 import {
   IconArrowLeft,
+  IconArrowDown,
+  IconArrowUp,
   IconFile,
   IconInfoCircle,
   IconMoodSmile,
   IconPaperclip,
   IconSend2,
   IconVideo,
+  IconX,
 } from "@tabler/icons-react";
 import { IconButton } from "./IconButton";
 import { formatBytes, formatTime, initials, progressPercent } from "./format";
@@ -23,6 +26,7 @@ export function ChatPanel() {
     state.selectedPeerId ? state.messageDrafts[state.selectedPeerId] ?? "" : "",
   );
   const notice = useAppStore((state) => state.chatNotice);
+  const clearNotice = useAppStore((state) => state.clearNotice);
   const setDraft = useAppStore((state) => state.setSelectedDraft);
   const sendMessage = useAppStore((state) => state.sendMessage);
   const shareFile = useAppStore((state) => state.selectFileForCurrentPeer);
@@ -34,7 +38,7 @@ export function ChatPanel() {
   if (!selectedPeerId) {
     return (
       <div className="flex h-full min-h-[calc(100vh-5rem)] items-center justify-center bg-surface">
-        <div className="max-w-sm text-center">
+        <div className="text-center">
           <h2 className="font-headline-md">Select a peer</h2>
           <p className="mt-2 font-body-md text-on-surface-variant">
             Choose an online peer or a history thread from the mesh.
@@ -72,7 +76,6 @@ export function ChatPanel() {
           </div>
         </div>
         <div className="flex gap-3">
-          <IconButton icon={IconVideo} label="Video" />
           <IconButton icon={IconInfoCircle} label="Peer info" />
         </div>
       </header>
@@ -100,8 +103,16 @@ export function ChatPanel() {
       </div>
 
       {notice ? (
-        <div className="mx-5 mb-3 rounded-md border border-error-container bg-error-container px-4 py-3 text-on-error-container text-sm lg:mx-10">
-          {notice}
+        <div className="mx-5 mb-3 flex items-center justify-between rounded-md border border-error-container bg-error-container px-4 py-3 text-on-error-container text-sm lg:mx-10 animate-fade-in shadow-sm">
+          <span>{notice}</span>
+          <button
+            aria-label="Dismiss notice"
+            className="ml-2 text-on-error-container/60 hover:text-on-error-container transition"
+            onClick={clearNotice}
+            type="button"
+          >
+            <IconX size={16} />
+          </button>
         </div>
       ) : null}
 
@@ -128,12 +139,19 @@ export function ChatPanel() {
 }
 
 function MessageBubble({ message, deviceId }: { message: TextMessage; deviceId: string }) {
+  const displayName = useAppStore((state) => state.displayName);
+  const knownPeers = useAppStore((state) => state.knownPeers);
   const own = message.from === deviceId;
+  const senderName = own ? displayName : (knownPeers[message.from]?.display_name ?? message.from);
+
   return (
     <div className={`flex items-end gap-3 ${own ? "justify-end" : "justify-start"}`}>
       {!own ? (
-        <span className="grid size-10 place-items-center rounded-full bg-slate-950 text-white font-label-md">
-          {initials(message.from)}
+        <span
+          className="grid size-10 place-items-center rounded-full bg-slate-950 text-white font-label-md uppercase cursor-help"
+          title={senderName}
+        >
+          {initials(senderName)}
         </span>
       ) : null}
       <div className={own ? "text-right" : "text-left"}>
@@ -167,22 +185,54 @@ function TransferCard({
   onCancel: () => void;
 }) {
   const percent = progressPercent(transfer.transferred, transfer.size);
+  const isSending = transfer.direction === "sending";
+  const DirectionIcon = isSending ? IconArrowUp : IconArrowDown;
+
+  let borderClass = "border-outline-variant bg-surface-container";
+  let progressBg = "bg-primary";
+
+  if (transfer.status === "completed") {
+    borderClass = "border-emerald-500/30 bg-emerald-50/20";
+    progressBg = "bg-emerald-500";
+  } else if (["failed", "cancelled", "declined"].includes(transfer.status)) {
+    borderClass = "border-rose-500/30 bg-rose-50/20";
+    progressBg = "bg-rose-500";
+  } else if (transfer.status === "transferring") {
+    borderClass = "border-sky-500/30 bg-sky-50/20";
+    progressBg = "bg-sky-500 animate-pulse-subtle";
+  } else if (["offered", "awaiting_save"].includes(transfer.status)) {
+    borderClass = "border-amber-500/30 bg-amber-50/20";
+    progressBg = "bg-amber-500";
+  }
+
   return (
-    <div className="max-w-2xl rounded-lg border border-outline-variant bg-surface-container p-5">
+    <div className={`max-w-2xl rounded-lg border p-5 transition-all ${borderClass}`}>
       <div className="flex items-center gap-4">
-        <span className="grid size-14 place-items-center rounded-md bg-primary-fixed text-primary">
+        <span className={`grid size-14 place-items-center rounded-md ${
+          transfer.status === "completed"
+            ? "bg-emerald-100 text-emerald-600"
+            : ["failed", "cancelled", "declined"].includes(transfer.status)
+              ? "bg-rose-100 text-rose-600"
+              : "bg-primary-fixed text-primary"
+        }`}>
           <IconFile size={28} />
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate font-headline-sm">{transfer.name}</p>
-          <p className="font-code-sm text-on-surface-variant">
+          <div className="flex items-center gap-1.5">
+            <DirectionIcon size={14} className="text-on-surface-variant opacity-70" />
+            <span className="text-xs uppercase font-label-md tracking-wide text-on-surface-variant opacity-75">
+              {isSending ? `Sending to ${transfer.peer_name}` : `Receiving from ${transfer.peer_name}`}
+            </span>
+          </div>
+          <p className="truncate font-headline-sm mt-0.5 text-on-surface">{transfer.name}</p>
+          <p className="font-code-sm text-on-surface-variant text-xs mt-0.5">
             {formatBytes(transfer.transferred)} / {formatBytes(transfer.size)} · {transfer.notice}
           </p>
         </div>
-        <span className="font-label-md text-primary">{percent}%</span>
+        <span className="font-label-md text-primary font-bold">{percent}%</span>
       </div>
-      <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-outline-variant">
-        <div className="h-full rounded-full bg-primary" style={{ width: `${percent}%` }} />
+      <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-outline-variant/40">
+        <div className={`h-full rounded-full transition-all duration-300 ${progressBg}`} style={{ width: `${percent}%` }} />
       </div>
       <div className="mt-4 flex flex-wrap gap-2">
         {transfer.direction === "receiving" && transfer.status === "offered" ? (
@@ -211,10 +261,10 @@ function ActionButton({
   return (
     <button
       className={[
-        "rounded-sm border px-3 py-2 font-label-md transition",
+        "rounded-sm border px-3 py-2 font-label-md transition cursor-pointer",
         quiet
-          ? "border-outline-variant text-on-surface-variant hover:border-primary"
-          : "border-primary bg-primary text-on-primary",
+          ? "border-outline-variant text-on-surface-variant hover:border-primary hover:bg-surface-container"
+          : "border-primary bg-primary text-on-primary hover:bg-primary-hover",
       ].join(" ")}
       onClick={onClick}
       type="button"

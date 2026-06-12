@@ -62,6 +62,13 @@ interface AppState {
   chatNotice: string | null;
   pendingDraftClear: PendingDraftClear | null;
   log: string[];
+  logOpen: boolean;
+  setLogOpen: (open: boolean) => void;
+  transfersOpen: boolean;
+  setTransfersOpen: (open: boolean) => void;
+  topologyOpen: boolean;
+  setTopologyOpen: (open: boolean) => void;
+  clearNotice: () => void;
   initialize: () => void;
   setDisplayName: (name: string) => void;
   connectNow: () => void;
@@ -100,6 +107,21 @@ export const useAppStore = create<AppState>()((set, get) => ({
   chatNotice: null,
   pendingDraftClear: null,
   log: [],
+  logOpen: false,
+  setLogOpen(open) {
+    set({ logOpen: open });
+  },
+  transfersOpen: false,
+  setTransfersOpen(open) {
+    set({ transfersOpen: open });
+  },
+  topologyOpen: false,
+  setTopologyOpen(open) {
+    set({ topologyOpen: open });
+  },
+  clearNotice() {
+    set({ chatNotice: null });
+  },
 
   initialize() {
     if (get().initialized) {
@@ -117,6 +139,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
 
   setDisplayName(name) {
     set({ displayName: name });
+    get().connectNow();
   },
 
   connectNow() {

@@ -8,6 +8,7 @@ interface IconButtonProps {
   active?: boolean;
   disabled?: boolean;
   type?: "button" | "submit";
+  badge?: number;
 }
 
 export function IconButton({
@@ -17,12 +18,13 @@ export function IconButton({
   active = false,
   disabled = false,
   type = "button",
+  badge = 0,
 }: IconButtonProps) {
   const button = (
     <button
       aria-label={label}
       className={[
-        "grid size-11 place-items-center rounded-full border transition",
+        "relative grid size-11 place-items-center rounded-full border transition",
         active
           ? "border-primary bg-primary text-on-primary"
           : "border-outline-variant bg-surface-container-low text-on-surface hover:border-primary",
@@ -33,6 +35,11 @@ export function IconButton({
       type={type}
     >
       <Icon aria-hidden="true" height={20} strokeWidth={1.8} width={20} />
+      {badge > 0 ? (
+        <span className="absolute -top-1 -right-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-error px-1 text-[10px] font-bold text-white ring-2 ring-surface">
+          {badge}
+        </span>
+      ) : null}
     </button>
   );
 

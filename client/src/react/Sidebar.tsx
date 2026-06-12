@@ -7,7 +7,7 @@ import {
   IconTerminal2,
   IconUsers,
 } from "@tabler/icons-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState, useEffect } from "react";
 import { initials } from "./format";
 import { useAppStore } from "./store";
 import type { ConnectionStatus, Peer } from "./types";
@@ -19,7 +19,7 @@ export function Sidebar() {
   const selectedPeerId = useAppStore((state) => state.selectedPeerId);
   const unreadByPeer = useAppStore((state) => state.unreadByPeer);
   const selectPeer = useAppStore((state) => state.selectPeer);
-  const shareFile = useAppStore((state) => state.selectFileForCurrentPeer);
+  const setLogOpen = useAppStore((state) => state.setLogOpen);
 
   const knownPeerList = Object.values(knownPeers);
   const visiblePeers = knownPeerList.length > 0 ? knownPeerList : peers;
@@ -62,20 +62,92 @@ export function Sidebar() {
         )}
       </section>
 
-      <button
-        className="mt-5 flex min-h-16 items-center justify-center gap-3 rounded-lg bg-primary px-5 py-4 font-headline-sm text-on-primary shadow-sm transition hover:bg-primary-hover"
-        onClick={shareFile}
-        type="button"
-      >
-        <IconShare size={24} />
-        Share File
-      </button>
-
-      <footer className="mt-5 border-outline-variant border-t pt-5">
-        <FooterItem icon={<IconHelpCircle size={22} />} label="Support" />
-        <FooterItem icon={<IconTerminal2 size={22} />} label="Logs" />
+      <footer className="mt-5 border-outline-variant border-t pt-5 space-y-2">
+        <UserProfileCard />
+        <div className="flex gap-2 pt-2 border-t border-outline-variant/50">
+          <button
+            onClick={() => alert("LocalLink Help:\n\n1. Make sure your devices are on the same Wi-Fi / Local Area Network.\n2. Open this page on another device.\n3. Type your message and click Send.\n4. To transfer a file, select a peer, click 'Share File', and wait for them to accept it.")}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg py-2 font-body-md text-on-surface-variant hover:bg-surface-container transition border border-transparent hover:border-outline-variant/30"
+            type="button"
+          >
+            <IconHelpCircle size={18} />
+            <span>Support</span>
+          </button>
+          <button
+            onClick={() => setLogOpen(true)}
+            className="flex flex-1 items-center justify-center gap-2 rounded-lg py-2 font-body-md text-on-surface-variant hover:bg-surface-container transition border border-transparent hover:border-outline-variant/30"
+            type="button"
+          >
+            <IconTerminal2 size={18} />
+            <span>Logs</span>
+          </button>
+        </div>
       </footer>
     </div>
+  );
+}
+
+export function UserProfileCard() {
+  const displayName = useAppStore((state) => state.displayName);
+  const setDisplayName = useAppStore((state) => state.setDisplayName);
+  const [isEditing, setIsEditing] = useState(false);
+  const [val, setVal] = useState(displayName);
+
+  useEffect(() => {
+    setVal(displayName);
+  }, [displayName]);
+
+  if (isEditing) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-primary bg-surface-container px-3 py-2 animate-fade-in shadow-inner">
+        <input
+          type="text"
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onBlur={() => {
+            setIsEditing(false);
+            if (val.trim() && val.trim() !== displayName) {
+              setDisplayName(val.trim());
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              setIsEditing(false);
+              if (val.trim() && val.trim() !== displayName) {
+                setDisplayName(val.trim());
+              }
+            } else if (e.key === "Escape") {
+              setIsEditing(false);
+              setVal(displayName);
+            }
+          }}
+          autoFocus
+          maxLength={64}
+          className="flex-1 bg-transparent font-body-md text-on-surface outline-none border-b border-primary/20 px-1 py-0.5"
+          placeholder="Enter display name..."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => setIsEditing(true)}
+      className="flex w-full items-center justify-between rounded-lg bg-surface-container px-4 py-3 hover:bg-surface-container-high border border-outline-variant/40 hover:border-outline-variant transition text-left"
+      type="button"
+      title="Click to edit display name"
+    >
+      <div className="flex items-center gap-3 min-w-0">
+        <span className="grid size-10 shrink-0 place-items-center rounded-full bg-primary/10 text-primary border border-primary/20 font-label-md uppercase">
+          {initials(displayName)}
+        </span>
+        <div className="min-w-0">
+          <span className="block truncate font-body-md font-semibold text-on-surface">{displayName}</span>
+          <span className="block text-[11px] font-mono text-tertiary">Edit Display Name</span>
+        </div>
+      </div>
+      <IconSettings size={18} className="text-on-surface-variant opacity-60 hover:opacity-100 transition" />
+    </button>
   );
 }
 
