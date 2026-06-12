@@ -635,6 +635,42 @@ pub fn rtc_signal_after_target_leaves_is_rejected_test() {
   )) = process.receive(from: alice, within: 1000)
 }
 
+pub fn rtc_signal_from_non_participant_is_rejected_test() {
+  let assert Ok(room_subject) = room.start()
+  let alice = process.new_subject()
+  let bob = process.new_subject()
+  let charlie = process.new_subject()
+
+  join_alice_and_bob(room_subject, alice, bob)
+  join_peer(room_subject, charlie, "charlie", "Charlie")
+  let assert Ok(room.SendPeerJoined(_)) =
+    process.receive(from: alice, within: 1000)
+  let assert Ok(room.SendPeerJoined(_)) =
+    process.receive(from: bob, within: 1000)
+  offer_and_accept(room_subject, alice, bob, "transfer_1")
+
+  let signal =
+    shared_protocol.RtcSignal(
+      transfer_id: "transfer_1",
+      correlation_id: "rtc_1",
+      from: "charlie",
+      to: "bob",
+      description: "candidate",
+      payload: "{\"candidate\":\"opaque\"}",
+    )
+
+  process.send(
+    room_subject,
+    room.RouteRtcSignal(from: "charlie", signal: signal, client: charlie),
+  )
+
+  let assert Ok(room.SendError(
+    code: "invalid_transfer_participant",
+    message: "That RTC signal does not belong to this transfer.",
+  )) = process.receive(from: charlie, within: 1000)
+  let assert Error(_) = process.receive(from: bob, within: 50)
+}
+
 pub fn second_active_file_transfer_is_rejected_test() {
   let assert Ok(room_subject) = room.start()
   let alice = process.new_subject()
