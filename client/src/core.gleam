@@ -147,6 +147,19 @@ pub fn encode_transfer_offer_control(
   }
 }
 
+pub fn encode_piece_request_control(
+  manifest_id: String,
+  file_id: String,
+  piece_index: Int,
+) -> String {
+  shared_protocol.PieceRequest(
+    manifest_id: manifest_id,
+    file_id: file_id,
+    piece_index: piece_index,
+  )
+  |> shared_protocol.encode_rtc_control_message
+}
+
 pub fn rtc_control_event_json(
   raw: String,
   expected_transfer_id: String,
@@ -329,12 +342,20 @@ fn transfer_offer_control_event(
         #("kind", json.string("transfer_manifest_accepted")),
         #("transfer_id", json.string(expected_transfer_id)),
         #("manifest_id", json.string(manifest.manifest_id)),
+        #("file_id", json.string(first_manifest_file_id(manifest))),
       ])
     _, _ ->
       rejected_manifest_event(
         expected_transfer_id,
         "Manifest does not match the accepted file offer.",
       )
+  }
+}
+
+fn first_manifest_file_id(manifest: shared_protocol.Manifest) -> String {
+  case manifest.files {
+    [file, ..] -> file.file_id
+    [] -> ""
   }
 }
 

@@ -3,6 +3,7 @@ import {
   addTextMessage,
   clearPendingDraft,
   forgetPeer,
+  firstMissingPieceRequest,
   markP2pSetupFailed,
   markTransferProgress,
   otherPeers,
@@ -169,6 +170,21 @@ describe("React domain helpers", () => {
       mode: "p2p",
       status: "failed",
       notice: "P2P channel interrupted.",
+    });
+  });
+
+  test("schedules the first piece when a transfer manifest is accepted", () => {
+    expect(
+      firstMissingPieceRequest({
+        kind: "transfer_manifest_accepted",
+        transfer_id: "transfer_1",
+        manifest_id: "manifest_1",
+        file_id: "file_1",
+      }),
+    ).toEqual({
+      manifest_id: "manifest_1",
+      file_id: "file_1",
+      piece_index: 0,
     });
   });
 });

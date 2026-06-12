@@ -332,6 +332,53 @@ pub fn core_rejects_rtc_transfer_offer_manifest_mismatch_test() {
     )
 }
 
+pub fn core_accepts_rtc_transfer_offer_with_first_file_for_piece_request_test() {
+  let assert Ok(manifest) =
+    shared_protocol.validate_manifest(
+      shared_protocol.Manifest(
+        version: 1,
+        manifest_id: "",
+        piece_size: 4,
+        files: [
+          shared_protocol.ManifestFile(
+            file_id: "file_1",
+            name: "clip.mov",
+            size: 4,
+            mime_type: "video/quicktime",
+            pieces: [
+              shared_protocol.ManifestPiece(
+                index: 0,
+                size: 4,
+                sha256: hash("a"),
+              ),
+            ],
+          ),
+        ],
+      ),
+    )
+  let control_json =
+    shared_protocol.TransferOffer(
+      room_transfer_id: "transfer_1",
+      manifest: manifest,
+    )
+    |> shared_protocol.encode_rtc_control_message
+
+  let json =
+    core.rtc_control_event_json(
+      control_json,
+      "transfer_1",
+      "clip.mov",
+      4,
+      "video/quicktime",
+    )
+
+  let assert True =
+    string.contains(json, "\"kind\":\"transfer_manifest_accepted\"")
+  let assert True =
+    string.contains(json, "\"manifest_id\":\"" <> manifest.manifest_id)
+  let assert True = string.contains(json, "\"file_id\":\"file_1\"")
+}
+
 pub fn core_encodes_transfer_offer_control_from_piece_hashes_test() {
   let control_json =
     core.encode_transfer_offer_control(
@@ -359,6 +406,17 @@ pub fn core_encodes_transfer_offer_control_from_piece_hashes_test() {
       ],
     ),
   ] = manifest.files
+}
+
+pub fn core_encodes_piece_request_control_test() {
+  let control_json =
+    core.encode_piece_request_control("manifest_1", "file_1", 0)
+
+  let assert Ok(shared_protocol.PieceRequest(
+    manifest_id: "manifest_1",
+    file_id: "file_1",
+    piece_index: 0,
+  )) = shared_protocol.decode_rtc_control_message(control_json)
 }
 
 pub fn transfer_connection_loss_marks_active_transfers_failed_test() {

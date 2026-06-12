@@ -5,6 +5,7 @@ import type {
   LocalFile,
   Peer,
   PendingDraftClear,
+  RtcControlEvent,
   TextMessage,
   TransferItem,
   TransferMode,
@@ -249,6 +250,20 @@ export function updateLocalFileAfterAck(file: LocalFile, ack: FileChunkAck): Loc
     ...file,
     next_sequence: ack.sequence + 1,
     next_offset: ack.offset + ack.byte_length,
+  };
+}
+
+export function firstMissingPieceRequest(
+  event: RtcControlEvent,
+): { manifest_id: string; file_id: string; piece_index: number } | null {
+  if (event.kind !== "transfer_manifest_accepted" || !event.file_id) {
+    return null;
+  }
+
+  return {
+    manifest_id: event.manifest_id,
+    file_id: event.file_id,
+    piece_index: 0,
   };
 }
 

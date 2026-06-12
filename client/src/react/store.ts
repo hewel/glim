@@ -30,6 +30,7 @@ import {
   clearPendingDraft,
   conversationPeerId,
   forgetPeer,
+  firstMissingPieceRequest,
   interruptedTransferIds,
   isPeerOnline,
   localFile,
@@ -772,9 +773,49 @@ function rtcControlMessageReceived(transferId: string, raw: string): void {
       send(core.encode_file_cancel(event.transfer_id), sendFailed);
       break;
     case "transfer_manifest_accepted":
+      requestFirstMissingPiece(event);
+      break;
     case "piece_request":
       break;
   }
+}
+
+function requestFirstMissingPiece(
+  event: Extract<RtcControlEvent, { kind: "transfer_manifest_accepted" }>,
+): void {
+  const request = firstMissingPieceRequest(event);
+  if (!request) {
+    return;
+  }
+
+  const controlMessage = core.encode_piece_request_control(
+    request.manifest_id,
+    request.file_id,
+    request.piece_index,
+  );
+
+  if (!sendControlMessage(event.transfer_id, controlMessage)) {
+    useAppStore.setState((state) => ({
+      transfers: markTransferStatus(
+        state.transfers,
+        event.transfer_id,
+        "failed",
+        "Piece request could not be sent.",
+      ),
+    }));
+    send(core.encode_file_cancel(event.transfer_id), sendFailed);
+    return;
+  }
+
+  useAppStore.setState((state) => ({
+    transfers: markTransferModeAndStatus(
+      state.transfers,
+      event.transfer_id,
+      "p2p",
+      "p2p_connected",
+      "Requested first piece",
+    ),
+  }));
 }
 
 function rtcSetupFailed(transferId: string, reason: string): void {
