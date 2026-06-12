@@ -169,6 +169,50 @@ pub fn decode_rtc_signal_test() {
     )
 }
 
+pub fn manifest_validation_derives_identity_from_file_pieces_test() {
+  let manifest =
+    protocol.Manifest(version: 1, manifest_id: "", piece_size: 4, files: [
+      protocol.ManifestFile(
+        file_id: "file_1",
+        name: "clip.mov",
+        size: 8,
+        mime_type: "video/quicktime",
+        pieces: [
+          protocol.ManifestPiece(index: 0, size: 4, sha256: hash("a")),
+          protocol.ManifestPiece(index: 1, size: 4, sha256: hash("b")),
+        ],
+      ),
+    ])
+
+  let assert Ok(validated) = protocol.validate_manifest(manifest)
+  let expected_id = protocol.derive_manifest_id(validated)
+
+  let assert True = expected_id == validated.manifest_id
+  let assert True = string.starts_with(expected_id, "manifest_")
+  let assert [protocol.ManifestFile(pieces: [_, _], ..)] = validated.files
+}
+
+pub fn manifest_validation_rejects_invalid_piece_metadata_test() {
+  let manifest =
+    protocol.Manifest(version: 1, manifest_id: "", piece_size: 4, files: [
+      protocol.ManifestFile(
+        file_id: "file_1",
+        name: "clip.mov",
+        size: 8,
+        mime_type: "video/quicktime",
+        pieces: [
+          protocol.ManifestPiece(index: 0, size: 4, sha256: hash("a")),
+          protocol.ManifestPiece(index: 2, size: 4, sha256: hash("b")),
+        ],
+      ),
+    ])
+
+  let assert Error(protocol.InvalidManifestPieceIndex(
+    file_id: "file_1",
+    index: 2,
+  )) = protocol.validate_manifest(manifest)
+}
+
 pub fn decode_malformed_text_message_test() {
   let assert Error(Nil) =
     protocol.decode_server_event(
@@ -185,6 +229,10 @@ pub fn decode_malformed_message_history_test() {
 
 pub fn decode_malformed_json_test() {
   let assert Error(Nil) = protocol.decode_server_event("{bad json")
+}
+
+fn hash(prefix: String) -> String {
+  prefix <> "000000000000000000000000000000000000000000000000000000000000000"
 }
 
 fn peer(
