@@ -17,6 +17,7 @@ type OpfsDirectoryHandle = {
     options?: { create?: boolean },
   ): Promise<OpfsDirectoryHandle>;
   getFileHandle(name: string, options?: { create?: boolean }): Promise<OpfsFileHandle>;
+  removeEntry?(name: string, options?: { recursive?: boolean }): Promise<void>;
 };
 
 export async function writeChunkToOpfs(
@@ -69,6 +70,15 @@ export async function readOpfsTransferBlob(
   const part = await transferPartFile(transferId, root);
   const file = await part.getFile();
   return file.slice(0, file.size, mimeType || "application/octet-stream");
+}
+
+export async function removeOpfsTransfer(
+  transferId: string,
+  root?: OpfsDirectoryHandle,
+): Promise<void> {
+  const directory = root ?? await navigator.storage.getDirectory();
+  const transfers = await directory.getDirectoryHandle("transfers", { create: true });
+  await transfers.removeEntry?.(transferId, { recursive: true });
 }
 
 async function transferPartFile(

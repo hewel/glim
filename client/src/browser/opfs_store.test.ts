@@ -1,5 +1,10 @@
 import { describe, expect, test, vi } from "vitest";
-import { readOpfsTransferBlob, verifyOpfsPieceHash, writeChunkToOpfs } from "./opfs_store";
+import {
+  readOpfsTransferBlob,
+  removeOpfsTransfer,
+  verifyOpfsPieceHash,
+  writeChunkToOpfs,
+} from "./opfs_store";
 import type { DecodedFileChunk } from "./transfer_frame";
 
 class FakeWritable {
@@ -60,6 +65,11 @@ class FakeDirectoryHandle {
     const file = new FakeFileHandle();
     this.files.set(name, file);
     return file;
+  }
+
+  async removeEntry(name: string): Promise<void> {
+    this.directories.delete(name);
+    this.files.delete(name);
   }
 }
 
@@ -152,6 +162,23 @@ describe("OPFS transfer storage", () => {
 
     await expect(blob.arrayBuffer()).resolves.toEqual(new Uint8Array([1, 2, 3]).buffer);
     expect(blob.type).toBe("application/octet-stream");
+  });
+
+  test("removes an OPFS transfer directory after confirmed export", async () => {
+    const root = new FakeDirectoryHandle();
+    await writeChunkToOpfs({
+      transfer_id: "transfer_1",
+      sequence: 0,
+      offset: 0,
+      byte_length: 1,
+      final: true,
+      bytes: new Uint8Array([1]).buffer,
+    }, root);
+
+    await removeOpfsTransfer("transfer_1", root);
+
+    const transfers = root.directories.get("transfers");
+    expect(transfers?.directories.has("transfer_1")).toBe(false);
   });
 });
 

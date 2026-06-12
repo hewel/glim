@@ -5,7 +5,7 @@ import type {
   VoidCallback,
   WrittenChunkCallback,
 } from "./types";
-import { readOpfsTransferBlob } from "./opfs_store";
+import { readOpfsTransferBlob, removeOpfsTransfer } from "./opfs_store";
 import {
   decodeIncomingChunk,
   encodeOutgoingChunk,
@@ -93,6 +93,9 @@ export async function exportReceivedFile(
   try {
     const blob = await readOpfsTransferBlob(transferId, mimeType);
     const method = await exportBlob(name, blob);
+    if (method === "save_picker") {
+      await removeOpfsTransfer(transferId);
+    }
     onExported(method);
   } catch (error) {
     onError(error instanceof DOMException && error.name === "AbortError"
