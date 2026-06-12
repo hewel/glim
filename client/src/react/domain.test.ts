@@ -3,6 +3,7 @@ import {
   addTextMessage,
   clearPendingDraft,
   forgetPeer,
+  markP2pSetupFailed,
   markTransferProgress,
   otherPeers,
 } from "./domain";
@@ -112,6 +113,62 @@ describe("React domain helpers", () => {
       transferred: 4,
       status: "completed",
       notice: "Complete",
+    });
+  });
+
+  test("falls back to relay when P2P setup fails before progress", () => {
+    const transfer: TransferItem = {
+      transfer_id: "transfer_1",
+      peer_id: "peer_1",
+      peer_name: "Peer",
+      name: "demo.bin",
+      mime_type: "application/octet-stream",
+      size: 4,
+      transferred: 0,
+      direction: "sending",
+      mode: "p2p",
+      status: "p2p_setup",
+      notice: "Opening peer channel",
+    };
+
+    const updated = markP2pSetupFailed(
+      [transfer],
+      "transfer_1",
+      "P2P setup failed before transfer progress.",
+    );
+
+    expect(updated[0]).toMatchObject({
+      mode: "relay",
+      status: "fallback",
+      notice: "P2P setup failed before transfer progress.",
+    });
+  });
+
+  test("does not relay-fallback after P2P transfer progress exists", () => {
+    const transfer: TransferItem = {
+      transfer_id: "transfer_1",
+      peer_id: "peer_1",
+      peer_name: "Peer",
+      name: "demo.bin",
+      mime_type: "application/octet-stream",
+      size: 4,
+      transferred: 2,
+      direction: "sending",
+      mode: "p2p",
+      status: "transferring",
+      notice: "Transferring",
+    };
+
+    const updated = markP2pSetupFailed(
+      [transfer],
+      "transfer_1",
+      "P2P channel interrupted.",
+    );
+
+    expect(updated[0]).toMatchObject({
+      mode: "p2p",
+      status: "failed",
+      notice: "P2P channel interrupted.",
     });
   });
 });

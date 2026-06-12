@@ -177,6 +177,29 @@ export function markTransferModeAndStatus(
   );
 }
 
+export function markP2pSetupFailed(
+  transfers: TransferItem[],
+  transferId: string,
+  reason: string,
+): TransferItem[] {
+  return transfers.map((transfer) => {
+    if (transfer.transfer_id !== transferId) {
+      return transfer;
+    }
+
+    if (transfer.transferred > 0) {
+      return { ...transfer, status: "failed", notice: reason };
+    }
+
+    return {
+      ...transfer,
+      mode: "relay",
+      status: "fallback",
+      notice: reason,
+    };
+  });
+}
+
 export function markTransferProgress(
   transfers: TransferItem[],
   ack: FileChunkAck,

@@ -32,6 +32,7 @@ import {
   isPeerOnline,
   localFile,
   markConnectionLost,
+  markP2pSetupFailed,
   markTransferModeAndStatus,
   markTransferProgress,
   markTransferStatus,
@@ -679,19 +680,13 @@ function rtcSetupFailed(transferId: string, reason: string): void {
 
   if (!transfer || transfer.transferred > 0) {
     useAppStore.setState((current) => ({
-      transfers: markTransferStatus(current.transfers, transferId, "failed", reason),
+      transfers: markP2pSetupFailed(current.transfers, transferId, reason),
     }));
     return;
   }
 
   useAppStore.setState((current) => ({
-    transfers: markTransferModeAndStatus(
-      current.transfers,
-      transferId,
-      "relay",
-      "fallback",
-      reason,
-    ),
+    transfers: markP2pSetupFailed(current.transfers, transferId, reason),
   }));
 
   if (file) {
