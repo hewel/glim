@@ -127,6 +127,7 @@ describe("transfer mode labels", () => {
     const futureStates: TransferItem[] = [
       { ...relayTransfer, transfer_id: "hashing", name: "hashing.bin", status: "hashing", notice: "Preparing manifest" },
       { ...relayTransfer, transfer_id: "setup", name: "setup.bin", mode: "p2p", status: "p2p_setup", notice: "Opening peer channel" },
+      { ...relayTransfer, transfer_id: "connected", name: "connected.bin", mode: "p2p", status: "p2p_connected", notice: "P2P channels connected" },
       {
         ...relayTransfer,
         transfer_id: "active",
@@ -147,6 +148,7 @@ describe("transfer mode labels", () => {
 
     expect(screen.getByText("Hashing")).toBeVisible();
     expect(screen.getByText("P2P setup")).toBeVisible();
+    expect(screen.getByText("P2P connected")).toBeVisible();
     expect(screen.getByText("Active 2")).toBeVisible();
     expect(screen.getByText("Verified 7 / 12")).toBeVisible();
     expect(screen.getByText("Failed 1")).toBeVisible();
