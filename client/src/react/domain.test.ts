@@ -9,6 +9,7 @@ import {
   markTransferProgress,
   otherPeers,
   pieceChunkPlan,
+  retryPieceRequest,
 } from "./domain";
 import type { Peer, TextMessage, TransferItem } from "./types";
 
@@ -191,6 +192,7 @@ describe("React domain helpers", () => {
       piece_index: 0,
       piece_size: 4,
       piece_sha256: "hash_1",
+      attempts: 1,
     });
   });
 
@@ -228,5 +230,20 @@ describe("React domain helpers", () => {
       notice: "Piece verified",
       piece_summary: { active: 0, verified: 1, failed: 0, total: 1 },
     });
+  });
+
+  test("bounds piece hash mismatch retries to three attempts", () => {
+    const request = {
+      manifest_id: "manifest_1",
+      file_id: "file_1",
+      piece_index: 0,
+      piece_size: 4,
+      piece_sha256: "hash_1",
+      attempts: 1,
+    };
+
+    expect(retryPieceRequest(request)).toMatchObject({ attempts: 2 });
+    expect(retryPieceRequest({ ...request, attempts: 2 })).toMatchObject({ attempts: 3 });
+    expect(retryPieceRequest({ ...request, attempts: 3 })).toBeNull();
   });
 });

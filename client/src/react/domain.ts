@@ -14,6 +14,15 @@ import type {
 
 export const chunkSize = 262_144;
 
+export interface ReceiverPieceRequest {
+  manifest_id: string;
+  file_id: string;
+  piece_index: number;
+  piece_size: number;
+  piece_sha256: string;
+  attempts: number;
+}
+
 export function upsertPeer(peers: Peer[], peer: Peer): Peer[] {
   return peers.some((existing) => existing.id === peer.id)
     ? peers.map((existing) => (existing.id === peer.id ? peer : existing))
@@ -268,13 +277,7 @@ export function updateLocalFileAfterAck(file: LocalFile, ack: FileChunkAck): Loc
 
 export function firstMissingPieceRequest(
   event: RtcControlEvent,
-): {
-  manifest_id: string;
-  file_id: string;
-  piece_index: number;
-  piece_size: number;
-  piece_sha256: string;
-} | null {
+): ReceiverPieceRequest | null {
   if (event.kind !== "transfer_manifest_accepted" || !event.file_id) {
     return null;
   }
@@ -285,7 +288,18 @@ export function firstMissingPieceRequest(
     piece_index: 0,
     piece_size: event.piece_size,
     piece_sha256: event.piece_sha256,
+    attempts: 1,
   };
+}
+
+export function retryPieceRequest(
+  request: ReceiverPieceRequest,
+): ReceiverPieceRequest | null {
+  if (request.attempts >= 3) {
+    return null;
+  }
+
+  return { ...request, attempts: request.attempts + 1 };
 }
 
 export function pieceChunkPlan(options: {

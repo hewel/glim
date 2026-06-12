@@ -49,9 +49,11 @@ import {
   rememberPeer,
   rememberPeers,
   removePeer,
+  retryPieceRequest,
   setDraft,
   updateLocalFileAfterAck,
   upsertPeer,
+  type ReceiverPieceRequest,
 } from "./domain";
 import type {
   ConnectionStatus,
@@ -84,13 +86,7 @@ interface AppState {
   unreadByPeer: Record<string, number>;
   transfers: TransferItem[];
   localFiles: Record<string, LocalFile>;
-  receiverPieces: Record<string, {
-    manifest_id: string;
-    file_id: string;
-    piece_index: number;
-    piece_size: number;
-    piece_sha256: string;
-  }>;
+  receiverPieces: Record<string, ReceiverPieceRequest>;
   rtcSignals: RtcSignal[];
   pendingFilePeerId: string | null;
   chatNotice: string | null;
@@ -739,7 +735,8 @@ async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Pro
       );
 
       if (!verified) {
-        throw new Error("Piece hash mismatch.");
+        retryOrFailPiece(transferId, receiverPiece);
+        return;
       }
 
       useAppStore.setState((state) => {
@@ -764,6 +761,55 @@ async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Pro
     closePeerConnection(transferId);
     send(core.encode_file_cancel(transferId), sendFailed);
   }
+}
+
+function retryOrFailPiece(transferId: string, piece: ReceiverPieceRequest): void {
+  const retry = retryPieceRequest(piece);
+  if (!retry) {
+    useAppStore.setState((state) => ({
+      transfers: markTransferStatus(
+        state.transfers,
+        transferId,
+        "failed",
+        "Piece hash mismatch.",
+      ),
+    }));
+    closePeerConnection(transferId);
+    send(core.encode_file_cancel(transferId), sendFailed);
+    return;
+  }
+
+  const controlMessage = core.encode_piece_request_control(
+    retry.manifest_id,
+    retry.file_id,
+    retry.piece_index,
+  );
+  if (!sendControlMessage(transferId, controlMessage)) {
+    useAppStore.setState((state) => ({
+      transfers: markTransferStatus(
+        state.transfers,
+        transferId,
+        "failed",
+        "Piece retry could not be sent.",
+      ),
+    }));
+    send(core.encode_file_cancel(transferId), sendFailed);
+    return;
+  }
+
+  useAppStore.setState((state) => ({
+    receiverPieces: {
+      ...state.receiverPieces,
+      [transferId]: retry,
+    },
+    transfers: markTransferModeAndStatus(
+      state.transfers,
+      transferId,
+      "p2p",
+      "p2p_connected",
+      "Retrying piece",
+    ),
+  }));
 }
 
 async function sendTransferManifest(
