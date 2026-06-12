@@ -3,6 +3,8 @@
 /build
 erl_crash.dump
 
+node_modules
+
 /priv/static/client.js
 /priv/static/client.css
 /priv/static/index.html

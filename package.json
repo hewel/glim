@@ -1,0 +1,14 @@
+{
+  "name": "glim",
+  "type": "module",
+  "private": true,
+  "workspaces": [
+    "client"
+  ],
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^6.0.3"
+  }
+}
