@@ -106,6 +106,18 @@ pub type ManifestError {
   ManifestPieceSizeMismatch(file_id: String)
 }
 
+pub type RtcControlMessage {
+  TransferOffer(room_transfer_id: String, manifest: Manifest)
+  PieceRequest(manifest_id: String, file_id: String, piece_index: Int)
+}
+
+pub type RtcControlDecodeError {
+  InvalidRtcControlJson
+  InvalidRtcControlPayload
+  InvalidRtcControlManifest(error: ManifestError)
+  UnknownRtcControlMessage(message_type: String)
+}
+
 pub type ServerEvent {
   PeerList(peers: List(Peer))
   PeerJoined(peer: Peer)
@@ -289,6 +301,41 @@ pub fn encode_manifest_payload(manifest: Manifest) -> json.Json {
   ])
 }
 
+pub fn encode_rtc_control_message(message: RtcControlMessage) -> String {
+  case message {
+    TransferOffer(room_transfer_id, manifest) ->
+      json.object([
+        #("type", json.string("transfer.offer")),
+        #("room_transfer_id", json.string(room_transfer_id)),
+        #("manifest", encode_manifest_payload(manifest)),
+      ])
+    PieceRequest(manifest_id, file_id, piece_index) ->
+      json.object([
+        #("type", json.string("piece.request")),
+        #("manifest_id", json.string(manifest_id)),
+        #("file_id", json.string(file_id)),
+        #("piece_index", json.int(piece_index)),
+      ])
+  }
+  |> json.to_string
+}
+
+pub fn decode_rtc_control_message(
+  input: String,
+) -> Result(RtcControlMessage, RtcControlDecodeError) {
+  let message_type_decoder = {
+    use message_type <- decode.field("type", decode.string)
+    decode.success(message_type)
+  }
+
+  case json.parse(from: input, using: message_type_decoder) {
+    Error(_) -> Error(InvalidRtcControlJson)
+    Ok("transfer.offer") -> decode_transfer_offer(input)
+    Ok("piece.request") -> decode_piece_request(input)
+    Ok(other) -> Error(UnknownRtcControlMessage(message_type: other))
+  }
+}
+
 pub fn decode_server_event(input: String) -> Result(ServerEvent, Nil) {
   let event_type_decoder = {
     use event_type <- decode.field("type", decode.string)
@@ -442,6 +489,100 @@ fn rtc_signal_decoder() -> decode.Decoder(RtcSignal) {
     description: description,
     payload: payload,
   ))
+}
+
+fn manifest_decoder() -> decode.Decoder(Manifest) {
+  use version <- decode.field("version", decode.int)
+  use manifest_id <- decode.field("manifest_id", decode.string)
+  use piece_size <- decode.field("piece_size", decode.int)
+  use files <- decode.field("files", decode.list(manifest_file_decoder()))
+  decode.success(Manifest(
+    version: version,
+    manifest_id: manifest_id,
+    piece_size: piece_size,
+    files: files,
+  ))
+}
+
+fn manifest_file_decoder() -> decode.Decoder(ManifestFile) {
+  use file_id <- decode.field("file_id", decode.string)
+  use name <- decode.field("name", decode.string)
+  use size <- decode.field("size", decode.int)
+  use mime_type <- decode.field("mime_type", decode.string)
+  use pieces <- decode.field("pieces", decode.list(manifest_piece_decoder()))
+  decode.success(ManifestFile(
+    file_id: file_id,
+    name: name,
+    size: size,
+    mime_type: mime_type,
+    pieces: pieces,
+  ))
+}
+
+fn manifest_piece_decoder() -> decode.Decoder(ManifestPiece) {
+  use index <- decode.field("index", decode.int)
+  use size <- decode.field("size", decode.int)
+  use sha256 <- decode.field("sha256", decode.string)
+  decode.success(ManifestPiece(index: index, size: size, sha256: sha256))
+}
+
+fn decode_transfer_offer(
+  input: String,
+) -> Result(RtcControlMessage, RtcControlDecodeError) {
+  let decoder = {
+    use room_transfer_id <- decode.field("room_transfer_id", decode.string)
+    use manifest <- decode.field("manifest", manifest_decoder())
+    decode.success(#(room_transfer_id, manifest))
+  }
+
+  case json.parse(from: input, using: decoder) {
+    Error(_) -> Error(InvalidRtcControlPayload)
+    Ok(#(room_transfer_id, manifest)) ->
+      case string.trim(room_transfer_id) {
+        "" -> Error(InvalidRtcControlPayload)
+        trimmed_room_transfer_id -> {
+          validate_manifest(manifest)
+          |> result.map(fn(valid_manifest) {
+            TransferOffer(
+              room_transfer_id: trimmed_room_transfer_id,
+              manifest: valid_manifest,
+            )
+          })
+          |> result.map_error(InvalidRtcControlManifest)
+        }
+      }
+  }
+}
+
+fn decode_piece_request(
+  input: String,
+) -> Result(RtcControlMessage, RtcControlDecodeError) {
+  let decoder = {
+    use manifest_id <- decode.field("manifest_id", decode.string)
+    use file_id <- decode.field("file_id", decode.string)
+    use piece_index <- decode.field("piece_index", decode.int)
+    decode.success(#(manifest_id, file_id, piece_index))
+  }
+
+  case json.parse(from: input, using: decoder) {
+    Error(_) -> Error(InvalidRtcControlPayload)
+    Ok(#(manifest_id, file_id, piece_index)) -> {
+      let manifest_id = string.trim(manifest_id)
+      let file_id = string.trim(file_id)
+
+      case manifest_id, file_id, piece_index {
+        "", _, _ -> Error(InvalidRtcControlPayload)
+        _, "", _ -> Error(InvalidRtcControlPayload)
+        _, _, piece_index if piece_index < 0 -> Error(InvalidRtcControlPayload)
+        _, _, _ ->
+          Ok(PieceRequest(
+            manifest_id: manifest_id,
+            file_id: file_id,
+            piece_index: piece_index,
+          ))
+      }
+    }
+  }
 }
 
 fn decode_known_server_event(

@@ -213,6 +213,39 @@ pub fn manifest_validation_rejects_invalid_piece_metadata_test() {
   )) = protocol.validate_manifest(manifest)
 }
 
+pub fn rtc_control_transfer_offer_round_trips_manifest_test() {
+  let manifest = valid_manifest()
+  let assert Ok(validated) = protocol.validate_manifest(manifest)
+
+  let message =
+    protocol.TransferOffer(room_transfer_id: "transfer_1", manifest: validated)
+
+  let encoded = protocol.encode_rtc_control_message(message)
+
+  let assert True = string.contains(encoded, "\"type\":\"transfer.offer\"")
+
+  let assert Ok(decoded) = protocol.decode_rtc_control_message(encoded)
+
+  let assert True = message == decoded
+}
+
+pub fn rtc_control_piece_request_round_trips_request_test() {
+  let message =
+    protocol.PieceRequest(
+      manifest_id: "manifest_123",
+      file_id: "file_1",
+      piece_index: 3,
+    )
+
+  let encoded = protocol.encode_rtc_control_message(message)
+
+  let assert True = string.contains(encoded, "\"type\":\"piece.request\"")
+
+  let assert Ok(decoded) = protocol.decode_rtc_control_message(encoded)
+
+  let assert True = message == decoded
+}
+
 pub fn decode_malformed_text_message_test() {
   let assert Error(Nil) =
     protocol.decode_server_event(
@@ -233,6 +266,21 @@ pub fn decode_malformed_json_test() {
 
 fn hash(prefix: String) -> String {
   prefix <> "000000000000000000000000000000000000000000000000000000000000000"
+}
+
+fn valid_manifest() -> protocol.Manifest {
+  protocol.Manifest(version: 1, manifest_id: "", piece_size: 4, files: [
+    protocol.ManifestFile(
+      file_id: "file_1",
+      name: "clip.mov",
+      size: 8,
+      mime_type: "video/quicktime",
+      pieces: [
+        protocol.ManifestPiece(index: 0, size: 4, sha256: hash("a")),
+        protocol.ManifestPiece(index: 1, size: 4, sha256: hash("b")),
+      ],
+    ),
+  ])
 }
 
 fn peer(
