@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   closeReceiveFile,
   connect,
+  hashOutgoingFile,
   loadDetectedProfile,
   loadIdentity,
   selectFile,
@@ -14,6 +15,7 @@ import {
 import {
   closePeerConnection,
   handleRtcSignal,
+  sendControlMessage,
   startSenderPeerConnection,
 } from "../browser/rtc_peer";
 import type { FileSelection, WrittenChunk } from "../browser/types";
@@ -664,6 +666,24 @@ function applyFileAccepted(transferId: string): void {
 }
 
 function rtcConnected(transferId: string): void {
+  const state = useAppStore.getState();
+  const localFile = state.localFiles[transferId];
+  const transfer = state.transfers.find((item) => item.transfer_id === transferId);
+
+  if (localFile && transfer?.direction === "sending") {
+    useAppStore.setState((current) => ({
+      transfers: markTransferModeAndStatus(
+        current.transfers,
+        transferId,
+        "p2p",
+        "hashing",
+        "Preparing manifest",
+      ),
+    }));
+    void sendTransferManifest(transferId, localFile, transfer);
+    return;
+  }
+
   useAppStore.setState((state) => ({
     transfers: markTransferModeAndStatus(
       state.transfers,
@@ -673,6 +693,51 @@ function rtcConnected(transferId: string): void {
       "P2P channels connected",
     ),
   }));
+}
+
+async function sendTransferManifest(
+  transferId: string,
+  file: LocalFile,
+  transfer: TransferItem,
+): Promise<void> {
+  try {
+    const pieceSize = core.default_manifest_piece_size();
+    const pieceHashes = await hashOutgoingFile(file.file_id, pieceSize);
+    const controlMessage = core.encode_transfer_offer_control(
+      transferId,
+      file.file_id,
+      transfer.name,
+      transfer.size,
+      transfer.mime_type,
+      pieceSize,
+      pieceHashes,
+    );
+
+    if (!controlMessage || !sendControlMessage(transferId, controlMessage)) {
+      throw new Error("RTC control channel was not open.");
+    }
+
+    useAppStore.setState((state) => ({
+      transfers: markTransferModeAndStatus(
+        state.transfers,
+        transferId,
+        "p2p",
+        "p2p_connected",
+        "Manifest sent",
+      ),
+    }));
+  } catch (_error) {
+    useAppStore.setState((state) => ({
+      transfers: markTransferStatus(
+        state.transfers,
+        transferId,
+        "failed",
+        "File manifest could not be prepared.",
+      ),
+    }));
+    closePeerConnection(transferId);
+    send(core.encode_file_cancel(transferId), sendFailed);
+  }
 }
 
 function rtcControlMessageReceived(transferId: string, raw: string): void {

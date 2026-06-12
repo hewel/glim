@@ -332,6 +332,35 @@ pub fn core_rejects_rtc_transfer_offer_manifest_mismatch_test() {
     )
 }
 
+pub fn core_encodes_transfer_offer_control_from_piece_hashes_test() {
+  let control_json =
+    core.encode_transfer_offer_control(
+      "transfer_1",
+      "file_1",
+      "clip.txt",
+      3,
+      "text/plain",
+      2,
+      [hash("a"), hash("b")],
+    )
+
+  let assert Ok(shared_protocol.TransferOffer(room_transfer_id:, manifest:)) =
+    shared_protocol.decode_rtc_control_message(control_json)
+  let assert "transfer_1" = room_transfer_id
+  let assert [
+    shared_protocol.ManifestFile(
+      file_id: "file_1",
+      name: "clip.txt",
+      size: 3,
+      mime_type: "text/plain",
+      pieces: [
+        shared_protocol.ManifestPiece(index: 0, size: 2, sha256: _),
+        shared_protocol.ManifestPiece(index: 1, size: 1, sha256: _),
+      ],
+    ),
+  ] = manifest.files
+}
+
 pub fn transfer_connection_loss_marks_active_transfers_failed_test() {
   let selection =
     transfer.FileSelection(

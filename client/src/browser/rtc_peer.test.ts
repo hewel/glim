@@ -3,6 +3,7 @@ import {
   closePeerConnection,
   handleRtcSignal,
   hasPeerConnection,
+  sendControlMessage,
   startSenderPeerConnection,
 } from "./rtc_peer";
 
@@ -15,6 +16,8 @@ class FakeDataChannel {
   constructor(readonly label: string) {}
 
   onmessage: ((event: MessageEvent) => void) | null = null;
+  readyState: RTCDataChannelState = "open";
+  send = vi.fn();
   close = vi.fn();
 }
 
@@ -28,6 +31,7 @@ class FakePeerConnection {
   ondatachannel: ((event: RTCDataChannelEvent) => void) | null = null;
   onicecandidate: ((event: RTCPeerConnectionIceEvent) => void) | null = null;
   createdChannels: Array<{ label: string; options?: RTCDataChannelInit }> = [];
+  channels: FakeDataChannel[] = [];
 
   constructor(readonly configuration: RTCConfiguration) {
     FakePeerConnection.instances.push(this);
@@ -35,7 +39,9 @@ class FakePeerConnection {
 
   createDataChannel(label: string, options?: RTCDataChannelInit): RTCDataChannel {
     this.createdChannels.push({ label, options });
-    return new FakeDataChannel(label) as unknown as RTCDataChannel;
+    const channel = new FakeDataChannel(label);
+    this.channels.push(channel);
+    return channel as unknown as RTCDataChannel;
   }
 
   async createOffer(): Promise<RTCSessionDescriptionInit> {
@@ -205,5 +211,23 @@ describe("rtc peer sender setup", () => {
       "transfer_1",
       "{\"type\":\"transfer.offer\"}",
     );
+  });
+
+  test("sends control messages over the transfer control channel", async () => {
+    await startSenderPeerConnection({
+      transferId: "transfer_1",
+      to: "bob",
+      sendSignal: vi.fn(),
+    });
+
+    const instance = FakePeerConnection.instances[0];
+    if (!instance) {
+      throw new Error("expected fake connection");
+    }
+    const controlChannel = instance.channels.find((channel) => channel.label === "control");
+
+    expect(controlChannel).toBeDefined();
+    expect(sendControlMessage("transfer_1", "{\"type\":\"transfer.offer\"}")).toBe(true);
+    expect(controlChannel?.send).toHaveBeenCalledWith("{\"type\":\"transfer.offer\"}");
   });
 });

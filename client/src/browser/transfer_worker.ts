@@ -1,4 +1,5 @@
 import { decodeChunkFrame, encodeChunkFrame } from "./transfer_frame";
+import { hashFilePieces } from "./manifest_hash";
 import type { WorkerRequest, WorkerResponse } from "./transfer_worker_protocol";
 
 const files = new Map<string, File>();
@@ -23,6 +24,10 @@ async function handleRequest(request: WorkerRequest): Promise<void> {
         post({ id: request.id, type: "registered" });
         break;
 
+      case "hash_file":
+        await hashFile(request);
+        break;
+
       case "encode_chunk":
         await encodeChunk(request);
         break;
@@ -38,6 +43,18 @@ async function handleRequest(request: WorkerRequest): Promise<void> {
       reason: error instanceof Error ? error.message : "File worker failed.",
     });
   }
+}
+
+async function hashFile(
+  request: Extract<WorkerRequest, { type: "hash_file" }>,
+): Promise<void> {
+  const file = files.get(request.file_id);
+  if (!file) {
+    throw new Error("Selected file is no longer available.");
+  }
+
+  const piece_hashes = await hashFilePieces(file, request.piece_size);
+  post({ id: request.id, type: "hashed", piece_hashes });
 }
 
 async function encodeChunk(

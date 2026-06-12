@@ -80,6 +80,16 @@ export function hasPeerConnection(transferId: string): boolean {
   return peerHandles.has(transferId);
 }
 
+export function sendControlMessage(transferId: string, raw: string): boolean {
+  const channel = peerHandles.get(transferId)?.controlChannel;
+  if (!channel || channel.readyState !== "open") {
+    return false;
+  }
+
+  channel.send(raw);
+  return true;
+}
+
 async function acceptOffer(
   options: ReceiverOptions,
   offer: RTCSessionDescriptionInit,

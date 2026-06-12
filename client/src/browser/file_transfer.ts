@@ -5,7 +5,12 @@ import type {
   VoidCallback,
   WrittenChunkCallback,
 } from "./types";
-import { decodeIncomingChunk, encodeOutgoingChunk, registerFile } from "./worker_client";
+import {
+  decodeIncomingChunk,
+  encodeOutgoingChunk,
+  hashRegisteredFile,
+  registerFile,
+} from "./worker_client";
 
 type WritableFileStream = {
   write(data: Uint8Array): Promise<void>;
@@ -78,6 +83,13 @@ export async function prepareOutgoingFrame(
   chunkSize: number,
 ): Promise<ArrayBuffer> {
   return encodeOutgoingChunk(fileId, transferId, sequence, offset, chunkSize);
+}
+
+export async function hashOutgoingFile(
+  fileId: string,
+  pieceSize: number,
+): Promise<string[]> {
+  return hashRegisteredFile(fileId, pieceSize);
 }
 
 export async function writeIncomingFrame(

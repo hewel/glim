@@ -107,6 +107,46 @@ pub fn encode_rtc_signal(
   )
 }
 
+pub fn default_manifest_piece_size() -> Int {
+  8_388_608
+}
+
+pub fn encode_transfer_offer_control(
+  room_transfer_id: String,
+  file_id: String,
+  name: String,
+  size: Int,
+  mime_type: String,
+  piece_size: Int,
+  piece_hashes: List(String),
+) -> String {
+  let manifest =
+    shared_protocol.Manifest(
+      version: 1,
+      manifest_id: "",
+      piece_size: piece_size,
+      files: [
+        shared_protocol.ManifestFile(
+          file_id: file_id,
+          name: name,
+          size: size,
+          mime_type: mime_type,
+          pieces: manifest_pieces(size, piece_size, piece_hashes, 0),
+        ),
+      ],
+    )
+
+  case shared_protocol.validate_manifest(manifest) {
+    Ok(validated) ->
+      shared_protocol.TransferOffer(
+        room_transfer_id: room_transfer_id,
+        manifest: validated,
+      )
+      |> shared_protocol.encode_rtc_control_message
+    Error(_) -> ""
+  }
+}
+
 pub fn rtc_control_event_json(
   raw: String,
   expected_transfer_id: String,
@@ -234,6 +274,37 @@ fn encode_server_event(event: shared_protocol.ServerEvent) -> String {
       ])
   }
   |> json.to_string
+}
+
+fn manifest_pieces(
+  remaining_size: Int,
+  piece_size: Int,
+  piece_hashes: List(String),
+  index: Int,
+) -> List(shared_protocol.ManifestPiece) {
+  case piece_hashes {
+    [] -> []
+    [piece_hash, ..rest] -> {
+      let current_piece_size = case remaining_size < piece_size {
+        True -> remaining_size
+        False -> piece_size
+      }
+
+      [
+        shared_protocol.ManifestPiece(
+          index: index,
+          size: current_piece_size,
+          sha256: piece_hash,
+        ),
+        ..manifest_pieces(
+          remaining_size - current_piece_size,
+          piece_size,
+          rest,
+          index + 1,
+        )
+      ]
+    }
+  }
 }
 
 fn transfer_offer_control_event(

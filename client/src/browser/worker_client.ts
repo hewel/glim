@@ -18,6 +18,20 @@ export function registerFile(fileId: string, file: File): Promise<void> {
   return request({ type: "register_file", file_id: fileId, file }).then(() => undefined);
 }
 
+export function hashRegisteredFile(fileId: string, pieceSize: number): Promise<string[]> {
+  return request({
+    type: "hash_file",
+    file_id: fileId,
+    piece_size: pieceSize,
+  }).then((response) => {
+    if (response.type !== "hashed") {
+      throw new Error("File worker returned an unexpected response.");
+    }
+
+    return response.piece_hashes;
+  });
+}
+
 export function encodeOutgoingChunk(
   fileId: string,
   transferId: string,

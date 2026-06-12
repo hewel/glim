@@ -2,6 +2,7 @@ export { loadDetectedProfile, loadIdentity, saveDisplayName } from "./identity";
 export { delay, formatTime } from "./timer";
 export {
   closeReceiveFile,
+  hashOutgoingFile,
   selectFile,
   startReceiveFile,
   streamSaveSupported,
