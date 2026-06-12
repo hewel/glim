@@ -12,6 +12,7 @@ import {
   saveDisplayName,
   startReceiveFile,
   streamSaveSupported,
+  verifyOpfsPieceHash,
   writeFrameToOpfs,
 } from "../browser/ffi";
 import {
@@ -39,6 +40,7 @@ import {
   localFile,
   markConnectionLost,
   markP2pSetupFailed,
+  markPieceVerified,
   markTransferModeAndStatus,
   markTransferProgress,
   markTransferStatus,
@@ -82,6 +84,13 @@ interface AppState {
   unreadByPeer: Record<string, number>;
   transfers: TransferItem[];
   localFiles: Record<string, LocalFile>;
+  receiverPieces: Record<string, {
+    manifest_id: string;
+    file_id: string;
+    piece_index: number;
+    piece_size: number;
+    piece_sha256: string;
+  }>;
   rtcSignals: RtcSignal[];
   pendingFilePeerId: string | null;
   chatNotice: string | null;
@@ -139,6 +148,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   unreadByPeer: {},
   transfers: [],
   localFiles: {},
+  receiverPieces: {},
   rtcSignals: [],
   pendingFilePeerId: null,
   chatNotice: null,
@@ -705,6 +715,7 @@ function rtcConnected(transferId: string): void {
 async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Promise<void> {
   try {
     const chunk = await writeFrameToOpfs(frame);
+    const receiverPiece = useAppStore.getState().receiverPieces[transferId];
     useAppStore.setState((state) => ({
       transfers: markTransferProgress(state.transfers, {
         transfer_id: transferId,
@@ -714,6 +725,33 @@ async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Pro
         final: chunk.final,
       }),
     }));
+
+    if (
+      receiverPiece &&
+      chunk.offset + chunk.byte_length >=
+        (receiverPiece.piece_index + 1) * receiverPiece.piece_size
+    ) {
+      const verified = await verifyOpfsPieceHash(
+        transferId,
+        receiverPiece.piece_index,
+        receiverPiece.piece_size,
+        receiverPiece.piece_sha256,
+      );
+
+      if (!verified) {
+        throw new Error("Piece hash mismatch.");
+      }
+
+      useAppStore.setState((state) => {
+        const nextReceiverPieces = { ...state.receiverPieces };
+        delete nextReceiverPieces[transferId];
+
+        return {
+          receiverPieces: nextReceiverPieces,
+          transfers: markPieceVerified(state.transfers, transferId),
+        };
+      });
+    }
   } catch (_error) {
     useAppStore.setState((state) => ({
       transfers: markTransferStatus(
@@ -841,6 +879,10 @@ function requestFirstMissingPiece(
   }
 
   useAppStore.setState((state) => ({
+    receiverPieces: {
+      ...state.receiverPieces,
+      [event.transfer_id]: request,
+    },
     transfers: markTransferModeAndStatus(
       state.transfers,
       event.transfer_id,

@@ -136,6 +136,8 @@ export type RtcControlEvent =
       transfer_id: string;
       manifest_id: string;
       file_id: string;
+      piece_size: number;
+      piece_sha256: string;
     }
   | { kind: "transfer_manifest_rejected"; transfer_id: string; reason: string }
   | { kind: "piece_request"; manifest_id: string; file_id: string; piece_index: number };

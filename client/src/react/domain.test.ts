@@ -5,6 +5,7 @@ import {
   forgetPeer,
   firstMissingPieceRequest,
   markP2pSetupFailed,
+  markPieceVerified,
   markTransferProgress,
   otherPeers,
   pieceChunkPlan,
@@ -181,11 +182,15 @@ describe("React domain helpers", () => {
         transfer_id: "transfer_1",
         manifest_id: "manifest_1",
         file_id: "file_1",
+        piece_size: 4,
+        piece_sha256: "hash_1",
       }),
     ).toEqual({
       manifest_id: "manifest_1",
       file_id: "file_1",
       piece_index: 0,
+      piece_size: 4,
+      piece_sha256: "hash_1",
     });
   });
 
@@ -199,5 +204,29 @@ describe("React domain helpers", () => {
       { sequence: 0, offset: 5, byte_length: 3 },
       { sequence: 1, offset: 8, byte_length: 2 },
     ]);
+  });
+
+  test("marks a verified piece in the transfer summary", () => {
+    const transfer: TransferItem = {
+      transfer_id: "transfer_1",
+      peer_id: "peer_1",
+      peer_name: "Peer",
+      name: "demo.bin",
+      mime_type: "application/octet-stream",
+      size: 4,
+      transferred: 4,
+      direction: "receiving",
+      mode: "p2p",
+      status: "transferring",
+      notice: "Transferring",
+    };
+
+    const updated = markPieceVerified([transfer], "transfer_1");
+
+    expect(updated[0]).toMatchObject({
+      status: "p2p_connected",
+      notice: "Piece verified",
+      piece_summary: { active: 0, verified: 1, failed: 0, total: 1 },
+    });
   });
 });

@@ -218,6 +218,19 @@ export function markTransferProgress(
   );
 }
 
+export function markPieceVerified(transfers: TransferItem[], transferId: string): TransferItem[] {
+  return transfers.map((transfer) =>
+    transfer.transfer_id === transferId
+      ? {
+          ...transfer,
+          status: "p2p_connected",
+          notice: "Piece verified",
+          piece_summary: { active: 0, verified: 1, failed: 0, total: 1 },
+        }
+      : transfer,
+  );
+}
+
 export function markConnectionLost(transfers: TransferItem[]): TransferItem[] {
   return transfers.map((transfer) =>
     isInterruptedStatus(transfer.status)
@@ -255,7 +268,13 @@ export function updateLocalFileAfterAck(file: LocalFile, ack: FileChunkAck): Loc
 
 export function firstMissingPieceRequest(
   event: RtcControlEvent,
-): { manifest_id: string; file_id: string; piece_index: number } | null {
+): {
+  manifest_id: string;
+  file_id: string;
+  piece_index: number;
+  piece_size: number;
+  piece_sha256: string;
+} | null {
   if (event.kind !== "transfer_manifest_accepted" || !event.file_id) {
     return null;
   }
@@ -264,6 +283,8 @@ export function firstMissingPieceRequest(
     manifest_id: event.manifest_id,
     file_id: event.file_id,
     piece_index: 0,
+    piece_size: event.piece_size,
+    piece_sha256: event.piece_sha256,
   };
 }
 

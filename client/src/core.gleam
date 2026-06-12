@@ -343,6 +343,8 @@ fn transfer_offer_control_event(
         #("transfer_id", json.string(expected_transfer_id)),
         #("manifest_id", json.string(manifest.manifest_id)),
         #("file_id", json.string(first_manifest_file_id(manifest))),
+        #("piece_size", json.int(first_manifest_piece_size(manifest))),
+        #("piece_sha256", json.string(first_manifest_piece_hash(manifest))),
       ])
     _, _ ->
       rejected_manifest_event(
@@ -356,6 +358,20 @@ fn first_manifest_file_id(manifest: shared_protocol.Manifest) -> String {
   case manifest.files {
     [file, ..] -> file.file_id
     [] -> ""
+  }
+}
+
+fn first_manifest_piece_size(manifest: shared_protocol.Manifest) -> Int {
+  case manifest.files {
+    [shared_protocol.ManifestFile(pieces: [piece, ..], ..), ..] -> piece.size
+    _ -> 0
+  }
+}
+
+fn first_manifest_piece_hash(manifest: shared_protocol.Manifest) -> String {
+  case manifest.files {
+    [shared_protocol.ManifestFile(pieces: [piece, ..], ..), ..] -> piece.sha256
+    _ -> ""
   }
 }
 

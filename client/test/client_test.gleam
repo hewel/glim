@@ -377,6 +377,8 @@ pub fn core_accepts_rtc_transfer_offer_with_first_file_for_piece_request_test() 
   let assert True =
     string.contains(json, "\"manifest_id\":\"" <> manifest.manifest_id)
   let assert True = string.contains(json, "\"file_id\":\"file_1\"")
+  let assert True = string.contains(json, "\"piece_size\":4")
+  let assert True = string.contains(json, "\"piece_sha256\":\"" <> hash("a"))
 }
 
 pub fn core_encodes_transfer_offer_control_from_piece_hashes_test() {
