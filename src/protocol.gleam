@@ -487,6 +487,14 @@ pub fn encode_file_completed(transfer_id: String) -> String {
   encode_file_transfer_id("file.completed", transfer_id)
 }
 
+pub fn encode_rtc_signal(signal: shared_protocol.RtcSignal) -> String {
+  json.object([
+    #("type", json.string("rtc.signal")),
+    #("signal", shared_protocol.encode_rtc_signal_payload(signal)),
+  ])
+  |> json.to_string
+}
+
 fn encode_file_transfer_id(event_type: String, transfer_id: String) -> String {
   json.object([
     #("type", json.string(event_type)),

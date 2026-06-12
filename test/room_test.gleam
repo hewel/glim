@@ -535,6 +535,35 @@ pub fn file_offer_accept_chunk_ack_and_complete_test() {
     process.receive(from: bob, within: 1000)
 }
 
+pub fn rtc_signal_routes_between_accepted_transfer_peers_test() {
+  let assert Ok(room_subject) = room.start()
+  let alice = process.new_subject()
+  let bob = process.new_subject()
+
+  join_alice_and_bob(room_subject, alice, bob)
+  offer_and_accept(room_subject, alice, bob, "transfer_1")
+
+  let signal =
+    shared_protocol.RtcSignal(
+      transfer_id: "transfer_1",
+      correlation_id: "rtc_1",
+      from: "alice",
+      to: "bob",
+      description: "offer",
+      payload: "{\"type\":\"offer\",\"sdp\":\"opaque\"}",
+    )
+
+  process.send(
+    room_subject,
+    room.RouteRtcSignal(from: "alice", signal: signal, client: alice),
+  )
+
+  let assert Ok(room.SendRtcSignal(received_signal)) =
+    process.receive(from: bob, within: 1000)
+  let assert True = received_signal == signal
+  let assert Error(_) = process.receive(from: alice, within: 50)
+}
+
 pub fn second_active_file_transfer_is_rejected_test() {
   let assert Ok(room_subject) = room.start()
   let alice = process.new_subject()

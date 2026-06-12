@@ -24,6 +24,7 @@ pub type ClientMessage {
   SendFileChunk(frame: BitArray)
   SendFileChunkAck(ack: shared_protocol.FileChunkAck)
   SendFileCompleted(transfer_id: String)
+  SendRtcSignal(signal: shared_protocol.RtcSignal)
   SendError(code: String, message: String)
   SessionReplaced
 }
@@ -80,6 +81,11 @@ pub type Message {
   AcknowledgeFileChunk(
     from: String,
     ack: shared_protocol.FileChunkAck,
+    client: process.Subject(ClientMessage),
+  )
+  RouteRtcSignal(
+    from: String,
+    signal: shared_protocol.RtcSignal,
     client: process.Subject(ClientMessage),
   )
 }
@@ -189,6 +195,8 @@ fn handle_message(
       forward_file_chunk(state, from, ack, frame, client)
     AcknowledgeFileChunk(from:, ack:, client:) ->
       acknowledge_file_chunk(state, from, ack, client)
+    RouteRtcSignal(from:, signal:, client:) ->
+      route_rtc_signal(state, from, signal, client)
   }
 }
 
@@ -653,6 +661,21 @@ fn acknowledge_file_chunk(
   }
 }
 
+fn route_rtc_signal(
+  state: State,
+  from: String,
+  signal: shared_protocol.RtcSignal,
+  client: process.Subject(ClientMessage),
+) -> actor.Next(State, Message) {
+  case rtc_signal_receiver(state, from, signal, client) {
+    Ok(receiver) -> {
+      process.send(receiver.client, SendRtcSignal(signal))
+      actor.continue(state)
+    }
+    Error(rejection) -> reject_send_text(state, rejection)
+  }
+}
+
 fn ensure_transfer_id_available(
   state: State,
   transfer_id: String,
@@ -763,6 +786,74 @@ fn active_transfer_for_receiver(
         client: client,
         code: "invalid_transfer_receiver",
         message: "Only the file receiver can acknowledge chunks.",
+      ))
+  }
+}
+
+fn rtc_signal_receiver(
+  state: State,
+  from: String,
+  signal: shared_protocol.RtcSignal,
+  client: process.Subject(ClientMessage),
+) -> Result(PeerSession, SendTextRejection) {
+  use transfer <- result.try(active_transfer(state, signal.transfer_id, client))
+  use sender <- result.try(find_sender(state.peers, from, client))
+  use Nil <- result.try(ensure_signal_from_matches(from, signal, client))
+  use expected_to <- result.try(expected_signal_target(transfer, from, client))
+  use Nil <- result.try(ensure_signal_targets_expected(
+    signal,
+    expected_to,
+    client,
+  ))
+
+  find_receiver(state.peers, signal.to, sender.client)
+}
+
+fn ensure_signal_from_matches(
+  from: String,
+  signal: shared_protocol.RtcSignal,
+  client: process.Subject(ClientMessage),
+) -> Result(Nil, SendTextRejection) {
+  case signal.from == from {
+    True -> Ok(Nil)
+    False ->
+      Error(SendTextRejection(
+        client: client,
+        code: "invalid_transfer_participant",
+        message: "That RTC signal source does not match this device.",
+      ))
+  }
+}
+
+fn expected_signal_target(
+  transfer: Transfer,
+  from: String,
+  client: process.Subject(ClientMessage),
+) -> Result(String, SendTextRejection) {
+  case transfer.offer.from == from, transfer.offer.to == from {
+    True, False -> Ok(transfer.offer.to)
+    False, True -> Ok(transfer.offer.from)
+    _, _ ->
+      Error(SendTextRejection(
+        client: client,
+        code: "invalid_transfer_participant",
+        message: "That RTC signal does not belong to this transfer.",
+      ))
+  }
+}
+
+fn ensure_signal_targets_expected(
+  signal: shared_protocol.RtcSignal,
+  expected_to: String,
+  client: process.Subject(ClientMessage),
+) -> Result(Nil, SendTextRejection) {
+  case signal.to == expected_to {
+    True -> Ok(Nil)
+    False ->
+      Error(SendTextRejection(
+        client: client,
+        code: "invalid_transfer_participant",
+        message: "That RTC signal target does not match this transfer.",
       ))
   }
 }

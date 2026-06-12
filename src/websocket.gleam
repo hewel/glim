@@ -119,6 +119,10 @@ pub fn handle_message(
         mist.send_text_frame(conn, protocol.encode_file_completed(transfer_id))
       mist.continue(state)
     }
+    mist.Custom(room.SendRtcSignal(signal)) -> {
+      let _ = mist.send_text_frame(conn, protocol.encode_rtc_signal(signal))
+      mist.continue(state)
+    }
     mist.Custom(room.SendError(code:, message:)) -> {
       let _ = mist.send_text_frame(conn, protocol.encode_error(code, message))
       mist.continue(state)

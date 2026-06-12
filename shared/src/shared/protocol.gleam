@@ -56,6 +56,17 @@ pub type FileChunkAck {
   )
 }
 
+pub type RtcSignal {
+  RtcSignal(
+    transfer_id: String,
+    correlation_id: String,
+    from: String,
+    to: String,
+    description: String,
+    payload: String,
+  )
+}
+
 pub type ServerEvent {
   PeerList(peers: List(Peer))
   PeerJoined(peer: Peer)
@@ -69,6 +80,7 @@ pub type ServerEvent {
   FileCancelled(transfer_id: String, reason: String)
   FileChunkAcknowledged(ack: FileChunkAck)
   FileCompleted(transfer_id: String)
+  RtcSignalReceived(signal: RtcSignal)
   ErrorEvent(code: String, message: String)
   UnknownServerEvent(event_type: String)
 }
@@ -86,6 +98,7 @@ type ServerEventType {
   FileCancelledEvent
   FileChunkAcknowledgedEvent
   FileCompletedEvent
+  RtcSignalEvent
   ErrorServerEvent
   UnknownEventType(raw: String)
 }
@@ -196,6 +209,24 @@ pub fn encode_file_chunk_ack(ack: FileChunkAck) -> String {
   |> json.to_string
 }
 
+pub fn encode_rtc_signal(
+  to: String,
+  transfer_id: String,
+  correlation_id: String,
+  description: String,
+  payload: String,
+) -> String {
+  json.object([
+    #("type", json.string("rtc.signal")),
+    #("to", json.string(to)),
+    #("transfer_id", json.string(transfer_id)),
+    #("correlation_id", json.string(correlation_id)),
+    #("description", json.string(description)),
+    #("payload", json.string(payload)),
+  ])
+  |> json.to_string
+}
+
 pub fn decode_server_event(input: String) -> Result(ServerEvent, Nil) {
   let event_type_decoder = {
     use event_type <- decode.field("type", decode.string)
@@ -252,6 +283,17 @@ pub fn encode_file_chunk_ack_payload(ack: FileChunkAck) -> json.Json {
     #("offset", json.int(ack.offset)),
     #("byte_length", json.int(ack.byte_length)),
     #("final", json.bool(ack.final)),
+  ])
+}
+
+pub fn encode_rtc_signal_payload(signal: RtcSignal) -> json.Json {
+  json.object([
+    #("transfer_id", json.string(signal.transfer_id)),
+    #("correlation_id", json.string(signal.correlation_id)),
+    #("from", json.string(signal.from)),
+    #("to", json.string(signal.to)),
+    #("description", json.string(signal.description)),
+    #("payload", json.string(signal.payload)),
   ])
 }
 
@@ -320,6 +362,23 @@ fn file_chunk_ack_decoder() -> decode.Decoder(FileChunkAck) {
     offset: offset,
     byte_length: byte_length,
     final: final,
+  ))
+}
+
+fn rtc_signal_decoder() -> decode.Decoder(RtcSignal) {
+  use transfer_id <- decode.field("transfer_id", decode.string)
+  use correlation_id <- decode.field("correlation_id", decode.string)
+  use from <- decode.field("from", decode.string)
+  use to <- decode.field("to", decode.string)
+  use description <- decode.field("description", decode.string)
+  use payload <- decode.field("payload", decode.string)
+  decode.success(RtcSignal(
+    transfer_id: transfer_id,
+    correlation_id: correlation_id,
+    from: from,
+    to: to,
+    description: description,
+    payload: payload,
   ))
 }
 
@@ -413,6 +472,13 @@ fn decode_known_server_event(
       }
       json.parse(from: input, using: decoder)
     }
+    RtcSignalEvent -> {
+      let decoder = {
+        use signal <- decode.field("signal", rtc_signal_decoder())
+        decode.success(RtcSignalReceived(signal: signal))
+      }
+      json.parse(from: input, using: decoder)
+    }
     ErrorServerEvent -> {
       let decoder = {
         use code <- decode.field("code", decode.string)
@@ -440,6 +506,7 @@ fn classify_server_event_type(event_type: String) -> ServerEventType {
     "file.cancelled" -> FileCancelledEvent
     "file.chunk_ack" -> FileChunkAcknowledgedEvent
     "file.completed" -> FileCompletedEvent
+    "rtc.signal" -> RtcSignalEvent
     "error" -> ErrorServerEvent
     other -> UnknownEventType(raw: other)
   }
