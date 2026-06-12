@@ -3,6 +3,7 @@ import gleam/json
 import gleam/list
 import gleam/option
 import gleam/result
+import gleam/string
 import shared/protocol as shared_protocol
 import validation
 
@@ -21,6 +22,13 @@ pub type ClientEvent {
   FileDecline(transfer_id: String)
   FileCancel(transfer_id: String)
   FileChunkAck(ack: shared_protocol.FileChunkAck)
+  RtcSignal(
+    to: String,
+    transfer_id: String,
+    correlation_id: String,
+    description: String,
+    payload: String,
+  )
 }
 
 pub type DecodeError {
@@ -38,6 +46,7 @@ type ClientEventType {
   FileDeclineEvent
   FileCancelEvent
   FileChunkAckEvent
+  RtcSignalEvent
   UnknownClientEventType(raw: String)
 }
 
@@ -72,6 +81,7 @@ fn decode_known_client_event(
     FileDeclineEvent -> decode_file_transfer_id(input, FileDecline)
     FileCancelEvent -> decode_file_transfer_id(input, FileCancel)
     FileChunkAckEvent -> decode_file_chunk_ack(input)
+    RtcSignalEvent -> decode_rtc_signal(input)
     UnknownClientEventType(raw) -> Error(UnknownEvent(event_type: raw))
   }
 }
@@ -86,6 +96,7 @@ fn classify_client_event_type(event_type: String) -> ClientEventType {
     "file.decline" -> FileDeclineEvent
     "file.cancel" -> FileCancelEvent
     "file.chunk_ack" -> FileChunkAckEvent
+    "rtc.signal" -> RtcSignalEvent
     other -> UnknownClientEventType(raw: other)
   }
 }
@@ -377,6 +388,44 @@ fn decode_file_chunk_ack(input: String) -> Result(ClientEvent, DecodeError) {
   )
 }
 
+fn decode_rtc_signal(input: String) -> Result(ClientEvent, DecodeError) {
+  let decoder = {
+    use to <- decode.field("to", decode.string)
+    use transfer_id <- decode.field("transfer_id", decode.string)
+    use correlation_id <- decode.field("correlation_id", decode.string)
+    use description <- decode.field("description", decode.string)
+    use payload <- decode.field("payload", decode.string)
+    decode.success(#(to, transfer_id, correlation_id, description, payload))
+  }
+
+  use fields <- result.try(
+    json.parse(from: input, using: decoder)
+    |> result.map_error(fn(_) { InvalidPayload }),
+  )
+  let #(to, transfer_id, correlation_id, description, payload) = fields
+  use valid_to <- result.try(
+    validate_payload(validation.validate_device_id(to)),
+  )
+  use valid_transfer_id <- result.try(
+    validate_payload(validation.validate_transfer_id(transfer_id)),
+  )
+  use valid_correlation_id <- result.try(
+    validate_payload(validation.validate_transfer_id(correlation_id)),
+  )
+  use valid_description <- result.try(validate_non_empty_wire_string(
+    description,
+  ))
+  use valid_payload <- result.try(validate_non_empty_wire_string(payload))
+
+  Ok(RtcSignal(
+    to: valid_to,
+    transfer_id: valid_transfer_id,
+    correlation_id: valid_correlation_id,
+    description: valid_description,
+    payload: valid_payload,
+  ))
+}
+
 fn validate_payload(
   result: Result(a, validation.ValidationError),
 ) -> Result(a, DecodeError) {
@@ -388,6 +437,15 @@ fn validate_non_negative(value: Int) -> Result(Nil, DecodeError) {
   case value < 0 {
     True -> Error(InvalidPayload)
     False -> Ok(Nil)
+  }
+}
+
+fn validate_non_empty_wire_string(
+  value: String,
+) -> Result(String, DecodeError) {
+  case string.trim(value) {
+    "" -> Error(InvalidPayload)
+    trimmed -> Ok(trimmed)
   }
 }
 

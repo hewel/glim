@@ -91,6 +91,22 @@ pub fn encode_file_chunk_ack(
   |> shared_protocol.encode_file_chunk_ack
 }
 
+pub fn encode_rtc_signal(
+  to: String,
+  transfer_id: String,
+  correlation_id: String,
+  description: String,
+  payload: String,
+) -> String {
+  shared_protocol.encode_rtc_signal(
+    to,
+    transfer_id,
+    correlation_id,
+    description,
+    payload,
+  )
+}
+
 pub fn server_error_notice(
   code: String,
   message: String,
@@ -167,6 +183,11 @@ fn encode_server_event(event: shared_protocol.ServerEvent) -> String {
       ])
     shared_protocol.FileCompleted(transfer_id:) ->
       transfer_id_event("file_completed", transfer_id)
+    shared_protocol.RtcSignalReceived(signal:) ->
+      json.object([
+        #("kind", json.string("rtc_signal")),
+        #("signal", rtc_signal_json(signal)),
+      ])
     shared_protocol.ErrorEvent(code:, message:) ->
       json.object([
         #("kind", json.string("error")),
@@ -196,6 +217,10 @@ fn file_offer_json(offer: shared_protocol.FileOffer) -> json.Json {
 
 fn file_chunk_ack_json(ack: shared_protocol.FileChunkAck) -> json.Json {
   shared_protocol.encode_file_chunk_ack_payload(ack)
+}
+
+fn rtc_signal_json(signal: shared_protocol.RtcSignal) -> json.Json {
+  shared_protocol.encode_rtc_signal_payload(signal)
 }
 
 fn transfer_id_event(kind: String, transfer_id: String) -> json.Json {

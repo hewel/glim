@@ -52,6 +52,7 @@ pub fn apply_server_event_to_peers(
     Ok(shared_protocol.FileCancelled(transfer_id: _, reason: _)) -> peers
     Ok(shared_protocol.FileChunkAcknowledged(ack: _)) -> peers
     Ok(shared_protocol.FileCompleted(transfer_id: _)) -> peers
+    Ok(shared_protocol.RtcSignalReceived(signal: _)) -> peers
     Ok(shared_protocol.ErrorEvent(code: _, message: _)) -> peers
     Ok(shared_protocol.UnknownServerEvent(event_type: _)) -> peers
     Error(Nil) -> peers

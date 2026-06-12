@@ -155,6 +155,20 @@ pub fn decode_file_chunk_ack_test() {
     )
 }
 
+pub fn decode_rtc_signal_test() {
+  let assert Ok(protocol.RtcSignalReceived(protocol.RtcSignal(
+    transfer_id: "transfer_1",
+    correlation_id: "rtc_1",
+    from: "alice",
+    to: "bob",
+    description: "offer",
+    payload: "{\"type\":\"offer\",\"sdp\":\"opaque\"}",
+  ))) =
+    protocol.decode_server_event(
+      "{\"type\":\"rtc.signal\",\"signal\":{\"transfer_id\":\"transfer_1\",\"correlation_id\":\"rtc_1\",\"from\":\"alice\",\"to\":\"bob\",\"description\":\"offer\",\"payload\":\"{\\\"type\\\":\\\"offer\\\",\\\"sdp\\\":\\\"opaque\\\"}\"}}",
+    )
+}
+
 pub fn decode_malformed_text_message_test() {
   let assert Error(Nil) =
     protocol.decode_server_event(

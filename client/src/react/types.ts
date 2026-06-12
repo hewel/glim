@@ -42,6 +42,23 @@ export interface FileChunkAck {
   final: boolean;
 }
 
+export interface RtcSignal {
+  transfer_id: string;
+  correlation_id: string;
+  from: string;
+  to: string;
+  description: string;
+  payload: string;
+}
+
+export interface OutgoingRtcSignal {
+  to: string;
+  transfer_id: string;
+  correlation_id: string;
+  description: string;
+  payload: string;
+}
+
 export type TransferDirection = "sending" | "receiving";
 export type TransferMode = "relay" | "p2p";
 export type TransferStatus =
@@ -107,6 +124,7 @@ export type ServerEvent =
   | { kind: "file_cancelled"; transfer_id: string; reason: string }
   | { kind: "file_chunk_ack"; ack: FileChunkAck }
   | { kind: "file_completed"; transfer_id: string }
+  | { kind: "rtc_signal"; signal: RtcSignal }
   | { kind: "error"; code: string; message: string }
   | { kind: "unknown"; event_type: string }
   | { kind: "invalid"; message: string };

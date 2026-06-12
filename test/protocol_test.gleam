@@ -98,6 +98,19 @@ pub fn decode_valid_file_chunk_ack_test() {
     )
 }
 
+pub fn decode_valid_rtc_signal_test() {
+  let assert Ok(protocol.RtcSignal(
+    to: "bob",
+    transfer_id: "transfer_1",
+    correlation_id: "rtc_1",
+    description: "offer",
+    payload: "{\"type\":\"offer\",\"sdp\":\"opaque\"}",
+  )) =
+    protocol.decode_client_event(
+      "{\"type\":\"rtc.signal\",\"to\":\"bob\",\"transfer_id\":\"transfer_1\",\"correlation_id\":\"rtc_1\",\"description\":\"offer\",\"payload\":\"{\\\"type\\\":\\\"offer\\\",\\\"sdp\\\":\\\"opaque\\\"}\"}",
+    )
+}
+
 pub fn decode_valid_text_send_test() {
   let assert Ok(protocol.TextSend(to: "bob", body: "hello")) =
     protocol.decode_client_event(
@@ -204,6 +217,26 @@ pub fn encode_message_history_contains_fields_test() {
   let assert True = string.contains(json, "\"id\":\"msg_1\"")
   let assert True = string.contains(json, "\"from\":\"alice\"")
   let assert True = string.contains(json, "\"to\":\"bob\"")
+}
+
+pub fn encode_rtc_signal_contains_fields_test() {
+  let json =
+    protocol.encode_rtc_signal(shared_protocol.RtcSignal(
+      transfer_id: "transfer_1",
+      correlation_id: "rtc_1",
+      from: "alice",
+      to: "bob",
+      description: "offer",
+      payload: "{\"type\":\"offer\",\"sdp\":\"opaque\"}",
+    ))
+
+  let assert True = string.contains(json, "\"type\":\"rtc.signal\"")
+  let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
+  let assert True = string.contains(json, "\"correlation_id\":\"rtc_1\"")
+  let assert True = string.contains(json, "\"from\":\"alice\"")
+  let assert True = string.contains(json, "\"to\":\"bob\"")
+  let assert True = string.contains(json, "\"description\":\"offer\"")
+  let assert True = string.contains(json, "opaque")
 }
 
 fn repeat_char(char: String, count: Int) -> String {

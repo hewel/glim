@@ -1,6 +1,8 @@
 import chat
+import core
 import gleam/dict
 import gleam/option
+import gleam/string
 import gleeunit
 import reconnect
 import shared/protocol as shared_protocol
@@ -245,6 +247,39 @@ pub fn reconnect_retry_delay_caps_test() {
   let assert 10_000 = reconnect.retry_delay_ms(4)
   let assert 30_000 = reconnect.retry_delay_ms(5)
   let assert 30_000 = reconnect.retry_delay_ms(20)
+}
+
+pub fn core_encodes_rtc_signal_without_source_peer_test() {
+  let json =
+    core.encode_rtc_signal(
+      "bob",
+      "transfer_1",
+      "rtc_1",
+      "offer",
+      "{\"type\":\"offer\",\"sdp\":\"opaque\"}",
+    )
+
+  let assert True = string.contains(json, "\"type\":\"rtc.signal\"")
+  let assert True = string.contains(json, "\"to\":\"bob\"")
+  let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
+  let assert True = string.contains(json, "\"correlation_id\":\"rtc_1\"")
+  let assert True = string.contains(json, "\"description\":\"offer\"")
+  let assert False = string.contains(json, "\"from\"")
+}
+
+pub fn core_decodes_routed_rtc_signal_for_browser_test() {
+  let json =
+    core.server_event_json(
+      "{\"type\":\"rtc.signal\",\"signal\":{\"transfer_id\":\"transfer_1\",\"correlation_id\":\"rtc_1\",\"from\":\"alice\",\"to\":\"bob\",\"description\":\"offer\",\"payload\":\"{\\\"type\\\":\\\"offer\\\",\\\"sdp\\\":\\\"opaque\\\"}\"}}",
+    )
+
+  let assert True = string.contains(json, "\"kind\":\"rtc_signal\"")
+  let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
+  let assert True = string.contains(json, "\"correlation_id\":\"rtc_1\"")
+  let assert True = string.contains(json, "\"from\":\"alice\"")
+  let assert True = string.contains(json, "\"to\":\"bob\"")
+  let assert True = string.contains(json, "\"description\":\"offer\"")
+  let assert True = string.contains(json, "opaque")
 }
 
 pub fn transfer_connection_loss_marks_active_transfers_failed_test() {

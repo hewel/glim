@@ -43,6 +43,8 @@ import type {
   LocalFile,
   Peer,
   PendingDraftClear,
+  OutgoingRtcSignal,
+  RtcSignal,
   ServerEvent,
   TextMessage,
   TransferItem,
@@ -65,6 +67,7 @@ interface AppState {
   unreadByPeer: Record<string, number>;
   transfers: TransferItem[];
   localFiles: Record<string, LocalFile>;
+  rtcSignals: RtcSignal[];
   pendingFilePeerId: string | null;
   chatNotice: string | null;
   pendingDraftClear: PendingDraftClear | null;
@@ -88,6 +91,7 @@ interface AppState {
   acceptFile: (transferId: string) => void;
   declineFile: (transferId: string) => void;
   cancelFile: (transferId: string) => void;
+  sendRtcSignal: (signal: OutgoingRtcSignal) => void;
   clearLog: () => void;
   activePeer: () => Peer | null;
   selectedMessages: () => TextMessage[];
@@ -120,6 +124,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   unreadByPeer: {},
   transfers: [],
   localFiles: {},
+  rtcSignals: [],
   pendingFilePeerId: null,
   chatNotice: null,
   pendingDraftClear: null,
@@ -344,6 +349,19 @@ export const useAppStore = create<AppState>()((set, get) => ({
     closeReceiveFile(transferId);
   },
 
+  sendRtcSignal(signal) {
+    send(
+      core.encode_rtc_signal(
+        signal.to,
+        signal.transfer_id,
+        signal.correlation_id,
+        signal.description,
+        signal.payload,
+      ),
+      sendFailed,
+    );
+  },
+
   clearLog() {
     set({ log: [] });
   },
@@ -542,6 +560,11 @@ function handleServerEvent(raw: string): void {
           ),
         };
       });
+      break;
+    case "rtc_signal":
+      useAppStore.setState((state) => ({
+        rtcSignals: [...state.rtcSignals, event.signal],
+      }));
       break;
     case "error":
       useAppStore.setState((state) => ({
