@@ -122,6 +122,7 @@ export function addOutgoingTransfer(
     size: selection.size,
     transferred: 0,
     direction: "sending",
+    mode: "relay",
     status: "offered",
     notice: "Waiting for acceptance",
   });
@@ -142,6 +143,7 @@ export function addIncomingTransfer(
     size: offer.size,
     transferred: 0,
     direction: "receiving",
+    mode: "relay",
     status: supported ? "offered" : "unsupported",
     notice: supported
       ? "Waiting for your response"

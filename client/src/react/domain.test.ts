@@ -95,6 +95,7 @@ describe("React domain helpers", () => {
       size: 4,
       transferred: 0,
       direction: "sending",
+      mode: "relay",
       status: "transferring",
       notice: "Transferring",
     };

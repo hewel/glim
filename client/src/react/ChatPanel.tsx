@@ -213,6 +213,7 @@ function TransferCard({
   const percent = progressPercent(transfer.transferred, transfer.size);
   const isSending = transfer.direction === "sending";
   const DirectionIcon = isSending ? IconArrowUp : IconArrowDown;
+  const modeLabel = transferModeLabel(transfer);
 
   let borderClass = "border-outline-variant bg-surface-container";
   let progressBg = "bg-primary";
@@ -251,9 +252,12 @@ function TransferCard({
             </span>
           </div>
           <p className="truncate font-headline-sm mt-0.5 text-on-surface">{transfer.name}</p>
-          <p className="font-code-sm text-on-surface-variant text-xs mt-0.5">
-            {formatBytes(transfer.transferred)} / {formatBytes(transfer.size)} · {transfer.notice}
-          </p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <TransferModeBadge label={modeLabel} />
+            <p className="font-code-sm text-on-surface-variant text-xs">
+              {formatBytes(transfer.transferred)} / {formatBytes(transfer.size)} · {transfer.notice}
+            </p>
+          </div>
         </div>
         <span className="font-label-md text-primary font-bold">{percent}%</span>
       </div>
@@ -273,6 +277,23 @@ function TransferCard({
       </div>
     </div>
   );
+}
+
+function TransferModeBadge({ label }: { label: string }) {
+  return (
+    <span className="rounded-sm border border-outline-variant bg-surface-container-high px-2 py-1 font-label-md text-on-surface-variant">
+      {label}
+    </span>
+  );
+}
+
+function transferModeLabel(transfer: TransferItem): string {
+  switch (transfer.mode) {
+    case "p2p":
+      return "P2P";
+    case "relay":
+      return "Relay";
+  }
 }
 
 function ActionButton({

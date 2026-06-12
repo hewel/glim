@@ -59,6 +59,7 @@ export function TransferQueue({ isDrawer = false }: { isDrawer?: boolean }) {
 function QueueCard({ transfer, onCancel }: { transfer: TransferItem; onCancel: () => void }) {
   const percent = progressPercent(transfer.transferred, transfer.size);
   const active = ["offered", "awaiting_save", "transferring"].includes(transfer.status);
+  const modeLabel = transferModeLabel(transfer);
 
   return (
     <article className={`rounded-lg border p-5 transition-all ${
@@ -74,7 +75,10 @@ function QueueCard({ transfer, onCancel }: { transfer: TransferItem; onCancel: (
         </span>
         <div className="min-w-0 flex-1">
           <p className="truncate font-body-md font-semibold text-on-surface">{transfer.name}</p>
-          <p className="font-code-sm text-on-surface-variant text-xs">{transfer.notice}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <TransferModeBadge label={modeLabel} />
+            <p className="font-code-sm text-on-surface-variant text-xs">{transfer.notice}</p>
+          </div>
         </div>
         {active ? (
           <button
@@ -102,4 +106,21 @@ function QueueCard({ transfer, onCancel }: { transfer: TransferItem; onCancel: (
       </div>
     </article>
   );
+}
+
+function TransferModeBadge({ label }: { label: string }) {
+  return (
+    <span className="rounded-sm border border-outline-variant bg-surface-container-high px-2 py-1 font-label-md text-on-surface-variant">
+      {label}
+    </span>
+  );
+}
+
+function transferModeLabel(transfer: TransferItem): string {
+  switch (transfer.mode) {
+    case "p2p":
+      return "P2P";
+    case "relay":
+      return "Relay";
+  }
 }

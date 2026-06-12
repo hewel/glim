@@ -43,6 +43,7 @@ export interface FileChunkAck {
 }
 
 export type TransferDirection = "sending" | "receiving";
+export type TransferMode = "relay" | "p2p";
 export type TransferStatus =
   | "offered"
   | "awaiting_save"
@@ -62,6 +63,7 @@ export interface TransferItem {
   size: number;
   transferred: number;
   direction: TransferDirection;
+  mode: TransferMode;
   status: TransferStatus;
   notice: string;
 }
