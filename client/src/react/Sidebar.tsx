@@ -164,23 +164,28 @@ function PeerButton({
       className={[
         "flex w-full items-center gap-3 rounded-md border px-3 py-3 text-left transition",
         selected
-          ? "border-primary bg-primary text-on-primary"
+          ? "border-primary/40 bg-linear-to-r from-primary/9 via-primary/5 to-transparent text-on-surface font-semibold"
           : "border-transparent hover:border-outline-variant hover:bg-surface-container",
       ].join(" ")}
       onClick={onSelect}
       type="button"
     >
-      <span className="grid size-10 shrink-0 place-items-center rounded-full border border-outline-variant bg-surface-container-high font-label-md">
+      <span className={[
+        "grid size-10 shrink-0 place-items-center rounded-full border font-label-md transition",
+        selected
+          ? "border-primary/30 bg-primary/10 text-primary"
+          : "border-outline-variant bg-surface-container-high text-on-surface",
+      ].join(" ")}>
         <DeviceKindIcon kind={peer.device_kind} size={18} />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate font-body-md font-medium">{peer.display_name}</span>
-        <span className="block truncate font-code-sm opacity-75" title={peerDeviceTitle(peer)}>
+        <span className="block truncate font-body-md font-medium text-on-surface">{peer.display_name}</span>
+        <span className="block truncate font-code-sm opacity-75 text-on-surface-variant" title={peerDeviceTitle(peer)}>
           {online ? "Online" : "Offline history"}
         </span>
       </span>
       {unread > 0 ? (
-        <span className="grid min-w-7 place-items-center rounded-full bg-on-primary px-2 py-1 text-primary text-xs">
+        <span className="grid min-w-7 place-items-center rounded-full bg-primary px-2 py-1 text-on-primary text-xs font-bold shadow-sm">
           {unread}
         </span>
       ) : null}
