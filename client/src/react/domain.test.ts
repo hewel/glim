@@ -4,6 +4,8 @@ import {
   clearPendingDraft,
   forgetPeer,
   firstMissingPieceRequest,
+  fillReceiverPieceWindow,
+  markReceiverPieceVerified,
   markP2pSetupFailed,
   markPieceVerified,
   markTransferProgress,
@@ -185,6 +187,7 @@ describe("React domain helpers", () => {
         file_id: "file_1",
         piece_size: 4,
         piece_sha256: "hash_1",
+        pieces: [{ piece_index: 0, piece_size: 4, piece_sha256: "hash_1" }],
       }),
     ).toEqual({
       manifest_id: "manifest_1",
@@ -245,5 +248,33 @@ describe("React domain helpers", () => {
     expect(retryPieceRequest(request)).toMatchObject({ attempts: 2 });
     expect(retryPieceRequest({ ...request, attempts: 2 })).toMatchObject({ attempts: 3 });
     expect(retryPieceRequest({ ...request, attempts: 3 })).toBeNull();
+  });
+
+  test("pulls missing pieces up to the active piece limit", () => {
+    const schedule = fillReceiverPieceWindow(
+      {
+        manifest_id: "manifest_1",
+        file_id: "file_1",
+        pieces: [
+          { piece_index: 0, piece_size: 4, piece_sha256: "hash_0" },
+          { piece_index: 1, piece_size: 4, piece_sha256: "hash_1" },
+          { piece_index: 2, piece_size: 2, piece_sha256: "hash_2" },
+        ],
+        active: [],
+        verified: [],
+      },
+      2,
+    );
+
+    expect(schedule.requests.map((piece) => piece.piece_index)).toEqual([0, 1]);
+    expect(schedule.state.active.map((piece) => piece.piece_index)).toEqual([0, 1]);
+
+    const afterFirstVerified = fillReceiverPieceWindow(
+      markReceiverPieceVerified(schedule.state, 0),
+      2,
+    );
+
+    expect(afterFirstVerified.requests.map((piece) => piece.piece_index)).toEqual([2]);
+    expect(afterFirstVerified.state.active.map((piece) => piece.piece_index)).toEqual([1, 2]);
   });
 });

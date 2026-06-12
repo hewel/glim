@@ -345,6 +345,10 @@ fn transfer_offer_control_event(
         #("file_id", json.string(first_manifest_file_id(manifest))),
         #("piece_size", json.int(first_manifest_piece_size(manifest))),
         #("piece_sha256", json.string(first_manifest_piece_hash(manifest))),
+        #(
+          "pieces",
+          json.array(from: first_manifest_pieces(manifest), of: piece_json),
+        ),
       ])
     _, _ ->
       rejected_manifest_event(
@@ -373,6 +377,23 @@ fn first_manifest_piece_hash(manifest: shared_protocol.Manifest) -> String {
     [shared_protocol.ManifestFile(pieces: [piece, ..], ..), ..] -> piece.sha256
     _ -> ""
   }
+}
+
+fn first_manifest_pieces(
+  manifest: shared_protocol.Manifest,
+) -> List(shared_protocol.ManifestPiece) {
+  case manifest.files {
+    [shared_protocol.ManifestFile(pieces:, ..), ..] -> pieces
+    [] -> []
+  }
+}
+
+fn piece_json(piece: shared_protocol.ManifestPiece) -> json.Json {
+  json.object([
+    #("piece_index", json.int(piece.index)),
+    #("piece_size", json.int(piece.size)),
+    #("piece_sha256", json.string(piece.sha256)),
+  ])
 }
 
 fn manifest_matches_offer(

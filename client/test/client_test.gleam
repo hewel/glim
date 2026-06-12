@@ -343,13 +343,18 @@ pub fn core_accepts_rtc_transfer_offer_with_first_file_for_piece_request_test() 
           shared_protocol.ManifestFile(
             file_id: "file_1",
             name: "clip.mov",
-            size: 4,
+            size: 8,
             mime_type: "video/quicktime",
             pieces: [
               shared_protocol.ManifestPiece(
                 index: 0,
                 size: 4,
                 sha256: hash("a"),
+              ),
+              shared_protocol.ManifestPiece(
+                index: 1,
+                size: 4,
+                sha256: hash("b"),
               ),
             ],
           ),
@@ -368,7 +373,7 @@ pub fn core_accepts_rtc_transfer_offer_with_first_file_for_piece_request_test() 
       control_json,
       "transfer_1",
       "clip.mov",
-      4,
+      8,
       "video/quicktime",
     )
 
@@ -379,6 +384,9 @@ pub fn core_accepts_rtc_transfer_offer_with_first_file_for_piece_request_test() 
   let assert True = string.contains(json, "\"file_id\":\"file_1\"")
   let assert True = string.contains(json, "\"piece_size\":4")
   let assert True = string.contains(json, "\"piece_sha256\":\"" <> hash("a"))
+  let assert True = string.contains(json, "\"pieces\"")
+  let assert True = string.contains(json, "\"piece_index\":1")
+  let assert True = string.contains(json, "\"piece_sha256\":\"" <> hash("b"))
 }
 
 pub fn core_encodes_transfer_offer_control_from_piece_hashes_test() {

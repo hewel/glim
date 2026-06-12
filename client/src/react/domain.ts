@@ -23,6 +23,20 @@ export interface ReceiverPieceRequest {
   attempts: number;
 }
 
+export interface ReceiverPieceSummary {
+  piece_index: number;
+  piece_size: number;
+  piece_sha256: string;
+}
+
+export interface ReceiverPieceSchedule {
+  manifest_id: string;
+  file_id: string;
+  pieces: ReceiverPieceSummary[];
+  active: ReceiverPieceRequest[];
+  verified: number[];
+}
+
 export function upsertPeer(peers: Peer[], peer: Peer): Peer[] {
   return peers.some((existing) => existing.id === peer.id)
     ? peers.map((existing) => (existing.id === peer.id ? peer : existing))
@@ -300,6 +314,57 @@ export function retryPieceRequest(
   }
 
   return { ...request, attempts: request.attempts + 1 };
+}
+
+export function fillReceiverPieceWindow(
+  schedule: ReceiverPieceSchedule,
+  activeLimit: number,
+): { state: ReceiverPieceSchedule; requests: ReceiverPieceRequest[] } {
+  if (activeLimit <= 0) {
+    return { state: schedule, requests: [] };
+  }
+
+  const requests: ReceiverPieceRequest[] = [];
+  let active = schedule.active;
+
+  for (const piece of schedule.pieces) {
+    if (active.length >= activeLimit) {
+      break;
+    }
+
+    if (
+      schedule.verified.includes(piece.piece_index) ||
+      active.some((request) => request.piece_index === piece.piece_index)
+    ) {
+      continue;
+    }
+
+    const request = {
+      manifest_id: schedule.manifest_id,
+      file_id: schedule.file_id,
+      piece_index: piece.piece_index,
+      piece_size: piece.piece_size,
+      piece_sha256: piece.piece_sha256,
+      attempts: 1,
+    };
+    active = [...active, request];
+    requests.push(request);
+  }
+
+  return { state: { ...schedule, active }, requests };
+}
+
+export function markReceiverPieceVerified(
+  schedule: ReceiverPieceSchedule,
+  pieceIndex: number,
+): ReceiverPieceSchedule {
+  return {
+    ...schedule,
+    active: schedule.active.filter((piece) => piece.piece_index !== pieceIndex),
+    verified: schedule.verified.includes(pieceIndex)
+      ? schedule.verified
+      : [...schedule.verified, pieceIndex],
+  };
 }
 
 export function pieceChunkPlan(options: {

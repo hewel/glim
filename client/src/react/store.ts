@@ -33,6 +33,7 @@ import {
   chunkSize,
   clearPendingDraft,
   conversationPeerId,
+  fillReceiverPieceWindow,
   forgetPeer,
   firstMissingPieceRequest,
   interruptedTransferIds,
@@ -41,6 +42,7 @@ import {
   markConnectionLost,
   markP2pSetupFailed,
   markPieceVerified,
+  markReceiverPieceVerified,
   markTransferModeAndStatus,
   markTransferProgress,
   markTransferStatus,
@@ -54,6 +56,7 @@ import {
   updateLocalFileAfterAck,
   upsertPeer,
   type ReceiverPieceRequest,
+  type ReceiverPieceSchedule,
 } from "./domain";
 import type {
   ConnectionStatus,
@@ -86,7 +89,7 @@ interface AppState {
   unreadByPeer: Record<string, number>;
   transfers: TransferItem[];
   localFiles: Record<string, LocalFile>;
-  receiverPieces: Record<string, ReceiverPieceRequest>;
+  receiverSchedules: Record<string, ReceiverPieceSchedule>;
   rtcSignals: RtcSignal[];
   pendingFilePeerId: string | null;
   chatNotice: string | null;
@@ -118,6 +121,7 @@ interface AppState {
 }
 
 const defaultDisplayName = "Glim Peer";
+const activePieceLimit = 2;
 
 export const useAppStore = create<AppState>()((set, get) => ({
   deviceId: "",
@@ -144,7 +148,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   unreadByPeer: {},
   transfers: [],
   localFiles: {},
-  receiverPieces: {},
+  receiverSchedules: {},
   rtcSignals: [],
   pendingFilePeerId: null,
   chatNotice: null,
@@ -711,7 +715,8 @@ function rtcConnected(transferId: string): void {
 async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Promise<void> {
   try {
     const chunk = await writeFrameToOpfs(frame);
-    const receiverPiece = useAppStore.getState().receiverPieces[transferId];
+    const schedule = useAppStore.getState().receiverSchedules[transferId];
+    const receiverPiece = activeReceiverPieceForChunk(schedule, chunk.offset);
     useAppStore.setState((state) => ({
       transfers: markTransferProgress(state.transfers, {
         transfer_id: transferId,
@@ -723,9 +728,9 @@ async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Pro
     }));
 
     if (
+      schedule &&
       receiverPiece &&
-      chunk.offset + chunk.byte_length >=
-        (receiverPiece.piece_index + 1) * receiverPiece.piece_size
+      chunk.offset + chunk.byte_length >= receiverPieceEndOffset(schedule, receiverPiece)
     ) {
       const verified = await verifyOpfsPieceHash(
         transferId,
@@ -739,12 +744,29 @@ async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Pro
         return;
       }
 
+      const filled = fillReceiverPieceWindow(
+        markReceiverPieceVerified(schedule, receiverPiece.piece_index),
+        activePieceLimit,
+      );
+      if (!sendPieceRequests(transferId, filled.requests)) {
+        useAppStore.setState((state) => ({
+          transfers: markTransferStatus(
+            state.transfers,
+            transferId,
+            "failed",
+            "Piece request could not be sent.",
+          ),
+        }));
+        send(core.encode_file_cancel(transferId), sendFailed);
+        return;
+      }
+
       useAppStore.setState((state) => {
-        const nextReceiverPieces = { ...state.receiverPieces };
-        delete nextReceiverPieces[transferId];
+        const nextReceiverSchedules = { ...state.receiverSchedules };
+        nextReceiverSchedules[transferId] = filled.state;
 
         return {
-          receiverPieces: nextReceiverPieces,
+          receiverSchedules: nextReceiverSchedules,
           transfers: markPieceVerified(state.transfers, transferId),
         };
       });
@@ -798,9 +820,12 @@ function retryOrFailPiece(transferId: string, piece: ReceiverPieceRequest): void
   }
 
   useAppStore.setState((state) => ({
-    receiverPieces: {
-      ...state.receiverPieces,
-      [transferId]: retry,
+    receiverSchedules: {
+      ...state.receiverSchedules,
+      [transferId]: replaceActiveReceiverPiece(
+        state.receiverSchedules[transferId],
+        retry,
+      ),
     },
     transfers: markTransferModeAndStatus(
       state.transfers,
@@ -900,18 +925,30 @@ function rtcControlMessageReceived(transferId: string, raw: string): void {
 function requestFirstMissingPiece(
   event: Extract<RtcControlEvent, { kind: "transfer_manifest_accepted" }>,
 ): void {
-  const request = firstMissingPieceRequest(event);
-  if (!request) {
+  const firstRequest = firstMissingPieceRequest(event);
+  if (!firstRequest) {
     return;
   }
-
-  const controlMessage = core.encode_piece_request_control(
-    request.manifest_id,
-    request.file_id,
-    request.piece_index,
+  const filled = fillReceiverPieceWindow(
+    {
+      manifest_id: event.manifest_id,
+      file_id: event.file_id,
+      pieces: event.pieces.length > 0
+        ? event.pieces
+        : [
+            {
+              piece_index: firstRequest.piece_index,
+              piece_size: firstRequest.piece_size,
+              piece_sha256: firstRequest.piece_sha256,
+            },
+          ],
+      active: [],
+      verified: [],
+    },
+    activePieceLimit,
   );
 
-  if (!sendControlMessage(event.transfer_id, controlMessage)) {
+  if (!sendPieceRequests(event.transfer_id, filled.requests)) {
     useAppStore.setState((state) => ({
       transfers: markTransferStatus(
         state.transfers,
@@ -925,18 +962,96 @@ function requestFirstMissingPiece(
   }
 
   useAppStore.setState((state) => ({
-    receiverPieces: {
-      ...state.receiverPieces,
-      [event.transfer_id]: request,
+    receiverSchedules: {
+      ...state.receiverSchedules,
+      [event.transfer_id]: filled.state,
     },
     transfers: markTransferModeAndStatus(
       state.transfers,
       event.transfer_id,
       "p2p",
       "p2p_connected",
-      "Requested first piece",
+      "Requested pieces",
     ),
   }));
+}
+
+function sendPieceRequests(transferId: string, requests: ReceiverPieceRequest[]): boolean {
+  for (const request of requests) {
+    const controlMessage = core.encode_piece_request_control(
+      request.manifest_id,
+      request.file_id,
+      request.piece_index,
+    );
+
+    if (!sendControlMessage(transferId, controlMessage)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function replaceActiveReceiverPiece(
+  schedule: ReceiverPieceSchedule | undefined,
+  piece: ReceiverPieceRequest,
+): ReceiverPieceSchedule {
+  if (!schedule) {
+    return {
+      manifest_id: piece.manifest_id,
+      file_id: piece.file_id,
+      pieces: [
+        {
+          piece_index: piece.piece_index,
+          piece_size: piece.piece_size,
+          piece_sha256: piece.piece_sha256,
+        },
+      ],
+      active: [piece],
+      verified: [],
+    };
+  }
+
+  const replaced = schedule.active.some(
+    (active) => active.piece_index === piece.piece_index,
+  );
+  return {
+    ...schedule,
+    active: replaced
+      ? schedule.active.map((active) =>
+          active.piece_index === piece.piece_index ? piece : active,
+        )
+      : [...schedule.active, piece],
+  };
+}
+
+function activeReceiverPieceForChunk(
+  schedule: ReceiverPieceSchedule | undefined,
+  offset: number,
+): ReceiverPieceRequest | undefined {
+  return schedule?.active.find(
+    (piece) =>
+      offset >= receiverPieceStartOffset(schedule, piece) &&
+      offset < receiverPieceEndOffset(schedule, piece),
+  );
+}
+
+function receiverPieceStartOffset(
+  schedule: ReceiverPieceSchedule,
+  piece: ReceiverPieceRequest,
+): number {
+  return piece.piece_index * receiverRegularPieceSize(schedule);
+}
+
+function receiverPieceEndOffset(
+  schedule: ReceiverPieceSchedule,
+  piece: ReceiverPieceRequest,
+): number {
+  return receiverPieceStartOffset(schedule, piece) + piece.piece_size;
+}
+
+function receiverRegularPieceSize(schedule: ReceiverPieceSchedule): number {
+  return Math.max(...schedule.pieces.map((piece) => piece.piece_size), 1);
 }
 
 async function sendRequestedPiece(
