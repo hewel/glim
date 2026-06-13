@@ -1,6 +1,7 @@
 import type {
   FileSelection,
   FileSelectionCallback,
+  ReceiveCapability,
   ReceiveErrorCallback,
   VoidCallback,
   WrittenChunkCallback,
@@ -46,6 +47,18 @@ export function streamSaveSupported(): boolean {
   return typeof navigator.storage?.getDirectory === "function";
 }
 
+export function receiveCapability(): ReceiveCapability {
+  if (streamSaveSupported() && rtcSupported()) {
+    return "p2p";
+  }
+
+  if (relayStreamSupported()) {
+    return "relay";
+  }
+
+  return "unsupported";
+}
+
 export async function startReceiveFile(
   transferId: string,
   name: string,
@@ -53,11 +66,6 @@ export async function startReceiveFile(
   onError: (reason: string) => void,
   onUnsupported: VoidCallback,
 ): Promise<void> {
-  if (!streamSaveSupported()) {
-    onUnsupported();
-    return;
-  }
-
   if (typeof navigator.storage?.getDirectory === "function") {
     onReady();
     return;
@@ -79,6 +87,14 @@ export async function startReceiveFile(
       ? "Save cancelled."
       : "Save target could not be opened.");
   }
+}
+
+function rtcSupported(): boolean {
+  return typeof RTCPeerConnection === "function";
+}
+
+function relayStreamSupported(): boolean {
+  return typeof savePickerWindow().showSaveFilePicker === "function";
 }
 
 export type ExportMethod = "save_picker" | "blob";

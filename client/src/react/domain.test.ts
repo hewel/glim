@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
+  addIncomingTransfer,
   addTextMessage,
   clearPendingDraft,
   forgetPeer,
@@ -150,6 +151,52 @@ describe("React domain helpers", () => {
       transferred: 4,
       status: "transferring",
       notice: "Transferring",
+    });
+  });
+
+  test("adds P2P-eligible incoming transfers in P2P mode", () => {
+    const transfers = addIncomingTransfer(
+      [],
+      {
+        transfer_id: "transfer_1",
+        from: "peer_1",
+        to: "me",
+        name: "demo.bin",
+        size: 4,
+        mime_type: "application/octet-stream",
+      },
+      "Peer",
+      "p2p",
+    );
+
+    expect(transfers[0]).toMatchObject({
+      direction: "receiving",
+      mode: "p2p",
+      status: "offered",
+      notice: "Waiting for your response",
+    });
+  });
+
+  test("adds relay-only incoming transfers in relay mode", () => {
+    const transfers = addIncomingTransfer(
+      [],
+      {
+        transfer_id: "transfer_1",
+        from: "peer_1",
+        to: "me",
+        name: "demo.bin",
+        size: 4,
+        mime_type: "application/octet-stream",
+      },
+      "Peer",
+      "relay",
+    );
+
+    expect(transfers[0]).toMatchObject({
+      direction: "receiving",
+      mode: "relay",
+      status: "offered",
+      notice: "Waiting for your response",
     });
   });
 

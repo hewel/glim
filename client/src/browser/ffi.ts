@@ -6,6 +6,7 @@ export {
   exportReceivedFile,
   hashOutgoingFile,
   prepareOutgoingFrame,
+  receiveCapability,
   selectFile,
   startReceiveFile,
   streamSaveSupported,

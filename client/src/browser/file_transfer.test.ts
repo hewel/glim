@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { exportBlob, exportReceivedFile, streamSaveSupported } from "./file_transfer";
+import {
+  exportBlob,
+  exportReceivedFile,
+  receiveCapability,
+  streamSaveSupported,
+} from "./file_transfer";
 import { writeChunkToOpfs } from "./opfs_store";
 import type { DecodedFileChunk } from "./transfer_frame";
 
@@ -68,6 +73,35 @@ describe("browser file transfer export", () => {
     });
 
     expect(streamSaveSupported()).toBe(true);
+  });
+
+  test("classifies OPFS and WebRTC receivers as P2P eligible", () => {
+    Object.defineProperty(navigator, "storage", {
+      configurable: true,
+      value: { getDirectory: vi.fn() },
+    });
+    Object.defineProperty(globalThis, "RTCPeerConnection", {
+      configurable: true,
+      value: vi.fn(),
+    });
+
+    expect(receiveCapability()).toBe("p2p");
+  });
+
+  test("classifies save-picker-only receivers as relay-only", () => {
+    Object.defineProperty(window, "showSaveFilePicker", {
+      configurable: true,
+      value: vi.fn(),
+    });
+    Reflect.deleteProperty(globalThis, "RTCPeerConnection");
+
+    expect(receiveCapability()).toBe("relay");
+  });
+
+  test("classifies receivers without P2P or relay storage as unsupported", () => {
+    Reflect.deleteProperty(globalThis, "RTCPeerConnection");
+
+    expect(receiveCapability()).toBe("unsupported");
   });
 
   test("deletes OPFS temp data after confirmed save-picker export", async () => {

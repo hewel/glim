@@ -1,4 +1,4 @@
-import type { FileSelection, WrittenChunk } from "../browser/types";
+import type { FileSelection, ReceiveCapability, WrittenChunk } from "../browser/types";
 import type { BrowserFamily, DeviceKind, DeviceOs, DeviceProfile } from "../browser/device_profile";
 
 export type ConnectionStatus =
@@ -58,6 +58,8 @@ export interface OutgoingRtcSignal {
   description: string;
   payload: string;
 }
+
+export type { ReceiveCapability };
 
 export type TransferDirection = "sending" | "receiving";
 export type TransferMode = "relay" | "p2p";

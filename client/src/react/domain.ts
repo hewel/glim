@@ -5,6 +5,7 @@ import type {
   LocalFile,
   Peer,
   PendingDraftClear,
+  ReceiveCapability,
   RtcControlEvent,
   TextMessage,
   TransferItem,
@@ -157,8 +158,10 @@ export function addIncomingTransfer(
   transfers: TransferItem[],
   offer: FileOffer,
   peerName: string,
-  supported: boolean,
+  capability: ReceiveCapability,
 ): TransferItem[] {
+  const supported = capability !== "unsupported";
+
   return appendOrReplace(transfers, {
     transfer_id: offer.transfer_id,
     peer_id: offer.from,
@@ -168,7 +171,7 @@ export function addIncomingTransfer(
     size: offer.size,
     transferred: 0,
     direction: "receiving",
-    mode: "relay",
+    mode: capability === "p2p" ? "p2p" : "relay",
     status: supported ? "offered" : "unsupported",
     notice: supported
       ? "Waiting for your response"

@@ -7,12 +7,12 @@ import {
   loadDetectedProfile,
   loadIdentity,
   prepareOutgoingFrame,
+  receiveCapability,
   selectFile,
   send,
   sendFileChunk,
   saveDisplayName,
   startReceiveFile,
-  streamSaveSupported,
   verifyOpfsPieceHash,
   writeFrameToOpfs,
 } from "../browser/ffi";
@@ -591,7 +591,7 @@ function handleServerEvent(raw: string): void {
           state.transfers,
           event.offer,
           peerDisplayName(state, event.offer.from),
-          streamSaveSupported(),
+          receiveCapability(),
         ),
       }));
       break;
