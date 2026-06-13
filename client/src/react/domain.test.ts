@@ -249,7 +249,7 @@ describe("React domain helpers", () => {
     });
   });
 
-  test("does not relay-fallback after P2P transfer progress exists", () => {
+  test("keeps P2P mode resumable after transfer progress exists", () => {
     const transfer: TransferItem = {
       transfer_id: "transfer_1",
       peer_id: "peer_1",
@@ -272,8 +272,39 @@ describe("React domain helpers", () => {
 
     expect(updated[0]).toMatchObject({
       mode: "p2p",
-      status: "failed",
-      notice: "P2P channel interrupted.",
+      status: "resumable",
+      notice: "P2P channel interrupted. Resume available.",
+    });
+  });
+
+  test("marks interrupted P2P transfer progress as resumable", () => {
+    const transfer: TransferItem = {
+      transfer_id: "transfer_1",
+      peer_id: "peer_1",
+      peer_name: "Peer",
+      name: "demo.bin",
+      mime_type: "application/octet-stream",
+      size: 12,
+      transferred: 4,
+      direction: "receiving",
+      mode: "p2p",
+      status: "p2p_connected",
+      notice: "Piece verified",
+      piece_summary: { active: 1, verified: 1, failed: 0, total: 3 },
+    };
+
+    const updated = markP2pSetupFailed(
+      [transfer],
+      "transfer_1",
+      "P2P channel interrupted.",
+    );
+
+    expect(updated[0]).toMatchObject({
+      mode: "p2p",
+      status: "resumable",
+      notice: "P2P channel interrupted. Resume available.",
+      transferred: 4,
+      piece_summary: { active: 0, verified: 1, failed: 0, total: 3 },
     });
   });
 

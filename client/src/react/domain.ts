@@ -214,8 +214,15 @@ export function markP2pSetupFailed(
       return transfer;
     }
 
-    if (transfer.transferred > 0) {
-      return { ...transfer, status: "failed", notice: reason };
+    if (transfer.transferred > 0 || (transfer.piece_summary?.verified ?? 0) > 0) {
+      return {
+        ...transfer,
+        status: "resumable",
+        notice: `${reason} Resume available.`,
+        piece_summary: transfer.piece_summary
+          ? { ...transfer.piece_summary, active: 0 }
+          : transfer.piece_summary,
+      };
     }
 
     return {

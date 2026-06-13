@@ -168,6 +168,35 @@ describe("transfer mode labels", () => {
     expect(card.getByText("P2P setup failed before transfer progress.")).toBeVisible();
   });
 
+  test("shows resumable P2P state with verified piece progress", () => {
+    useAppStore.setState({
+      transfers: [
+        {
+          ...relayTransfer,
+          mode: "p2p",
+          status: "resumable",
+          transferred: 512,
+          notice: "P2P channel interrupted. Resume available.",
+          piece_summary: { active: 0, verified: 2, failed: 0, total: 4 },
+        },
+      ],
+    });
+
+    render(<TransferQueue />);
+
+    const transferCard = screen.getByText("demo.bin").closest("article");
+    expect(transferCard).not.toBeNull();
+    const card = within(transferCard as HTMLElement);
+
+    expect(card.getByText("P2P")).toBeVisible();
+    expect(card.getByText("Resumable")).toBeVisible();
+    expect(card.getByText("P2P channel interrupted. Resume available.")).toBeVisible();
+    expect(card.getByText("512 B / 1.0 KB")).toBeVisible();
+    expect(card.getByText("Active 0")).toBeVisible();
+    expect(card.getByText("Verified 2 / 4")).toBeVisible();
+    expect(card.getByText("Failed 0")).toBeVisible();
+  });
+
   test("reserves transfer cockpit states for P2P progress", () => {
     const futureStates: TransferItem[] = [
       { ...relayTransfer, transfer_id: "hashing", name: "hashing.bin", status: "hashing", notice: "Preparing manifest" },
