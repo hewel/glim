@@ -4,6 +4,7 @@ import {
   connect,
   exportReceivedFile,
   hashOutgoingFile,
+  loadResumeState,
   loadDetectedProfile,
   loadIdentity,
   persistResumePieceCompleted,
@@ -59,6 +60,7 @@ import {
   rememberPeers,
   removePeer,
   retryPieceRequest,
+  resumedReceiverPieceSchedule,
   setDraft,
   transferCanContinue,
   updateLocalFileAfterAck,
@@ -1098,7 +1100,7 @@ function rtcControlMessageReceived(transferId: string, raw: string): void {
       send(core.encode_file_cancel(event.transfer_id), sendFailed);
       break;
     case "transfer_manifest_accepted":
-      requestFirstMissingPiece(event);
+      void requestFirstMissingPiece(event);
       break;
     case "piece_request":
       void sendRequestedPiece(transferId, event);
@@ -1106,35 +1108,18 @@ function rtcControlMessageReceived(transferId: string, raw: string): void {
   }
 }
 
-function requestFirstMissingPiece(
+async function requestFirstMissingPiece(
   event: Extract<RtcControlEvent, { kind: "transfer_manifest_accepted" }>,
-): void {
+): Promise<void> {
   if (!transferCanContinue(useAppStore.getState().transfers, event.transfer_id)) {
     return;
   }
 
-  const firstRequest = firstMissingPieceRequest(event);
-  if (!firstRequest) {
+  const completedPieces = await completedResumePieces(event.transfer_id, event.file_id);
+  const filled = resumedReceiverPieceSchedule(event, completedPieces, activePieceLimit);
+  if (!filled) {
     return;
   }
-  const filled = fillReceiverPieceWindow(
-    {
-      manifest_id: event.manifest_id,
-      file_id: event.file_id,
-      pieces: event.pieces.length > 0
-        ? event.pieces
-        : [
-            {
-              piece_index: firstRequest.piece_index,
-              piece_size: firstRequest.piece_size,
-              piece_sha256: firstRequest.piece_sha256,
-            },
-          ],
-      active: [],
-      verified: [],
-    },
-    activePieceLimit,
-  );
 
   if (!sendPieceRequests(event.transfer_id, filled.requests)) {
     useAppStore.setState((state) => ({
@@ -1165,6 +1150,15 @@ function requestFirstMissingPiece(
       "Requested pieces",
     ),
   }));
+}
+
+async function completedResumePieces(transferId: string, fileId: string): Promise<number[]> {
+  try {
+    const state = await loadResumeState(transferId);
+    return state.files[fileId]?.completedPieces ?? [];
+  } catch (_error) {
+    return [];
+  }
 }
 
 function sendPieceRequests(transferId: string, requests: ReceiverPieceRequest[]): boolean {

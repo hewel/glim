@@ -1,5 +1,6 @@
 export { loadDetectedProfile, loadIdentity, saveDisplayName } from "./identity";
 export {
+  loadResumeState,
   persistResumePieceCompleted,
   persistResumePieceFailed,
   verifyOpfsPieceHash,

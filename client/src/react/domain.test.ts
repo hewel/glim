@@ -14,6 +14,7 @@ import {
   otherPeers,
   pieceChunkPlan,
   retryPieceRequest,
+  resumedReceiverPieceSchedule,
   transferCanContinue,
 } from "./domain";
 import type { Peer, TextMessage, TransferItem } from "./types";
@@ -509,5 +510,28 @@ describe("React domain helpers", () => {
 
     expect(afterFirstVerified.requests.map((piece) => piece.piece_index)).toEqual([2]);
     expect(afterFirstVerified.state.active.map((piece) => piece.piece_index)).toEqual([1, 2]);
+  });
+
+  test("requests only missing pieces when receiver resume state has verified pieces", () => {
+    const schedule = resumedReceiverPieceSchedule(
+      {
+        kind: "transfer_manifest_accepted",
+        transfer_id: "transfer_1",
+        manifest_id: "manifest_1",
+        file_id: "file_1",
+        piece_size: 4,
+        piece_sha256: "hash_0",
+        pieces: [
+          { piece_index: 0, piece_size: 4, piece_sha256: "hash_0" },
+          { piece_index: 1, piece_size: 4, piece_sha256: "hash_1" },
+          { piece_index: 2, piece_size: 4, piece_sha256: "hash_2" },
+        ],
+      },
+      [0],
+      2,
+    );
+
+    expect(schedule?.requests.map((piece) => piece.piece_index)).toEqual([1, 2]);
+    expect(schedule?.state.verified).toEqual([0]);
   });
 });

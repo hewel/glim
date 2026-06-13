@@ -431,6 +431,40 @@ export function fillReceiverPieceWindow(
   return { state: { ...schedule, active }, requests };
 }
 
+export function resumedReceiverPieceSchedule(
+  event: RtcControlEvent,
+  completedPieces: number[],
+  activeLimit: number,
+): { state: ReceiverPieceSchedule; requests: ReceiverPieceRequest[] } | null {
+  const firstRequest = firstMissingPieceRequest(event);
+  if (event.kind !== "transfer_manifest_accepted" || !firstRequest) {
+    return null;
+  }
+
+  const pieces = event.pieces.length > 0
+    ? event.pieces
+    : [
+        {
+          piece_index: firstRequest.piece_index,
+          piece_size: firstRequest.piece_size,
+          piece_sha256: firstRequest.piece_sha256,
+        },
+      ];
+  const manifestPieceIndexes = new Set(pieces.map((piece) => piece.piece_index));
+  const verified = completedPieces.filter((pieceIndex) => manifestPieceIndexes.has(pieceIndex));
+
+  return fillReceiverPieceWindow(
+    {
+      manifest_id: event.manifest_id,
+      file_id: event.file_id,
+      pieces,
+      active: [],
+      verified,
+    },
+    activeLimit,
+  );
+}
+
 export function markReceiverPieceVerified(
   schedule: ReceiverPieceSchedule,
   pieceIndex: number,
