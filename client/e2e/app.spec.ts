@@ -56,6 +56,29 @@ test("transfers a single file over P2P and reaches export completion", async ({ 
   await bobContext.close();
 });
 
+test("shows another tab from the same browser profile as a peer", async ({ browser }) => {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+  const alice = await context.newPage();
+  const bob = await context.newPage();
+
+  await seedIdentity(alice, "shared-device", "Alice Tab");
+  await alice.goto("/");
+  await expect(alice.locator("body")).toContainText(
+    /Discovery Active|Mesh Online|Connecting|Reconnecting/,
+  );
+
+  await bob.goto("/");
+  await bob.evaluate(() => {
+    localStorage.setItem("glim.display_name", "Bob Tab");
+  });
+  await bob.reload();
+
+  await expect(alice.getByText("Bob Tab")).toBeVisible({ timeout: 10_000 });
+  await expect(bob.getByText("Alice Tab")).toBeVisible({ timeout: 10_000 });
+
+  await context.close();
+});
+
 test("preserves verified OPFS data after receiver reload", async ({ browser }) => {
   const aliceContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const bobContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });

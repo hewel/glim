@@ -7,20 +7,27 @@ import {
 } from "./device_profile";
 
 const deviceIdKey = "glim.device_id";
+const peerSessionIdKey = "glim.peer_session_id";
 const displayNameKey = "glim.display_name";
 const defaultDisplayName = "Glim Peer";
 
 export function loadIdentity(): Identity {
-  let deviceId = localStorage.getItem(deviceIdKey);
-  if (!deviceId) {
-    deviceId = randomDeviceId();
-    localStorage.setItem(deviceIdKey, deviceId);
+  let installId = localStorage.getItem(deviceIdKey);
+  if (!installId) {
+    installId = randomDeviceId();
+    localStorage.setItem(deviceIdKey, installId);
+  }
+
+  let peerSessionId = sessionStorage.getItem(peerSessionIdKey);
+  if (!peerSessionId) {
+    peerSessionId = `${installId}:${randomDeviceId()}`;
+    sessionStorage.setItem(peerSessionIdKey, peerSessionId);
   }
 
   const savedDisplayName = localStorage.getItem(displayNameKey);
 
   return {
-    device_id: deviceId,
+    device_id: peerSessionId,
     display_name: savedDisplayName || defaultDisplayName,
     display_name_is_default: !savedDisplayName || savedDisplayName === defaultDisplayName,
     device_profile: unknownDeviceProfile(),
