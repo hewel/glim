@@ -30,6 +30,7 @@ import {
 import type { FileSelection, WrittenChunk } from "../browser/types";
 import * as core from "../core.gleam";
 import * as reconnect from "../reconnect.gleam";
+import { reselectedFileMatchesManifest } from "./senderResume";
 import {
   addIncomingTransfer,
   addOutgoingTransfer,
@@ -97,6 +98,7 @@ interface AppState {
   unreadByPeer: Record<string, number>;
   transfers: TransferItem[];
   localFiles: Record<string, LocalFile>;
+  senderResumeManifestIds: Record<string, string>;
   receiverSchedules: Record<string, ReceiverPieceSchedule>;
   rtcSignals: RtcSignal[];
   pendingFilePeerId: string | null;
@@ -158,6 +160,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   unreadByPeer: {},
   transfers: [],
   localFiles: {},
+  senderResumeManifestIds: {},
   receiverSchedules: {},
   rtcSignals: [],
   pendingFilePeerId: null,
@@ -310,19 +313,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
   reselectFileForTransfer(transferId) {
     selectFile(
       (selection) => {
-        set((state) => ({
-          localFiles: {
-            ...state.localFiles,
-            [transferId]: localFile(selection),
-          },
-          transfers: markTransferStatus(
-            state.transfers,
-            transferId,
-            "resumable",
-            "File reselected. Verification pending.",
-          ),
-          chatNotice: "File reselected. Verification pending.",
-        }));
+        void verifyReselectedFileForTransfer(transferId, selection);
       },
       () => {
         set({ chatNotice: "File reselect was cancelled." });
@@ -544,6 +535,7 @@ function connectionLost(generation: number): void {
     knownPeers: {},
     transfers: markConnectionLost(state.transfers),
     localFiles: {},
+    senderResumeManifestIds: {},
     receiverSchedules: {},
     chatNotice: "Mesh disconnected. Reconnecting...",
   });
@@ -636,12 +628,15 @@ function handleServerEvent(raw: string): void {
     case "file_cancelled":
       useAppStore.setState((state) => {
         const nextLocalFiles = { ...state.localFiles };
+        const nextSenderResumeManifestIds = { ...state.senderResumeManifestIds };
         const nextReceiverSchedules = { ...state.receiverSchedules };
         delete nextLocalFiles[event.transfer_id];
+        delete nextSenderResumeManifestIds[event.transfer_id];
         delete nextReceiverSchedules[event.transfer_id];
 
         return {
           localFiles: nextLocalFiles,
+          senderResumeManifestIds: nextSenderResumeManifestIds,
           receiverSchedules: nextReceiverSchedules,
           transfers: markTransferStatus(
             state.transfers,
@@ -660,10 +655,13 @@ function handleServerEvent(raw: string): void {
     case "file_completed":
       useAppStore.setState((state) => {
         const nextLocalFiles = { ...state.localFiles };
+        const nextSenderResumeManifestIds = { ...state.senderResumeManifestIds };
         delete nextLocalFiles[event.transfer_id];
+        delete nextSenderResumeManifestIds[event.transfer_id];
         closePeerConnection(event.transfer_id);
         return {
           localFiles: nextLocalFiles,
+          senderResumeManifestIds: nextSenderResumeManifestIds,
           transfers: markTransferStatus(
             state.transfers,
             event.transfer_id,
@@ -1251,6 +1249,67 @@ function receiverRegularPieceSize(schedule: ReceiverPieceSchedule): number {
   return Math.max(...schedule.pieces.map((piece) => piece.piece_size), 1);
 }
 
+async function verifyReselectedFileForTransfer(
+  transferId: string,
+  selection: FileSelection,
+): Promise<void> {
+  const state = useAppStore.getState();
+  const transfer = state.transfers.find((item) => item.transfer_id === transferId);
+  const expectedManifestId = state.senderResumeManifestIds[transferId];
+  if (!transfer || !expectedManifestId) {
+    useAppStore.setState({
+      chatNotice: "Reselected file cannot be verified for this transfer.",
+    });
+    return;
+  }
+
+  try {
+    const matches = await reselectedFileMatchesManifest(
+      selection,
+      transfer,
+      expectedManifestId,
+      hashOutgoingFile,
+    );
+
+    if (!matches) {
+      useAppStore.setState((current) => ({
+        transfers: markTransferStatus(
+          current.transfers,
+          transferId,
+          "resumable",
+          "Reselected file does not match the original transfer.",
+        ),
+        chatNotice: "Reselected file does not match the original transfer.",
+      }));
+      return;
+    }
+
+    useAppStore.setState((current) => ({
+      localFiles: {
+        ...current.localFiles,
+        [transferId]: localFile(selection),
+      },
+      transfers: markTransferStatus(
+        current.transfers,
+        transferId,
+        "p2p_connected",
+        "Reselected file verified.",
+      ),
+      chatNotice: "Reselected file verified.",
+    }));
+  } catch (_error) {
+    useAppStore.setState((current) => ({
+      transfers: markTransferStatus(
+        current.transfers,
+        transferId,
+        "resumable",
+        "Reselected file could not be verified.",
+      ),
+      chatNotice: "Reselected file could not be verified.",
+    }));
+  }
+}
+
 async function sendRequestedPiece(
   transferId: string,
   event: Extract<RtcControlEvent, { kind: "piece_request" }>,
@@ -1270,6 +1329,10 @@ async function sendRequestedPiece(
         "resumable",
         "Reselect the original file to resume sending.",
       ),
+      senderResumeManifestIds: {
+        ...current.senderResumeManifestIds,
+        [transferId]: event.manifest_id,
+      },
       chatNotice: "Reselect the original file to resume sending.",
     }));
     closePeerConnection(transferId);
