@@ -3,6 +3,7 @@ import {
   exportBlob,
   exportReceivedFile,
   receiveCapability,
+  startReceiveFile,
   streamSaveSupported,
 } from "./file_transfer";
 import { writeChunkToOpfs } from "./opfs_store";
@@ -102,6 +103,34 @@ describe("browser file transfer export", () => {
     Reflect.deleteProperty(globalThis, "RTCPeerConnection");
 
     expect(receiveCapability()).toBe("unsupported");
+  });
+
+  test("prepares relay receive with the save picker when OPFS is unavailable", async () => {
+    const writer = {
+      write: vi.fn(async () => undefined),
+      close: vi.fn(async () => undefined),
+    };
+    Object.defineProperty(window, "showSaveFilePicker", {
+      configurable: true,
+      value: vi.fn(async () => ({
+        createWritable: async () => writer,
+      })),
+    });
+
+    let ready = false;
+    await startReceiveFile(
+      "transfer_1",
+      "demo.bin",
+      () => {
+        ready = true;
+      },
+      () => undefined,
+      () => undefined,
+    );
+
+    expect(ready).toBe(true);
+    expect(((window as unknown) as { showSaveFilePicker: unknown }).showSaveFilePicker)
+      .toHaveBeenCalledWith({ suggestedName: "demo.bin" });
   });
 
   test("deletes OPFS temp data after confirmed save-picker export", async () => {
