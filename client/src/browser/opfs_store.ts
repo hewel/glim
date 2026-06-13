@@ -80,10 +80,27 @@ export async function persistResumePieceCompleted(
   update: ResumePieceUpdate,
   root?: OpfsDirectoryHandle,
 ): Promise<ResumeState> {
-  const state = await readResumeState(transferId, root);
+  const state = await loadResumeState(transferId, root);
   const nextState = markResumePieceCompleted(state, update);
   await writeResumeState(nextState, root);
   return nextState;
+}
+
+export async function loadResumeState(
+  transferId: string,
+  root?: OpfsDirectoryHandle,
+): Promise<ResumeState> {
+  const file = await resumeStateFile(transferId, root);
+  const blob = await file.getFile();
+  if (blob.size === 0) {
+    return emptyResumeState(transferId);
+  }
+
+  const parsed = JSON.parse(await blob.text()) as ResumeState;
+  return {
+    transfer_id: transferId,
+    files: parsed.files ?? {},
+  };
 }
 
 export async function writeChunkToOpfs(
@@ -145,23 +162,6 @@ export async function removeOpfsTransfer(
   const directory = root ?? await navigator.storage.getDirectory();
   const transfers = await directory.getDirectoryHandle("transfers", { create: true });
   await transfers.removeEntry?.(transferId, { recursive: true });
-}
-
-async function readResumeState(
-  transferId: string,
-  root?: OpfsDirectoryHandle,
-): Promise<ResumeState> {
-  const file = await resumeStateFile(transferId, root);
-  const blob = await file.getFile();
-  if (blob.size === 0) {
-    return emptyResumeState(transferId);
-  }
-
-  const parsed = JSON.parse(await blob.text()) as ResumeState;
-  return {
-    transfer_id: transferId,
-    files: parsed.files ?? {},
-  };
 }
 
 async function writeResumeState(

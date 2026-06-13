@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
 import {
+  loadResumeState,
   markResumePieceCompleted,
   markResumePieceFailed,
   persistResumePieceCompleted,
@@ -153,6 +154,26 @@ describe("OPFS transfer storage", () => {
         file_1: {
           size: 10,
           completedPieces: [1, 2],
+          failedPieces: [],
+        },
+      },
+    });
+  });
+
+  test("loads persisted resume state from resume.json", async () => {
+    const root = new FakeDirectoryHandle();
+    await persistResumePieceCompleted(
+      "transfer_1",
+      { file_id: "file_1", size: 10, piece_index: 1 },
+      root,
+    );
+
+    await expect(loadResumeState("transfer_1", root)).resolves.toEqual({
+      transfer_id: "transfer_1",
+      files: {
+        file_1: {
+          size: 10,
+          completedPieces: [1],
           failedPieces: [],
         },
       },
