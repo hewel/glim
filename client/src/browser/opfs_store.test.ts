@@ -1,5 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
 import {
+  markResumePieceCompleted,
+  markResumePieceFailed,
   readOpfsTransferBlob,
   removeOpfsTransfer,
   verifyOpfsPieceHash,
@@ -74,6 +76,51 @@ class FakeDirectoryHandle {
 }
 
 describe("OPFS transfer storage", () => {
+  test("records completed pieces per file in resume state", () => {
+    const state = markResumePieceCompleted(
+      {
+        transfer_id: "transfer_1",
+        files: {},
+      },
+      {
+        file_id: "file_1",
+        size: 10,
+        piece_index: 2,
+      },
+    );
+
+    expect(state.files.file_1).toEqual({
+      size: 10,
+      completedPieces: [2],
+      failedPieces: [],
+    });
+  });
+
+  test("records failed pieces per file without duplicating entries", () => {
+    const initial = {
+      transfer_id: "transfer_1",
+      files: {
+        file_1: {
+          size: 10,
+          completedPieces: [1],
+          failedPieces: [2],
+        },
+      },
+    };
+
+    const state = markResumePieceFailed(initial, {
+      file_id: "file_1",
+      size: 10,
+      piece_index: 2,
+    });
+
+    expect(state.files.file_1).toEqual({
+      size: 10,
+      completedPieces: [1],
+      failedPieces: [2],
+    });
+  });
+
   test("writes received chunks directly to the transfer part file offset", async () => {
     const root = new FakeDirectoryHandle();
     const chunk: DecodedFileChunk = {

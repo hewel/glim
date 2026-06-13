@@ -20,6 +20,61 @@ type OpfsDirectoryHandle = {
   removeEntry?(name: string, options?: { recursive?: boolean }): Promise<void>;
 };
 
+export interface ResumeFileState {
+  size: number;
+  completedPieces: number[];
+  failedPieces: number[];
+}
+
+export interface ResumeState {
+  transfer_id: string;
+  files: Record<string, ResumeFileState>;
+}
+
+export interface ResumePieceUpdate {
+  file_id: string;
+  size: number;
+  piece_index: number;
+}
+
+export function markResumePieceCompleted(
+  state: ResumeState,
+  update: ResumePieceUpdate,
+): ResumeState {
+  const file = resumeFileState(state, update);
+
+  return {
+    ...state,
+    files: {
+      ...state.files,
+      [update.file_id]: {
+        size: update.size,
+        completedPieces: sortedUnique([...file.completedPieces, update.piece_index]),
+        failedPieces: file.failedPieces.filter((piece) => piece !== update.piece_index),
+      },
+    },
+  };
+}
+
+export function markResumePieceFailed(
+  state: ResumeState,
+  update: ResumePieceUpdate,
+): ResumeState {
+  const file = resumeFileState(state, update);
+
+  return {
+    ...state,
+    files: {
+      ...state.files,
+      [update.file_id]: {
+        size: update.size,
+        completedPieces: file.completedPieces,
+        failedPieces: sortedUnique([...file.failedPieces, update.piece_index]),
+      },
+    },
+  };
+}
+
 export async function writeChunkToOpfs(
   chunk: DecodedFileChunk,
   root?: OpfsDirectoryHandle,
@@ -96,4 +151,19 @@ function hex(buffer: ArrayBuffer): string {
   return [...new Uint8Array(buffer)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function resumeFileState(
+  state: ResumeState,
+  update: ResumePieceUpdate,
+): ResumeFileState {
+  return state.files[update.file_id] ?? {
+    size: update.size,
+    completedPieces: [],
+    failedPieces: [],
+  };
+}
+
+function sortedUnique(pieces: number[]): number[] {
+  return [...new Set(pieces)].sort((left, right) => left - right);
 }
