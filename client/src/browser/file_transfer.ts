@@ -7,6 +7,7 @@ import type {
   WrittenChunkCallback,
 } from "./types";
 import { readOpfsTransferBlob, removeOpfsTransfer } from "./opfs_store";
+import { rememberSelectedFileHandle } from "./sender_file_handles";
 import {
   decodeIncomingChunk,
   encodeOutgoingChunk,
@@ -24,6 +25,7 @@ type SaveFileHandle = {
 };
 
 type SavePickerWindow = Window & {
+  showOpenFilePicker?: (options: { multiple?: boolean }) => Promise<FileSystemFileHandle[]>;
   showSaveFilePicker?: (options: { suggestedName?: string }) => Promise<SaveFileHandle>;
 };
 
@@ -33,6 +35,12 @@ export function selectFile(
   onSelected: FileSelectionCallback,
   onError: VoidCallback,
 ): void {
+  const picker = savePickerWindow().showOpenFilePicker;
+  if (picker) {
+    void handleOpenFileSelection(picker, onSelected, onError);
+    return;
+  }
+
   const input = document.createElement("input");
   input.type = "file";
   input.style.display = "none";
@@ -41,6 +49,24 @@ export function selectFile(
   });
   document.body.appendChild(input);
   input.click();
+}
+
+async function handleOpenFileSelection(
+  picker: NonNullable<SavePickerWindow["showOpenFilePicker"]>,
+  onSelected: FileSelectionCallback,
+  onError: VoidCallback,
+): Promise<void> {
+  try {
+    const [handle] = await picker({ multiple: false });
+    if (!handle) {
+      onError();
+      return;
+    }
+
+    await completeFileSelection(await handle.getFile(), onSelected, onError, handle);
+  } catch (_error) {
+    onError();
+  }
 }
 
 export function streamSaveSupported(): boolean {
@@ -230,6 +256,15 @@ async function handleFileSelection(
     return;
   }
 
+  await completeFileSelection(file, onSelected, onError);
+}
+
+async function completeFileSelection(
+  file: File,
+  onSelected: FileSelectionCallback,
+  onError: VoidCallback,
+  handle?: FileSystemFileHandle,
+): Promise<void> {
   const selection: FileSelection = {
     transfer_id: randomId("transfer"),
     file_id: randomId("file"),
@@ -240,6 +275,9 @@ async function handleFileSelection(
 
   try {
     await registerFile(selection.file_id, file);
+    if (handle) {
+      rememberSelectedFileHandle(selection.file_id, handle);
+    }
     onSelected(selection);
   } catch (_error) {
     onError();

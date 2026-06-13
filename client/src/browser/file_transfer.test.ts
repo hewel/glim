@@ -3,15 +3,39 @@ import {
   exportBlob,
   exportReceivedFile,
   receiveCapability,
+  selectFile,
   startReceiveFile,
   streamSaveSupported,
 } from "./file_transfer";
 import { writeChunkToOpfs } from "./opfs_store";
 import type { DecodedFileChunk } from "./transfer_frame";
+import type { FileSelection } from "./types";
+
+const workerClientMocks = vi.hoisted(() => ({
+  registerFile: vi.fn(async () => undefined),
+}));
+
+const senderHandleMocks = vi.hoisted(() => ({
+  rememberSelectedFileHandle: vi.fn(),
+}));
+
+vi.mock("./worker_client", () => ({
+  decodeIncomingChunk: vi.fn(),
+  encodeOutgoingChunk: vi.fn(),
+  hashRegisteredFile: vi.fn(),
+  registerFile: workerClientMocks.registerFile,
+}));
+
+vi.mock("./sender_file_handles", () => ({
+  rememberSelectedFileHandle: senderHandleMocks.rememberSelectedFileHandle,
+}));
 
 describe("browser file transfer export", () => {
   afterEach(() => {
     vi.restoreAllMocks();
+    workerClientMocks.registerFile.mockClear();
+    senderHandleMocks.rememberSelectedFileHandle.mockClear();
+    Reflect.deleteProperty(window, "showOpenFilePicker");
     Reflect.deleteProperty(window, "showSaveFilePicker");
     Reflect.deleteProperty(navigator, "storage");
     Reflect.deleteProperty(URL, "createObjectURL");
@@ -39,6 +63,34 @@ describe("browser file transfer export", () => {
       .toHaveBeenCalledWith({ suggestedName: "demo.bin" });
     expect(writer.chunks.map((chunk) => new TextDecoder().decode(chunk))).toEqual(["abc"]);
     expect(writer.close).toHaveBeenCalledTimes(1);
+  });
+
+  test("remembers open-picker file handles for sender resume", async () => {
+    const file = new File(["demo"], "demo.bin", { type: "application/octet-stream" });
+    const handle = {
+      kind: "file",
+      name: "demo.bin",
+      getFile: vi.fn(async () => file),
+    } as unknown as FileSystemFileHandle;
+    Object.defineProperty(window, "showOpenFilePicker", {
+      configurable: true,
+      value: vi.fn(async () => [handle]),
+    });
+
+    const selection = await new Promise<FileSelection>((resolve, reject) => {
+      selectFile(resolve, () => reject(new Error("selection failed")));
+    });
+
+    expect(selection).toMatchObject({
+      name: "demo.bin",
+      size: 4,
+      mime_type: "application/octet-stream",
+    });
+    expect(workerClientMocks.registerFile).toHaveBeenCalledWith(selection.file_id, file);
+    expect(senderHandleMocks.rememberSelectedFileHandle).toHaveBeenCalledWith(
+      selection.file_id,
+      handle,
+    );
   });
 
   test("falls back to a Blob object URL download without the save picker", async () => {

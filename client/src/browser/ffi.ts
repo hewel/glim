@@ -17,3 +17,6 @@ export {
   streamSaveSupported,
 } from "./file_transfer";
 export { connect, send, sendFileChunk } from "./socket";
+export {
+  persistSenderFileHandleForManifest,
+} from "./sender_file_handles";

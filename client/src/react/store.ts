@@ -8,6 +8,7 @@ import {
   loadIdentity,
   persistResumePieceCompleted,
   persistResumePieceFailed,
+  persistSenderFileHandleForManifest,
   prepareOutgoingFrame,
   receiveCapability,
   selectFile,
@@ -999,6 +1000,13 @@ async function sendTransferManifest(
       throw new Error("RTC control channel was not open.");
     }
 
+    const manifestId = transferOfferManifestId(controlMessage);
+    if (manifestId) {
+      void persistSenderFileHandleForManifest(manifestId, file.file_id).catch(() => {
+        // Resume can still fall back to explicit file reselect.
+      });
+    }
+
     useAppStore.setState((state) => ({
       transfers: markTransferModeAndStatus(
         state.transfers,
@@ -1019,6 +1027,19 @@ async function sendTransferManifest(
     }));
     closePeerConnection(transferId);
     send(core.encode_file_cancel(transferId), sendFailed);
+  }
+}
+
+function transferOfferManifestId(controlMessage: string): string | null {
+  try {
+    const parsed = JSON.parse(controlMessage) as {
+      manifest?: { manifest_id?: unknown };
+    };
+    return typeof parsed.manifest?.manifest_id === "string"
+      ? parsed.manifest.manifest_id
+      : null;
+  } catch (_error) {
+    return null;
   }
 }
 

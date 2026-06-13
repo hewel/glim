@@ -108,6 +108,10 @@ test("preserves verified OPFS data after receiver reload", async ({ browser }) =
 async function seedIdentity(page: import("@playwright/test").Page, deviceId: string, name: string) {
   await page.addInitScript(
     ({ deviceId, name }) => {
+      Object.defineProperty(window, "showOpenFilePicker", {
+        configurable: true,
+        value: undefined,
+      });
       localStorage.setItem("glim.device_id", deviceId);
       localStorage.setItem("glim.display_name", name);
     },
