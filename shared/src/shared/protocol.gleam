@@ -127,7 +127,7 @@ pub type ServerEvent {
   TextMessageEvent(message: TextMessage)
   MessageHistory(messages: List(TextMessage))
   FileOffered(offer: FileOffer)
-  FileAccepted(transfer_id: String)
+  FileAccepted(transfer_id: String, receive_mode: String)
   FileDeclined(transfer_id: String)
   FileCancelled(transfer_id: String, reason: String)
   FileChunkAcknowledged(ack: FileChunkAck)
@@ -225,10 +225,11 @@ pub fn encode_file_offer(
   |> json.to_string
 }
 
-pub fn encode_file_accept(transfer_id: String) -> String {
+pub fn encode_file_accept(transfer_id: String, receive_mode: String) -> String {
   json.object([
     #("type", json.string("file.accept")),
     #("transfer_id", json.string(transfer_id)),
+    #("receive_mode", json.string(receive_mode)),
   ])
   |> json.to_string
 }
@@ -650,7 +651,11 @@ fn decode_known_server_event(
     FileAcceptedEvent -> {
       let decoder = {
         use transfer_id <- decode.field("transfer_id", decode.string)
-        decode.success(FileAccepted(transfer_id: transfer_id))
+        use receive_mode <- decode.field("receive_mode", decode.string)
+        decode.success(FileAccepted(
+          transfer_id: transfer_id,
+          receive_mode: receive_mode,
+        ))
       }
       json.parse(from: input, using: decoder)
     }

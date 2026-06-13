@@ -18,7 +18,7 @@ pub type ClientMessage {
   SendTextMessage(message: shared_protocol.TextMessage)
   SendMessageHistory(messages: List(shared_protocol.TextMessage))
   SendFileOffered(offer: shared_protocol.FileOffer)
-  SendFileAccepted(transfer_id: String)
+  SendFileAccepted(transfer_id: String, receive_mode: String)
   SendFileDeclined(transfer_id: String)
   SendFileCancelled(transfer_id: String, reason: String)
   SendFileChunk(frame: BitArray)
@@ -60,6 +60,7 @@ pub type Message {
   AcceptFile(
     from: String,
     transfer_id: String,
+    receive_mode: String,
     client: process.Subject(ClientMessage),
   )
   DeclineFile(
@@ -185,8 +186,8 @@ fn handle_message(
       send_text(state, from, to, body, client)
     OfferFile(from:, to:, transfer_id:, name:, size:, mime_type:, client:) ->
       offer_file(state, from, to, transfer_id, name, size, mime_type, client)
-    AcceptFile(from:, transfer_id:, client:) ->
-      accept_file(state, from, transfer_id, client)
+    AcceptFile(from:, transfer_id:, receive_mode:, client:) ->
+      accept_file(state, from, transfer_id, receive_mode, client)
     DeclineFile(from:, transfer_id:, client:) ->
       decline_file(state, from, transfer_id, client)
     CancelFile(from:, transfer_id:, client:) ->
@@ -509,6 +510,7 @@ fn accept_file(
   state: State,
   from: String,
   transfer_id: String,
+  receive_mode: String,
   client: process.Subject(ClientMessage),
 ) -> actor.Next(State, Message) {
   case accept_file_route(state, from, transfer_id, client) {
@@ -520,8 +522,8 @@ fn accept_file(
           insert: Transfer(..transfer, status: Active),
         )
 
-      process.send(sender.client, SendFileAccepted(transfer_id))
-      process.send(receiver.client, SendFileAccepted(transfer_id))
+      process.send(sender.client, SendFileAccepted(transfer_id, receive_mode))
+      process.send(receiver.client, SendFileAccepted(transfer_id, receive_mode))
       actor.continue(
         State(
           ..state,

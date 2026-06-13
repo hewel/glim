@@ -44,8 +44,8 @@ pub fn handle_message(
           handle_text_send(state, conn, to, body)
         Ok(protocol.FileOffer(to:, transfer_id:, name:, size:, mime_type:)) ->
           handle_file_offer(state, conn, to, transfer_id, name, size, mime_type)
-        Ok(protocol.FileAccept(transfer_id:)) ->
-          handle_file_accept(state, conn, transfer_id)
+        Ok(protocol.FileAccept(transfer_id:, receive_mode:)) ->
+          handle_file_accept(state, conn, transfer_id, receive_mode)
         Ok(protocol.FileDecline(transfer_id:)) ->
           handle_file_decline(state, conn, transfer_id)
         Ok(protocol.FileCancel(transfer_id:)) ->
@@ -104,9 +104,12 @@ pub fn handle_message(
       let _ = mist.send_text_frame(conn, protocol.encode_file_offered(offer))
       mist.continue(state)
     }
-    mist.Custom(room.SendFileAccepted(transfer_id)) -> {
+    mist.Custom(room.SendFileAccepted(transfer_id, receive_mode)) -> {
       let _ =
-        mist.send_text_frame(conn, protocol.encode_file_accepted(transfer_id))
+        mist.send_text_frame(
+          conn,
+          protocol.encode_file_accepted(transfer_id, receive_mode),
+        )
       mist.continue(state)
     }
     mist.Custom(room.SendFileDeclined(transfer_id)) -> {
@@ -280,9 +283,15 @@ fn handle_file_accept(
   state: State,
   conn: mist.WebsocketConnection,
   transfer_id: String,
+  receive_mode: String,
 ) -> mist.Next(State, room.ClientMessage) {
   handle_transfer_id(state, conn, transfer_id, fn(from, transfer_id, client) {
-    room.AcceptFile(from: from, transfer_id: transfer_id, client: client)
+    room.AcceptFile(
+      from: from,
+      transfer_id: transfer_id,
+      receive_mode: receive_mode,
+      client: client,
+    )
   })
 }
 

@@ -72,6 +72,7 @@ import type {
   ServerEvent,
   TextMessage,
   TransferItem,
+  TransferMode,
 } from "./types";
 
 interface AppState {
@@ -336,7 +337,7 @@ export const useAppStore = create<AppState>()((set, get) => ({
             "Ready to receive",
           ),
         }));
-        send(core.encode_file_accept(transferId), sendFailed);
+        send(core.encode_file_accept(transferId, item.mode), sendFailed);
       },
       (reason) => {
         set((state) => ({
@@ -596,7 +597,7 @@ function handleServerEvent(raw: string): void {
       }));
       break;
     case "file_accepted":
-      applyFileAccepted(event.transfer_id);
+      applyFileAccepted(event.transfer_id, event.receive_mode);
       break;
     case "file_declined":
       useAppStore.setState((state) => ({
@@ -704,10 +705,25 @@ function applyTextMessage(message: TextMessage): void {
   });
 }
 
-function applyFileAccepted(transferId: string): void {
+function applyFileAccepted(transferId: string, receiveMode: TransferMode): void {
   const state = useAppStore.getState();
   const file = state.localFiles[transferId];
   const transfer = state.transfers.find((item) => item.transfer_id === transferId);
+
+  if (file && receiveMode === "relay") {
+    useAppStore.setState((current) => ({
+      transfers: markTransferModeAndStatus(
+        current.transfers,
+        transferId,
+        "relay",
+        "transferring",
+        "Using relay",
+      ),
+    }));
+    sendNextFileChunk(transferId, file);
+    return;
+  }
+
   useAppStore.setState((current) => ({
     transfers: file
       ? markTransferModeAndStatus(

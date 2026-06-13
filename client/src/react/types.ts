@@ -122,7 +122,7 @@ export type ServerEvent =
   | { kind: "text_message"; message: TextMessage }
   | { kind: "message_history"; messages: TextMessage[] }
   | { kind: "file_offered"; offer: FileOffer }
-  | { kind: "file_accepted"; transfer_id: string }
+  | { kind: "file_accepted"; transfer_id: string; receive_mode: TransferMode }
   | { kind: "file_declined"; transfer_id: string }
   | { kind: "file_cancelled"; transfer_id: string; reason: string }
   | { kind: "file_chunk_ack"; ack: FileChunkAck }

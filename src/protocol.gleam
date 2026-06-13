@@ -18,7 +18,7 @@ pub type ClientEvent {
     size: Int,
     mime_type: String,
   )
-  FileAccept(transfer_id: String)
+  FileAccept(transfer_id: String, receive_mode: String)
   FileDecline(transfer_id: String)
   FileCancel(transfer_id: String)
   FileChunkAck(ack: shared_protocol.FileChunkAck)
@@ -77,7 +77,7 @@ fn decode_known_client_event(
     PeerUpdateEvent -> decode_peer_update(input)
     TextSendEvent -> decode_text_send(input)
     FileOfferEvent -> decode_file_offer(input)
-    FileAcceptEvent -> decode_file_transfer_id(input, FileAccept)
+    FileAcceptEvent -> decode_file_accept(input)
     FileDeclineEvent -> decode_file_transfer_id(input, FileDecline)
     FileCancelEvent -> decode_file_transfer_id(input, FileCancel)
     FileChunkAckEvent -> decode_file_chunk_ack(input)
@@ -355,6 +355,31 @@ fn decode_file_transfer_id(
   Ok(to_event(valid_transfer_id))
 }
 
+fn decode_file_accept(input: String) -> Result(ClientEvent, DecodeError) {
+  let decoder = {
+    use transfer_id <- decode.field("transfer_id", decode.string)
+    use receive_mode <- decode.field("receive_mode", decode.string)
+    decode.success(#(transfer_id, receive_mode))
+  }
+
+  use fields <- result.try(
+    json.parse(from: input, using: decoder)
+    |> result.map_error(fn(_) { InvalidPayload }),
+  )
+  let #(transfer_id, receive_mode) = fields
+  use valid_transfer_id <- result.try(
+    validate_payload(validation.validate_transfer_id(transfer_id)),
+  )
+
+  case receive_mode {
+    "p2p" ->
+      Ok(FileAccept(transfer_id: valid_transfer_id, receive_mode: receive_mode))
+    "relay" ->
+      Ok(FileAccept(transfer_id: valid_transfer_id, receive_mode: receive_mode))
+    _ -> Error(InvalidPayload)
+  }
+}
+
 fn decode_file_chunk_ack(input: String) -> Result(ClientEvent, DecodeError) {
   let decoder = {
     use transfer_id <- decode.field("transfer_id", decode.string)
@@ -516,8 +541,16 @@ pub fn encode_file_offered(offer: shared_protocol.FileOffer) -> String {
   |> json.to_string
 }
 
-pub fn encode_file_accepted(transfer_id: String) -> String {
-  encode_file_transfer_id("file.accepted", transfer_id)
+pub fn encode_file_accepted(
+  transfer_id: String,
+  receive_mode: String,
+) -> String {
+  json.object([
+    #("type", json.string("file.accepted")),
+    #("transfer_id", json.string(transfer_id)),
+    #("receive_mode", json.string(receive_mode)),
+  ])
+  |> json.to_string
 }
 
 pub fn encode_file_declined(transfer_id: String) -> String {

@@ -47,7 +47,7 @@ pub fn apply_server_event_to_peers(
     Ok(shared_protocol.TextMessageEvent(message: _)) -> peers
     Ok(shared_protocol.MessageHistory(messages: _)) -> peers
     Ok(shared_protocol.FileOffered(offer: _)) -> peers
-    Ok(shared_protocol.FileAccepted(transfer_id: _)) -> peers
+    Ok(shared_protocol.FileAccepted(transfer_id: _, receive_mode: _)) -> peers
     Ok(shared_protocol.FileDeclined(transfer_id: _)) -> peers
     Ok(shared_protocol.FileCancelled(transfer_id: _, reason: _)) -> peers
     Ok(shared_protocol.FileChunkAcknowledged(ack: _)) -> peers

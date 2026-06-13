@@ -142,6 +142,24 @@ pub fn decode_file_offered_test() {
     )
 }
 
+pub fn encode_file_accept_includes_receive_mode_test() {
+  let json = protocol.encode_file_accept("transfer_1", "relay")
+
+  let assert True = string.contains(json, "\"type\":\"file.accept\"")
+  let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
+  let assert True = string.contains(json, "\"receive_mode\":\"relay\"")
+}
+
+pub fn decode_file_accepted_receive_mode_test() {
+  let assert Ok(protocol.FileAccepted(
+    transfer_id: "transfer_1",
+    receive_mode: "relay",
+  )) =
+    protocol.decode_server_event(
+      "{\"type\":\"file.accepted\",\"transfer_id\":\"transfer_1\",\"receive_mode\":\"relay\"}",
+    )
+}
+
 pub fn decode_file_chunk_ack_test() {
   let assert Ok(protocol.FileChunkAcknowledged(protocol.FileChunkAck(
     transfer_id: "transfer_1",

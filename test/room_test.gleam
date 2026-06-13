@@ -494,12 +494,17 @@ pub fn file_offer_accept_chunk_ack_and_complete_test() {
 
   process.send(
     room_subject,
-    room.AcceptFile(from: "bob", transfer_id: "transfer_1", client: bob),
+    room.AcceptFile(
+      from: "bob",
+      transfer_id: "transfer_1",
+      receive_mode: "relay",
+      client: bob,
+    ),
   )
 
-  let assert Ok(room.SendFileAccepted("transfer_1")) =
+  let assert Ok(room.SendFileAccepted("transfer_1", "relay")) =
     process.receive(from: alice, within: 1000)
-  let assert Ok(room.SendFileAccepted("transfer_1")) =
+  let assert Ok(room.SendFileAccepted("transfer_1", "relay")) =
     process.receive(from: bob, within: 1000)
 
   let ack =
@@ -696,7 +701,12 @@ pub fn second_active_file_transfer_is_rejected_test() {
 
   process.send(
     room_subject,
-    room.AcceptFile(from: "bob", transfer_id: "transfer_2", client: bob),
+    room.AcceptFile(
+      from: "bob",
+      transfer_id: "transfer_2",
+      receive_mode: "p2p",
+      client: bob,
+    ),
   )
 
   let assert Ok(room.SendError(
@@ -786,11 +796,16 @@ fn offer_and_accept(
 
   process.send(
     room_subject,
-    room.AcceptFile(from: "bob", transfer_id: transfer_id, client: bob),
+    room.AcceptFile(
+      from: "bob",
+      transfer_id: transfer_id,
+      receive_mode: "p2p",
+      client: bob,
+    ),
   )
-  let assert Ok(room.SendFileAccepted(_)) =
+  let assert Ok(room.SendFileAccepted(_, "p2p")) =
     process.receive(from: alice, within: 1000)
-  let assert Ok(room.SendFileAccepted(_)) =
+  let assert Ok(room.SendFileAccepted(_, "p2p")) =
     process.receive(from: bob, within: 1000)
   Nil
 }

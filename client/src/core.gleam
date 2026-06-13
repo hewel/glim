@@ -63,8 +63,8 @@ pub fn encode_file_offer(
   shared_protocol.encode_file_offer(to, transfer_id, name, size, mime_type)
 }
 
-pub fn encode_file_accept(transfer_id: String) -> String {
-  shared_protocol.encode_file_accept(transfer_id)
+pub fn encode_file_accept(transfer_id: String, receive_mode: String) -> String {
+  shared_protocol.encode_file_accept(transfer_id, receive_mode)
 }
 
 pub fn encode_file_decline(transfer_id: String) -> String {
@@ -308,8 +308,12 @@ fn encode_server_event(event: shared_protocol.ServerEvent) -> String {
         #("kind", json.string("file_offered")),
         #("offer", file_offer_json(offer)),
       ])
-    shared_protocol.FileAccepted(transfer_id:) ->
-      transfer_id_event("file_accepted", transfer_id)
+    shared_protocol.FileAccepted(transfer_id:, receive_mode:) ->
+      json.object([
+        #("kind", json.string("file_accepted")),
+        #("transfer_id", json.string(transfer_id)),
+        #("receive_mode", json.string(receive_mode)),
+      ])
     shared_protocol.FileDeclined(transfer_id:) ->
       transfer_id_event("file_declined", transfer_id)
     shared_protocol.FileCancelled(transfer_id:, reason:) ->

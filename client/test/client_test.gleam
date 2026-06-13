@@ -267,6 +267,25 @@ pub fn core_encodes_rtc_signal_without_source_peer_test() {
   let assert False = string.contains(json, "\"from\"")
 }
 
+pub fn core_encodes_file_accept_with_receive_mode_test() {
+  let json = core.encode_file_accept("transfer_1", "relay")
+
+  let assert True = string.contains(json, "\"type\":\"file.accept\"")
+  let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
+  let assert True = string.contains(json, "\"receive_mode\":\"relay\"")
+}
+
+pub fn core_decodes_file_accepted_receive_mode_for_browser_test() {
+  let json =
+    core.server_event_json(
+      "{\"type\":\"file.accepted\",\"transfer_id\":\"transfer_1\",\"receive_mode\":\"relay\"}",
+    )
+
+  let assert True = string.contains(json, "\"kind\":\"file_accepted\"")
+  let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
+  let assert True = string.contains(json, "\"receive_mode\":\"relay\"")
+}
+
 pub fn core_decodes_routed_rtc_signal_for_browser_test() {
   let json =
     core.server_event_json(
