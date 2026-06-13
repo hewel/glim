@@ -38,6 +38,7 @@ export function ChatPanel() {
   const declineFile = useAppStore((state) => state.declineFile);
   const cancelFile = useAppStore((state) => state.cancelFile);
   const exportFile = useAppStore((state) => state.exportFile);
+  const reselectFile = useAppStore((state) => state.reselectFileForTransfer);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   if (!selectedPeerId) {
@@ -115,6 +116,7 @@ export function ChatPanel() {
               onCancel={() => cancelFile(transfer.transfer_id)}
               onDecline={() => declineFile(transfer.transfer_id)}
               onExport={() => exportFile(transfer.transfer_id)}
+              onReselect={() => reselectFile(transfer.transfer_id)}
               transfer={transfer}
             />
           ))}
@@ -208,12 +210,14 @@ function TransferCard({
   onDecline,
   onCancel,
   onExport,
+  onReselect,
 }: {
   transfer: TransferItem;
   onAccept: () => void;
   onDecline: () => void;
   onCancel: () => void;
   onExport: () => void;
+  onReselect: () => void;
 }) {
   const percent = progressPercent(transfer.transferred, transfer.size);
   const isSending = transfer.direction === "sending";
@@ -297,6 +301,9 @@ function TransferCard({
         ) : null}
         {transfer.direction === "receiving" && transfer.status === "export_ready" ? (
           <ActionButton label="Save" onClick={onExport} />
+        ) : null}
+        {transfer.direction === "sending" && transfer.status === "resumable" ? (
+          <ActionButton label="Reselect file" onClick={onReselect} />
         ) : null}
         {isActiveTransferStatus(transfer.status) ? (
           <ActionButton label="Cancel" quiet onClick={onCancel} />

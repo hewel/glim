@@ -9,6 +9,7 @@ export function TransferQueue({ isDrawer = false }: { isDrawer?: boolean }) {
   const transfers = useAppStore((state) => state.transfers);
   const cancelFile = useAppStore((state) => state.cancelFile);
   const exportFile = useAppStore((state) => state.exportFile);
+  const reselectFile = useAppStore((state) => state.reselectFileForTransfer);
   const setTransfersOpen = useAppStore((state) => state.setTransfersOpen);
   const activeCount = activeTransferCount(transfers);
 
@@ -46,6 +47,7 @@ export function TransferQueue({ isDrawer = false }: { isDrawer?: boolean }) {
               key={transfer.transfer_id}
               onCancel={() => cancelFile(transfer.transfer_id)}
               onExport={() => exportFile(transfer.transfer_id)}
+              onReselect={() => reselectFile(transfer.transfer_id)}
               transfer={transfer}
             />
           ))
@@ -63,10 +65,12 @@ function QueueCard({
   transfer,
   onCancel,
   onExport,
+  onReselect,
 }: {
   transfer: TransferItem;
   onCancel: () => void;
   onExport: () => void;
+  onReselect: () => void;
 }) {
   const percent = progressPercent(transfer.transferred, transfer.size);
   const active = isActiveTransferStatus(transfer.status);
@@ -114,6 +118,15 @@ function QueueCard({
             type="button"
           >
             Save
+          </button>
+        ) : null}
+        {transfer.direction === "sending" && transfer.status === "resumable" ? (
+          <button
+            className="rounded-sm border border-primary bg-primary px-3 py-2 font-label-md text-on-primary transition hover:bg-primary-hover"
+            onClick={onReselect}
+            type="button"
+          >
+            Reselect file
           </button>
         ) : null}
       </div>

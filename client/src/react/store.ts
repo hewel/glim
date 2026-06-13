@@ -119,6 +119,7 @@ interface AppState {
   sendMessage: () => void;
   selectFileForCurrentPeer: () => void;
   sendFileOffer: (selection: FileSelection) => void;
+  reselectFileForTransfer: (transferId: string) => void;
   acceptFile: (transferId: string) => void;
   declineFile: (transferId: string) => void;
   cancelFile: (transferId: string) => void;
@@ -303,6 +304,29 @@ export const useAppStore = create<AppState>()((set, get) => ({
         selection.mime_type,
       ),
       sendFailed,
+    );
+  },
+
+  reselectFileForTransfer(transferId) {
+    selectFile(
+      (selection) => {
+        set((state) => ({
+          localFiles: {
+            ...state.localFiles,
+            [transferId]: localFile(selection),
+          },
+          transfers: markTransferStatus(
+            state.transfers,
+            transferId,
+            "resumable",
+            "File reselected. Verification pending.",
+          ),
+          chatNotice: "File reselected. Verification pending.",
+        }));
+      },
+      () => {
+        set({ chatNotice: "File reselect was cancelled." });
+      },
     );
   },
 
@@ -1243,13 +1267,12 @@ async function sendRequestedPiece(
       transfers: markTransferStatus(
         current.transfers,
         transferId,
-        "failed",
-        "File permission must be restored before sending missing pieces.",
+        "resumable",
+        "Reselect the original file to resume sending.",
       ),
-      chatNotice: "File permission must be restored before sending missing pieces.",
+      chatNotice: "Reselect the original file to resume sending.",
     }));
     closePeerConnection(transferId);
-    send(core.encode_file_cancel(transferId), sendFailed);
     return;
   }
 
