@@ -1408,7 +1408,7 @@ function rtcSetupFailed(transferId: string, reason: string): void {
   }));
 
   if (file) {
-    sendNextFileChunk(transferId, file);
+    send(core.encode_file_cancel(transferId), sendFailed);
   }
 }
 

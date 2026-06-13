@@ -223,7 +223,7 @@ describe("React domain helpers", () => {
     );
   });
 
-  test("falls back to relay when P2P setup fails before progress", () => {
+  test("marks P2P setup failure as failed before progress", () => {
     const transfer: TransferItem = {
       transfer_id: "transfer_1",
       peer_id: "peer_1",
@@ -245,8 +245,8 @@ describe("React domain helpers", () => {
     );
 
     expect(updated[0]).toMatchObject({
-      mode: "relay",
-      status: "fallback",
+      mode: "p2p",
+      status: "failed",
       notice: "P2P setup failed before transfer progress.",
     });
   });

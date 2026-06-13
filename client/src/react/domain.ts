@@ -13,7 +13,8 @@ import type {
   TransferStatus,
 } from "./types";
 
-export const chunkSize = 262_144;
+// Keep the encoded frame under Chrome's 256 KiB DataChannel message limit.
+export const chunkSize = 240 * 1024;
 
 export interface ReceiverPieceRequest {
   manifest_id: string;
@@ -227,8 +228,7 @@ export function markP2pSetupFailed(
 
     return {
       ...transfer,
-      mode: "relay",
-      status: "fallback",
+      status: "failed",
       notice: reason,
     };
   });

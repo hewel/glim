@@ -147,13 +147,13 @@ describe("transfer mode labels", () => {
     expect(card.getByText("Manifest does not match the accepted file offer.")).toBeVisible();
   });
 
-  test("shows relay fallback mode with the setup failure reason", () => {
+  test("shows P2P setup failure reason", () => {
     useAppStore.setState({
       transfers: [
         {
           ...relayTransfer,
-          mode: "relay",
-          status: "fallback",
+          mode: "p2p",
+          status: "failed",
           notice: "P2P setup failed before transfer progress.",
         },
       ],
@@ -165,8 +165,8 @@ describe("transfer mode labels", () => {
     expect(transferCard).not.toBeNull();
     const card = within(transferCard as HTMLElement);
 
-    expect(card.getByText("Relay")).toBeVisible();
-    expect(card.getByText("Fallback")).toBeVisible();
+    expect(card.getByText("P2P")).toBeVisible();
+    expect(card.getByText("Failed")).toBeVisible();
     expect(card.getByText("P2P setup failed before transfer progress.")).toBeVisible();
   });
 
@@ -288,7 +288,7 @@ describe("transfer mode labels", () => {
       { ...relayTransfer, transfer_id: "interrupted", name: "interrupted.bin", mode: "p2p", status: "interrupted", notice: "Peer disconnected" },
       { ...relayTransfer, transfer_id: "resumable", name: "resumable.bin", mode: "p2p", status: "resumable", notice: "Resume available" },
       { ...relayTransfer, transfer_id: "export", name: "export.bin", mode: "p2p", status: "export_ready", notice: "Ready to save" },
-      { ...relayTransfer, transfer_id: "fallback", name: "fallback.bin", status: "fallback", notice: "Using relay fallback" },
+      { ...relayTransfer, transfer_id: "fallback", name: "fallback.bin", status: "failed", notice: "P2P setup failed before transfer progress." },
       { ...relayTransfer, transfer_id: "complete", name: "complete.bin", status: "completed", notice: "Complete" },
       { ...relayTransfer, transfer_id: "cancelled", name: "cancelled.bin", status: "cancelled", notice: "Cancelled" },
     ];
@@ -305,7 +305,7 @@ describe("transfer mode labels", () => {
     expect(screen.getByText("Interrupted")).toBeVisible();
     expect(screen.getByText("Resumable")).toBeVisible();
     expect(screen.getByText("Export ready")).toBeVisible();
-    expect(screen.getByText("Fallback")).toBeVisible();
+    expect(screen.getAllByText("Failed")[0]).toBeVisible();
     expect(screen.getByText("Completed")).toBeVisible();
     expect(screen.getAllByText("Cancelled")[0]).toBeVisible();
   });
