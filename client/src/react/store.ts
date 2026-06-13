@@ -14,6 +14,7 @@ import {
   selectFile,
   send,
   sendFileChunk,
+  senderFileHandleReadPermission,
   saveDisplayName,
   startReceiveFile,
   verifyOpfsPieceHash,
@@ -1233,6 +1234,22 @@ async function sendRequestedPiece(
   const state = useAppStore.getState();
   const file = state.localFiles[transferId];
   if (!file) {
+    return;
+  }
+
+  const permission = await senderFileHandleReadPermission(event.manifest_id);
+  if (permission !== "granted" && permission !== "unavailable") {
+    useAppStore.setState((current) => ({
+      transfers: markTransferStatus(
+        current.transfers,
+        transferId,
+        "failed",
+        "File permission must be restored before sending missing pieces.",
+      ),
+      chatNotice: "File permission must be restored before sending missing pieces.",
+    }));
+    closePeerConnection(transferId);
+    send(core.encode_file_cancel(transferId), sendFailed);
     return;
   }
 

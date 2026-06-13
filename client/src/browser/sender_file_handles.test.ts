@@ -3,8 +3,10 @@ import {
   loadSenderFileHandle,
   persistSenderFileHandleForManifest,
   rememberSelectedFileHandle,
+  senderFileHandleReadPermission,
   type SenderFileHandleRecord,
   type SenderFileHandleStore,
+  type SenderFileSystemHandle,
 } from "./sender_file_handles";
 
 describe("sender file handle storage", () => {
@@ -46,6 +48,17 @@ describe("sender file handle storage", () => {
 
     await expect(store.get("manifest_missing")).resolves.toBeNull();
   });
+
+  test("revalidates read permission for a persisted handle", async () => {
+    const store = new MemorySenderFileHandleStore();
+    const handle = fakeFileHandle("demo.bin", "denied");
+    await store.put({ manifest_id: "manifest_abc", file_id: "file_1", handle });
+
+    await expect(senderFileHandleReadPermission("manifest_abc", store))
+      .resolves.toBe("denied");
+
+    expect(handle.queryPermission).toHaveBeenCalledWith({ mode: "read" });
+  });
 });
 
 class MemorySenderFileHandleStore implements SenderFileHandleStore {
@@ -60,7 +73,10 @@ class MemorySenderFileHandleStore implements SenderFileHandleStore {
   }
 }
 
-function fakeFileHandle(name: string): FileSystemFileHandle {
+function fakeFileHandle(
+  name: string,
+  permission: PermissionState = "granted",
+): SenderFileSystemHandle {
   return {
     kind: "file",
     name,
@@ -73,11 +89,9 @@ function fakeFileHandle(name: string): FileSystemFileHandle {
     async createWritable() {
       throw new Error("Not implemented.");
     },
-    async queryPermission() {
-      return "granted" as PermissionState;
-    },
+    queryPermission: vi.fn(async () => permission),
     async requestPermission() {
       return "granted" as PermissionState;
     },
-  } as FileSystemFileHandle;
+  } as SenderFileSystemHandle;
 }

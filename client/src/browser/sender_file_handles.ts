@@ -1,7 +1,12 @@
+export type SenderFileSystemHandle = FileSystemFileHandle & {
+  queryPermission?: (descriptor?: { mode: "read" }) => Promise<PermissionState>;
+  requestPermission?: (descriptor?: { mode: "read" }) => Promise<PermissionState>;
+};
+
 export interface SenderFileHandleRecord {
   manifest_id: string;
   file_id: string;
-  handle: FileSystemFileHandle;
+  handle: SenderFileSystemHandle;
 }
 
 export interface SenderFileHandleStore {
@@ -11,11 +16,11 @@ export interface SenderFileHandleStore {
 
 const databaseName = "glim-sender-file-handles";
 const objectStoreName = "handles";
-const pendingHandles = new Map<string, FileSystemFileHandle>();
+const pendingHandles = new Map<string, SenderFileSystemHandle>();
 
 export function rememberSelectedFileHandle(
   fileId: string,
-  handle: FileSystemFileHandle,
+  handle: SenderFileSystemHandle,
 ): void {
   pendingHandles.set(fileId, handle);
 }
@@ -47,6 +52,22 @@ export async function loadSenderFileHandle(
   }
 
   return store.get(manifestId);
+}
+
+export async function senderFileHandleReadPermission(
+  manifestId: string,
+  store = defaultSenderFileHandleStore(),
+): Promise<PermissionState | "unavailable"> {
+  const record = await loadSenderFileHandle(manifestId, store);
+  if (!record) {
+    return "unavailable";
+  }
+
+  if (typeof record.handle.queryPermission !== "function") {
+    return "granted";
+  }
+
+  return record.handle.queryPermission({ mode: "read" });
 }
 
 export function senderFileHandleStorageSupported(): boolean {

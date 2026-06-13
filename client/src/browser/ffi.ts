@@ -19,4 +19,5 @@ export {
 export { connect, send, sendFileChunk } from "./socket";
 export {
   persistSenderFileHandleForManifest,
+  senderFileHandleReadPermission,
 } from "./sender_file_handles";
