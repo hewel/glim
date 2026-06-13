@@ -145,6 +145,29 @@ describe("transfer mode labels", () => {
     expect(card.getByText("Manifest does not match the accepted file offer.")).toBeVisible();
   });
 
+  test("shows relay fallback mode with the setup failure reason", () => {
+    useAppStore.setState({
+      transfers: [
+        {
+          ...relayTransfer,
+          mode: "relay",
+          status: "fallback",
+          notice: "P2P setup failed before transfer progress.",
+        },
+      ],
+    });
+
+    render(<TransferQueue />);
+
+    const transferCard = screen.getByText("demo.bin").closest("article");
+    expect(transferCard).not.toBeNull();
+    const card = within(transferCard as HTMLElement);
+
+    expect(card.getByText("Relay")).toBeVisible();
+    expect(card.getByText("Fallback")).toBeVisible();
+    expect(card.getByText("P2P setup failed before transfer progress.")).toBeVisible();
+  });
+
   test("reserves transfer cockpit states for P2P progress", () => {
     const futureStates: TransferItem[] = [
       { ...relayTransfer, transfer_id: "hashing", name: "hashing.bin", status: "hashing", notice: "Preparing manifest" },
