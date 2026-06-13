@@ -197,6 +197,33 @@ describe("transfer mode labels", () => {
     expect(card.getByText("Failed 0")).toBeVisible();
   });
 
+  test("shows failed P2P piece state with retained piece progress", () => {
+    useAppStore.setState({
+      transfers: [
+        {
+          ...relayTransfer,
+          mode: "p2p",
+          status: "failed",
+          transferred: 512,
+          notice: "Piece hash mismatch after 3 attempts.",
+          piece_summary: { active: 0, verified: 1, failed: 1, total: 4 },
+        },
+      ],
+    });
+
+    render(<TransferQueue />);
+
+    const transferCard = screen.getByText("demo.bin").closest("article");
+    expect(transferCard).not.toBeNull();
+    const card = within(transferCard as HTMLElement);
+
+    expect(card.getByText("P2P")).toBeVisible();
+    expect(card.getByText("Failed")).toBeVisible();
+    expect(card.getByText("Piece hash mismatch after 3 attempts.")).toBeVisible();
+    expect(card.getByText("Verified 1 / 4")).toBeVisible();
+    expect(card.getByText("Failed 1")).toBeVisible();
+  });
+
   test("reserves transfer cockpit states for P2P progress", () => {
     const futureStates: TransferItem[] = [
       { ...relayTransfer, transfer_id: "hashing", name: "hashing.bin", status: "hashing", notice: "Preparing manifest" },

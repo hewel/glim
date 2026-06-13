@@ -8,6 +8,7 @@ import {
   fillReceiverPieceWindow,
   markReceiverPieceVerified,
   markP2pSetupFailed,
+  markPieceFailed,
   markPieceVerified,
   markTransferProgress,
   otherPeers,
@@ -413,6 +414,57 @@ describe("React domain helpers", () => {
       status: "export_ready",
       notice: "Ready to export",
       piece_summary: { active: 0, verified: 2, failed: 0, total: 2 },
+    });
+  });
+
+  test("marks terminal piece failure with verified and failed piece progress", () => {
+    const transfer: TransferItem = {
+      transfer_id: "transfer_1",
+      peer_id: "peer_1",
+      peer_name: "Peer",
+      name: "demo.bin",
+      mime_type: "application/octet-stream",
+      size: 12,
+      transferred: 8,
+      direction: "receiving",
+      mode: "p2p",
+      status: "p2p_connected",
+      notice: "Retrying piece",
+      piece_summary: { active: 1, verified: 1, failed: 0, total: 3 },
+    };
+
+    const updated = markPieceFailed(
+      [transfer],
+      "transfer_1",
+      {
+        manifest_id: "manifest_1",
+        file_id: "file_1",
+        pieces: [
+          { piece_index: 0, piece_size: 4, piece_sha256: "hash_0" },
+          { piece_index: 1, piece_size: 4, piece_sha256: "hash_1" },
+          { piece_index: 2, piece_size: 4, piece_sha256: "hash_2" },
+        ],
+        active: [
+          {
+            manifest_id: "manifest_1",
+            file_id: "file_1",
+            piece_index: 1,
+            piece_size: 4,
+            piece_sha256: "hash_1",
+            attempts: 3,
+          },
+        ],
+        verified: [0],
+      },
+      1,
+      "Piece hash mismatch after 3 attempts.",
+    );
+
+    expect(updated[0]).toMatchObject({
+      status: "failed",
+      notice: "Piece hash mismatch after 3 attempts.",
+      transferred: 8,
+      piece_summary: { active: 0, verified: 1, failed: 1, total: 3 },
     });
   });
 

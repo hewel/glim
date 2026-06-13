@@ -86,6 +86,17 @@ export async function persistResumePieceCompleted(
   return nextState;
 }
 
+export async function persistResumePieceFailed(
+  transferId: string,
+  update: ResumePieceUpdate,
+  root?: OpfsDirectoryHandle,
+): Promise<ResumeState> {
+  const state = await loadResumeState(transferId, root);
+  const nextState = markResumePieceFailed(state, update);
+  await writeResumeState(nextState, root);
+  return nextState;
+}
+
 export async function loadResumeState(
   transferId: string,
   root?: OpfsDirectoryHandle,

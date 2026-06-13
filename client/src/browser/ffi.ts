@@ -1,6 +1,7 @@
 export { loadDetectedProfile, loadIdentity, saveDisplayName } from "./identity";
 export {
   persistResumePieceCompleted,
+  persistResumePieceFailed,
   verifyOpfsPieceHash,
   writeFrameToOpfs,
 } from "./opfs_store";

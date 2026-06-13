@@ -7,6 +7,7 @@ import {
   loadDetectedProfile,
   loadIdentity,
   persistResumePieceCompleted,
+  persistResumePieceFailed,
   prepareOutgoingFrame,
   receiveCapability,
   selectFile,
@@ -43,6 +44,7 @@ import {
   localFile,
   markConnectionLost,
   markP2pSetupFailed,
+  markPieceFailed,
   markPieceVerified,
   markReceiverPieceVerified,
   markTransferModeAndStatus,
@@ -818,7 +820,7 @@ async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Pro
       );
 
       if (!verified) {
-        retryOrFailPiece(transferId, receiverPiece);
+        await retryOrFailPiece(transferId, receiverPiece);
         return;
       }
 
@@ -879,20 +881,60 @@ async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Pro
   }
 }
 
-function retryOrFailPiece(transferId: string, piece: ReceiverPieceRequest): void {
+async function retryOrFailPiece(transferId: string, piece: ReceiverPieceRequest): Promise<void> {
   if (!transferCanContinue(useAppStore.getState().transfers, transferId)) {
     return;
   }
 
   const retry = retryPieceRequest(piece);
   if (!retry) {
+    const state = useAppStore.getState();
+    const schedule = state.receiverSchedules[transferId];
+    const transfer = state.transfers.find((item) => item.transfer_id === transferId);
+
+    if (schedule && transfer) {
+      await persistResumePieceFailed(transferId, {
+        file_id: schedule.file_id,
+        size: transfer.size,
+        piece_index: piece.piece_index,
+      });
+
+      useAppStore.setState((current) => {
+        const currentSchedule = current.receiverSchedules[transferId] ?? schedule;
+        const failedSchedule = {
+          ...currentSchedule,
+          active: currentSchedule.active.filter((activePiece) =>
+            activePiece.piece_index !== piece.piece_index
+          ),
+        };
+
+        return {
+          receiverSchedules: {
+            ...current.receiverSchedules,
+            [transferId]: failedSchedule,
+          },
+          transfers: markPieceFailed(
+            current.transfers,
+            transferId,
+            currentSchedule,
+            piece.piece_index,
+            "Piece hash mismatch after 3 attempts.",
+          ),
+        };
+      });
+    } else {
+      useAppStore.setState((state) => ({
+        transfers: markTransferStatus(
+          state.transfers,
+          transferId,
+          "failed",
+          "Piece hash mismatch after 3 attempts.",
+        ),
+      }));
+    }
+
     useAppStore.setState((state) => ({
-      transfers: markTransferStatus(
-        state.transfers,
-        transferId,
-        "failed",
-        "Piece hash mismatch.",
-      ),
+      chatNotice: "Piece hash mismatch after 3 attempts.",
     }));
     closePeerConnection(transferId);
     send(core.encode_file_cancel(transferId), sendFailed);

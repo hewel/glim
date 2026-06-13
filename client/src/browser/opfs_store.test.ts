@@ -4,6 +4,7 @@ import {
   markResumePieceCompleted,
   markResumePieceFailed,
   persistResumePieceCompleted,
+  persistResumePieceFailed,
   readOpfsTransferBlob,
   removeOpfsTransfer,
   verifyOpfsPieceHash,
@@ -178,6 +179,40 @@ describe("OPFS transfer storage", () => {
         },
       },
     });
+  });
+
+  test("persists failed resume pieces without deleting the part file", async () => {
+    const root = new FakeDirectoryHandle();
+    await writeChunkToOpfs(
+      {
+        transfer_id: "transfer_1",
+        sequence: 0,
+        offset: 0,
+        byte_length: 4,
+        final: false,
+        bytes: new TextEncoder().encode("data").buffer,
+      },
+      root,
+    );
+
+    await persistResumePieceFailed(
+      "transfer_1",
+      { file_id: "file_1", size: 10, piece_index: 2 },
+      root,
+    );
+
+    await expect(loadResumeState("transfer_1", root)).resolves.toEqual({
+      transfer_id: "transfer_1",
+      files: {
+        file_1: {
+          size: 10,
+          completedPieces: [],
+          failedPieces: [2],
+        },
+      },
+    });
+    await expect(readOpfsTransferBlob("transfer_1", "application/octet-stream", root))
+      .resolves.toHaveProperty("size", 4);
   });
 
   test("writes received chunks directly to the transfer part file offset", async () => {

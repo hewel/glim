@@ -288,6 +288,33 @@ export function markPieceVerified(
   );
 }
 
+export function markPieceFailed(
+  transfers: TransferItem[],
+  transferId: string,
+  schedule: ReceiverPieceSchedule,
+  pieceIndex: number,
+  notice: string,
+): TransferItem[] {
+  const verified = schedule.verified.length;
+  const total = schedule.pieces.length;
+
+  return transfers.map((transfer) =>
+    transfer.transfer_id === transferId
+      ? {
+          ...transfer,
+          status: "failed",
+          notice,
+          piece_summary: {
+            active: schedule.active.filter((piece) => piece.piece_index !== pieceIndex).length,
+            verified,
+            failed: Math.max((transfer.piece_summary?.failed ?? 0) + 1, 1),
+            total,
+          },
+        }
+      : transfer,
+  );
+}
+
 export function transferCanContinue(transfers: TransferItem[], transferId: string): boolean {
   const transfer = transfers.find((item) => item.transfer_id === transferId);
   if (!transfer) {
