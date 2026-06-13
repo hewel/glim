@@ -47,15 +47,15 @@ export async function writeFrameToOpfs(frame: ArrayBuffer): Promise<DecodedFileC
 
 export async function verifyOpfsPieceHash(
   transferId: string,
-  pieceIndex: number,
+  pieceOffset: number,
   pieceSize: number,
   expectedHash: string,
   root?: OpfsDirectoryHandle,
 ): Promise<boolean> {
   const part = await transferPartFile(transferId, root);
   const file = await part.getFile();
-  const pieceStart = pieceIndex * pieceSize;
-  const pieceEnd = pieceStart + pieceSize;
+  const pieceStart = pieceOffset;
+  const pieceEnd = pieceOffset + pieceSize;
   const bytes = await file.slice(pieceStart, pieceEnd).arrayBuffer();
   const hash = await crypto.subtle.digest("SHA-256", bytes);
 

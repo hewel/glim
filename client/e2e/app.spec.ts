@@ -9,7 +9,7 @@ test("boots the Vite client and connects through the backend WebSocket", async (
   );
 });
 
-test("establishes RTC channels between two tabs after file accept", async ({ browser }) => {
+test("transfers a single file over P2P and reaches export completion", async ({ browser }) => {
   const aliceContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const bobContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const alice = await aliceContext.newPage();
@@ -32,17 +32,21 @@ test("establishes RTC channels between two tabs after file accept", async ({ bro
   await alice.getByLabel("Attach file").click();
   const chooser = await chooserPromise;
   await chooser.setFiles({
-    name: "p2p-handshake.txt",
-    mimeType: "text/plain",
+    name: "p2p-transfer.bin",
+    mimeType: "application/octet-stream",
     buffer: Buffer.from("hello p2p"),
   });
 
-  const bobTransfer = bob.getByLabel("Transfer p2p-handshake.txt");
+  const bobTransfer = bob.getByLabel("Transfer p2p-transfer.bin");
   await expect(bobTransfer).toBeVisible({ timeout: 10_000 });
   await bobTransfer.getByRole("button", { name: "Accept" }).click();
 
-  await expect(alice.getByText("P2P connected").first()).toBeVisible({ timeout: 15_000 });
-  await expect(bob.getByText("P2P connected").first()).toBeVisible({ timeout: 15_000 });
+  await expect(bobTransfer.getByText("Export ready")).toBeVisible({ timeout: 30_000 });
+
+  await bobTransfer.getByRole("button", { name: "Save" }).click();
+
+  await expect(bobTransfer.getByText("Completed")).toBeVisible({ timeout: 10_000 });
+  await expect(bobTransfer.getByText("Saved")).toBeVisible({ timeout: 10_000 });
 
   await aliceContext.close();
   await bobContext.close();

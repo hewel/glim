@@ -147,6 +147,28 @@ describe("OPFS transfer storage", () => {
     ).resolves.toBe(false);
   });
 
+  test("verifies a piece from its absolute OPFS file offset", async () => {
+    const root = new FakeDirectoryHandle();
+    await writeChunkToOpfs({
+      transfer_id: "transfer_1",
+      sequence: 0,
+      offset: 2,
+      byte_length: 2,
+      final: false,
+      bytes: new Uint8Array([97, 98]).buffer,
+    }, root);
+
+    await expect(
+      verifyOpfsPieceHash(
+        "transfer_1",
+        2,
+        2,
+        "fb8e20fc2e4c3f248c60c39bd652f3c1347298bb977b8b4d5903b85055620603",
+        root,
+      ),
+    ).resolves.toBe(true);
+  });
+
   test("reads the completed OPFS part file for export", async () => {
     const root = new FakeDirectoryHandle();
     await writeChunkToOpfs({

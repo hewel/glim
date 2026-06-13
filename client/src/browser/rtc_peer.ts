@@ -4,6 +4,7 @@ export interface RtcPeerHandle {
   connection: RTCPeerConnection;
   controlChannel?: RTCDataChannel;
   dataChannel?: RTCDataChannel;
+  connectedNotified?: boolean;
 }
 
 export interface RtcPeerCallbacks {
@@ -34,16 +35,16 @@ export async function startSenderPeerConnection(options: SenderOptions): Promise
   const controlChannel = connection.createDataChannel("control", {
     ordered: true,
   });
-  configureControlChannel(options.transferId, controlChannel, options);
   const dataChannel = connection.createDataChannel("data", {
     ordered: false,
   });
-  configureDataChannel(options.transferId, dataChannel, options);
   peerHandles.set(options.transferId, {
     connection,
     controlChannel,
     dataChannel,
   });
+  configureControlChannel(options.transferId, controlChannel, options);
+  configureDataChannel(options.transferId, dataChannel, options);
 
   const offer = await connection.createOffer();
   await connection.setLocalDescription(offer);
@@ -133,20 +134,20 @@ async function acceptOffer(
     }
 
     if (event.channel.label === "control") {
-      configureControlChannel(options.signal.transfer_id, event.channel, options);
       peerHandles.set(options.signal.transfer_id, {
         ...handle,
         controlChannel: event.channel,
       });
+      configureControlChannel(options.signal.transfer_id, event.channel, options);
       return;
     }
 
     if (event.channel.label === "data") {
-      configureDataChannel(options.signal.transfer_id, event.channel, options);
       peerHandles.set(options.signal.transfer_id, {
         ...handle,
         dataChannel: event.channel,
       });
+      configureDataChannel(options.signal.transfer_id, event.channel, options);
     }
   };
   peerHandles.set(options.signal.transfer_id, { connection });
@@ -196,7 +197,7 @@ function createPeerConnection(
   connection.onconnectionstatechange = () => {
     switch (connection.connectionState) {
       case "connected":
-        callbacks.onConnected?.(transferId);
+        notifyConnectedIfReady(transferId, callbacks);
         break;
       case "failed":
       case "closed":
@@ -228,6 +229,9 @@ function configureControlChannel(
   channel: RTCDataChannel,
   callbacks: RtcPeerOptions,
 ): void {
+  channel.onopen = () => {
+    notifyConnectedIfReady(transferId, callbacks);
+  };
   channel.onmessage = (event) => {
     if (typeof event.data === "string") {
       callbacks.onControlMessage?.(transferId, event.data);
@@ -236,6 +240,7 @@ function configureControlChannel(
 
     callbacks.onFailed?.(transferId, "RTC control message was invalid.");
   };
+  notifyConnectedIfReady(transferId, callbacks);
 }
 
 function configureDataChannel(
@@ -243,6 +248,9 @@ function configureDataChannel(
   channel: RTCDataChannel,
   callbacks: RtcPeerOptions,
 ): void {
+  channel.onopen = () => {
+    notifyConnectedIfReady(transferId, callbacks);
+  };
   channel.onmessage = (event) => {
     if (event.data instanceof ArrayBuffer) {
       callbacks.onDataFrame?.(transferId, event.data);
@@ -251,6 +259,29 @@ function configureDataChannel(
 
     callbacks.onFailed?.(transferId, "RTC data message was invalid.");
   };
+  notifyConnectedIfReady(transferId, callbacks);
+}
+
+function notifyConnectedIfReady(
+  transferId: string,
+  callbacks: RtcPeerOptions,
+): void {
+  const handle = peerHandles.get(transferId);
+  if (
+    !handle ||
+    handle.connectedNotified ||
+    handle.connection.connectionState !== "connected" ||
+    handle.controlChannel?.readyState !== "open" ||
+    handle.dataChannel?.readyState !== "open"
+  ) {
+    return;
+  }
+
+  peerHandles.set(transferId, {
+    ...handle,
+    connectedNotified: true,
+  });
+  callbacks.onConnected?.(transferId);
 }
 
 function waitForBufferedAmountLow(

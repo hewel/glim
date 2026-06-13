@@ -1,3 +1,4 @@
+import gleam/dynamic/decode
 import gleam/json
 import gleam/string
 import shared/protocol as shared_protocol
@@ -120,6 +121,51 @@ pub fn encode_transfer_offer_control(
   piece_size: Int,
   piece_hashes: List(String),
 ) -> String {
+  encode_transfer_offer_control_from_hashes(
+    room_transfer_id,
+    file_id,
+    name,
+    size,
+    mime_type,
+    piece_size,
+    piece_hashes,
+  )
+}
+
+pub fn encode_transfer_offer_control_from_dynamic_hashes(
+  room_transfer_id: String,
+  file_id: String,
+  name: String,
+  size: Int,
+  mime_type: String,
+  piece_size: Int,
+  piece_hashes: decode.Dynamic,
+) -> String {
+  use piece_hashes <- result_or_empty(decode.run(
+    piece_hashes,
+    decode.list(decode.string),
+  ))
+
+  encode_transfer_offer_control_from_hashes(
+    room_transfer_id,
+    file_id,
+    name,
+    size,
+    mime_type,
+    piece_size,
+    piece_hashes,
+  )
+}
+
+fn encode_transfer_offer_control_from_hashes(
+  room_transfer_id: String,
+  file_id: String,
+  name: String,
+  size: Int,
+  mime_type: String,
+  piece_size: Int,
+  piece_hashes: List(String),
+) -> String {
   let manifest =
     shared_protocol.Manifest(
       version: 1,
@@ -143,6 +189,16 @@ pub fn encode_transfer_offer_control(
         manifest: validated,
       )
       |> shared_protocol.encode_rtc_control_message
+    Error(_) -> ""
+  }
+}
+
+fn result_or_empty(
+  result: Result(List(String), List(decode.DecodeError)),
+  next: fn(List(String)) -> String,
+) -> String {
+  case result {
+    Ok(value) -> next(value)
     Error(_) -> ""
   }
 }

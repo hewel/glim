@@ -186,6 +186,43 @@ describe("rtc peer sender setup", () => {
     });
   });
 
+  test("reports connected only after the peer connection and both channels are open", async () => {
+    const onConnected = vi.fn();
+
+    await startSenderPeerConnection({
+      transferId: "transfer_1",
+      to: "bob",
+      sendSignal: vi.fn(),
+      onConnected,
+    });
+
+    const instance = FakePeerConnection.instances[0];
+    if (!instance) {
+      throw new Error("expected fake connection");
+    }
+    const controlChannel = instance.channels.find((channel) => channel.label === "control");
+    const dataChannel = instance.channels.find((channel) => channel.label === "data");
+    if (!controlChannel || !dataChannel) {
+      throw new Error("expected transfer channels");
+    }
+
+    controlChannel.readyState = "connecting";
+    dataChannel.readyState = "connecting";
+    instance.connectionState = "connected";
+    instance.onconnectionstatechange?.();
+
+    expect(onConnected).not.toHaveBeenCalled();
+
+    controlChannel.readyState = "open";
+    controlChannel.onopen?.();
+    expect(onConnected).not.toHaveBeenCalled();
+
+    dataChannel.readyState = "open";
+    dataChannel.onopen?.();
+    expect(onConnected).toHaveBeenCalledOnce();
+    expect(onConnected).toHaveBeenCalledWith("transfer_1");
+  });
+
   test("receiver forwards control channel messages with the transfer id", async () => {
     const sendSignal = vi.fn();
     const onControlMessage = vi.fn();

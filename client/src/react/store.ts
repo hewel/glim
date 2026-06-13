@@ -795,7 +795,7 @@ async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Pro
     ) {
       const verified = await verifyOpfsPieceHash(
         transferId,
-        receiverPiece.piece_index,
+        receiverPieceStartOffset(schedule, receiverPiece),
         receiverPiece.piece_size,
         receiverPiece.piece_sha256,
       );
@@ -913,7 +913,7 @@ async function sendTransferManifest(
   try {
     const pieceSize = core.default_manifest_piece_size();
     const pieceHashes = await hashOutgoingFile(file.file_id, pieceSize);
-    const controlMessage = core.encode_transfer_offer_control(
+    const controlMessage = core.encode_transfer_offer_control_from_dynamic_hashes(
       transferId,
       file.file_id,
       transfer.name,
