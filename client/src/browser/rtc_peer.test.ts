@@ -28,6 +28,8 @@ class FakeDataChannel {
 
 class FakePeerConnection {
   static instances: FakePeerConnection[] = [];
+  static deferRemoteDescription = false;
+  static remoteDescriptionResolvers: Array<() => void> = [];
 
   localDescription: FakeDescription | null = null;
   remoteDescription: RTCSessionDescriptionInit | null = null;
@@ -37,6 +39,7 @@ class FakePeerConnection {
   onicecandidate: ((event: RTCPeerConnectionIceEvent) => void) | null = null;
   createdChannels: Array<{ label: string; options?: RTCDataChannelInit }> = [];
   channels: FakeDataChannel[] = [];
+  addedIceCandidates: RTCIceCandidateInit[] = [];
 
   constructor(readonly configuration: RTCConfiguration) {
     FakePeerConnection.instances.push(this);
@@ -62,10 +65,26 @@ class FakePeerConnection {
   }
 
   async setRemoteDescription(description: RTCSessionDescriptionInit): Promise<void> {
+    if (FakePeerConnection.deferRemoteDescription) {
+      await new Promise<void>((resolve) => {
+        FakePeerConnection.remoteDescriptionResolvers.push(() => {
+          this.remoteDescription = description;
+          resolve();
+        });
+      });
+      return;
+    }
+
     this.remoteDescription = description;
   }
 
-  async addIceCandidate(_candidate: RTCIceCandidateInit): Promise<void> {}
+  async addIceCandidate(candidate: RTCIceCandidateInit): Promise<void> {
+    if (!this.remoteDescription) {
+      throw new Error("remote description is missing");
+    }
+
+    this.addedIceCandidates.push(candidate);
+  }
 
   close = vi.fn();
 }
@@ -75,6 +94,8 @@ describe("rtc peer sender setup", () => {
 
   beforeEach(() => {
     FakePeerConnection.instances = [];
+    FakePeerConnection.deferRemoteDescription = false;
+    FakePeerConnection.remoteDescriptionResolvers = [];
     vi.stubGlobal("RTCPeerConnection", FakePeerConnection);
   });
 
@@ -184,6 +205,255 @@ describe("rtc peer sender setup", () => {
       type: "answer",
       sdp: "opaque-answer",
     });
+  });
+
+  test("queues ICE candidates that arrive before the sender accepts an answer", async () => {
+    const sendSignal = vi.fn();
+    const onFailed = vi.fn();
+    const candidate = {
+      candidate: "candidate:0 1 UDP 2122252543 peer.local 47395 typ host",
+      sdpMLineIndex: 0,
+      sdpMid: "0",
+      usernameFragment: "98ee72e9",
+    };
+
+    await startSenderPeerConnection({
+      transferId: "transfer_1",
+      to: "bob",
+      sendSignal,
+      onFailed,
+    });
+
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "bob",
+        to: "alice",
+        description: "ice",
+        payload: JSON.stringify(candidate),
+      },
+      sendSignal,
+      onFailed,
+    });
+
+    const instance = FakePeerConnection.instances[0];
+    if (!instance) {
+      throw new Error("expected fake connection");
+    }
+
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(instance.addedIceCandidates).toEqual([]);
+
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "bob",
+        to: "alice",
+        description: "answer",
+        payload: "{\"type\":\"answer\",\"sdp\":\"opaque-answer\"}",
+      },
+      sendSignal,
+      onFailed,
+    });
+
+    expect(instance.remoteDescription).toEqual({
+      type: "answer",
+      sdp: "opaque-answer",
+    });
+    expect(instance.addedIceCandidates).toEqual([candidate]);
+  });
+
+  test("adds ICE candidates immediately after the sender accepts an answer", async () => {
+    const sendSignal = vi.fn();
+    const onFailed = vi.fn();
+    const candidate = {
+      candidate: "candidate:0 1 UDP 2122252543 peer.local 47395 typ host",
+      sdpMLineIndex: 0,
+      sdpMid: "0",
+      usernameFragment: "98ee72e9",
+    };
+
+    await startSenderPeerConnection({
+      transferId: "transfer_1",
+      to: "bob",
+      sendSignal,
+      onFailed,
+    });
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "bob",
+        to: "alice",
+        description: "answer",
+        payload: "{\"type\":\"answer\",\"sdp\":\"opaque-answer\"}",
+      },
+      sendSignal,
+      onFailed,
+    });
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "bob",
+        to: "alice",
+        description: "ice",
+        payload: JSON.stringify(candidate),
+      },
+      sendSignal,
+      onFailed,
+    });
+
+    const instance = FakePeerConnection.instances[0];
+    if (!instance) {
+      throw new Error("expected fake connection");
+    }
+
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(instance.addedIceCandidates).toEqual([candidate]);
+  });
+
+  test("flushes queued ICE candidates after the receiver accepts an offer", async () => {
+    FakePeerConnection.deferRemoteDescription = true;
+    const sendSignal = vi.fn();
+    const onFailed = vi.fn();
+    const candidate = {
+      candidate: "candidate:0 1 UDP 2122252543 peer.local 47395 typ host",
+      sdpMLineIndex: 0,
+      sdpMid: "0",
+      usernameFragment: "98ee72e9",
+    };
+
+    const offerPromise = handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "alice",
+        to: "bob",
+        description: "offer",
+        payload: "{\"type\":\"offer\",\"sdp\":\"opaque-offer\"}",
+      },
+      sendSignal,
+      onFailed,
+    });
+    await Promise.resolve();
+
+    const instance = FakePeerConnection.instances[0];
+    if (!instance) {
+      throw new Error("expected fake connection");
+    }
+
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "alice",
+        to: "bob",
+        description: "ice",
+        payload: JSON.stringify(candidate),
+      },
+      sendSignal,
+      onFailed,
+    });
+
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(instance.addedIceCandidates).toEqual([]);
+
+    FakePeerConnection.remoteDescriptionResolvers[0]?.();
+    await offerPromise;
+
+    expect(instance.remoteDescription).toEqual({
+      type: "offer",
+      sdp: "opaque-offer",
+    });
+    expect(instance.addedIceCandidates).toEqual([candidate]);
+  });
+
+  test("reports malformed ICE payloads as RTC ICE errors", async () => {
+    const sendSignal = vi.fn();
+    const onFailed = vi.fn();
+
+    await startSenderPeerConnection({
+      transferId: "transfer_1",
+      to: "bob",
+      sendSignal,
+      onFailed,
+    });
+
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "bob",
+        to: "alice",
+        description: "ice",
+        payload: "not json",
+      },
+      sendSignal,
+      onFailed,
+    });
+
+    expect(onFailed).toHaveBeenCalledWith(
+      "transfer_1",
+      "RTC ICE candidate was invalid.",
+    );
+  });
+
+  test("closing a peer connection drops queued ICE candidates", async () => {
+    const sendSignal = vi.fn();
+    const onFailed = vi.fn();
+    const candidate = {
+      candidate: "candidate:0 1 UDP 2122252543 peer.local 47395 typ host",
+      sdpMLineIndex: 0,
+      sdpMid: "0",
+      usernameFragment: "98ee72e9",
+    };
+
+    await startSenderPeerConnection({
+      transferId: "transfer_1",
+      to: "bob",
+      sendSignal,
+      onFailed,
+    });
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "bob",
+        to: "alice",
+        description: "ice",
+        payload: JSON.stringify(candidate),
+      },
+      sendSignal,
+      onFailed,
+    });
+
+    const instance = FakePeerConnection.instances[0];
+    if (!instance) {
+      throw new Error("expected fake connection");
+    }
+
+    closePeerConnection("transfer_1");
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "bob",
+        to: "alice",
+        description: "answer",
+        payload: "{\"type\":\"answer\",\"sdp\":\"opaque-answer\"}",
+      },
+      sendSignal,
+      onFailed,
+    });
+
+    expect(instance.addedIceCandidates).toEqual([]);
+    expect(onFailed).toHaveBeenCalledWith(
+      "transfer_1",
+      "RTC connection was not found.",
+    );
   });
 
   test("reports connected only after the peer connection and both channels are open", async () => {

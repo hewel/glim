@@ -5,6 +5,7 @@ export interface RtcPeerHandle {
   controlChannel?: RTCDataChannel;
   dataChannel?: RTCDataChannel;
   connectedNotified?: boolean;
+  pendingIceCandidates?: RTCIceCandidateInit[];
 }
 
 export interface RtcPeerCallbacks {
@@ -52,6 +53,11 @@ export async function startSenderPeerConnection(options: SenderOptions): Promise
 }
 
 export async function handleRtcSignal(options: ReceiverOptions): Promise<void> {
+  if (options.signal.description === "ice") {
+    await acceptIceCandidate(options);
+    return;
+  }
+
   const description = parseDescription(options.signal);
   if (!description) {
     options.onFailed?.(options.signal.transfer_id, "RTC signal payload was invalid.");
@@ -64,9 +70,6 @@ export async function handleRtcSignal(options: ReceiverOptions): Promise<void> {
       break;
     case "answer":
       await acceptAnswer(options, description);
-      break;
-    case "ice":
-      await acceptIceCandidate(options);
       break;
     default:
       options.onFailed?.(options.signal.transfer_id, "RTC signal type was unsupported.");
@@ -153,6 +156,7 @@ async function acceptOffer(
   peerHandles.set(options.signal.transfer_id, { connection });
 
   await connection.setRemoteDescription(offer);
+  await flushPendingIceCandidates(options.signal.transfer_id, options);
   const answer = await connection.createAnswer();
   await connection.setLocalDescription(answer);
   sendDescription(
@@ -174,6 +178,7 @@ async function acceptAnswer(
   }
 
   await handle.connection.setRemoteDescription(answer);
+  await flushPendingIceCandidates(options.signal.transfer_id, options);
 }
 
 async function acceptIceCandidate(options: ReceiverOptions): Promise<void> {
@@ -182,10 +187,55 @@ async function acceptIceCandidate(options: ReceiverOptions): Promise<void> {
     return;
   }
 
+  let candidate: RTCIceCandidateInit;
   try {
-    await handle.connection.addIceCandidate(JSON.parse(options.signal.payload));
+    candidate = JSON.parse(options.signal.payload) as RTCIceCandidateInit;
   } catch (_error) {
     options.onFailed?.(options.signal.transfer_id, "RTC ICE candidate was invalid.");
+    return;
+  }
+
+  if (!handle.connection.remoteDescription) {
+    peerHandles.set(options.signal.transfer_id, {
+      ...handle,
+      pendingIceCandidates: [...(handle.pendingIceCandidates ?? []), candidate],
+    });
+    return;
+  }
+
+  await addIceCandidate(options.signal.transfer_id, handle.connection, candidate, options);
+}
+
+async function flushPendingIceCandidates(
+  transferId: string,
+  options: ReceiverOptions,
+): Promise<void> {
+  const handle = peerHandles.get(transferId);
+  const pendingIceCandidates = handle?.pendingIceCandidates ?? [];
+  if (!handle || pendingIceCandidates.length === 0) {
+    return;
+  }
+
+  peerHandles.set(transferId, {
+    ...handle,
+    pendingIceCandidates: [],
+  });
+
+  for (const candidate of pendingIceCandidates) {
+    await addIceCandidate(transferId, handle.connection, candidate, options);
+  }
+}
+
+async function addIceCandidate(
+  transferId: string,
+  connection: RTCPeerConnection,
+  candidate: RTCIceCandidateInit,
+  options: ReceiverOptions,
+): Promise<void> {
+  try {
+    await connection.addIceCandidate(candidate);
+  } catch (_error) {
+    options.onFailed?.(transferId, "RTC ICE candidate was invalid.");
   }
 }
 
