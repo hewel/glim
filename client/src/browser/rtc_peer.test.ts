@@ -265,6 +265,75 @@ describe("rtc peer sender setup", () => {
     expect(instance.addedIceCandidates).toEqual([candidate]);
   });
 
+  test("does not flush an early end-of-candidates marker before real queued ICE", async () => {
+    const sendSignal = vi.fn();
+    const onFailed = vi.fn();
+    const endOfCandidates = {
+      candidate: "",
+      sdpMLineIndex: 0,
+      sdpMid: "0",
+      usernameFragment: "44dd333b",
+    };
+    const candidate = {
+      candidate: "candidate:1 1 UDP 2122252543 peer.local 40658 typ host",
+      sdpMLineIndex: 0,
+      sdpMid: "0",
+      usernameFragment: "44dd333b",
+    };
+
+    await startSenderPeerConnection({
+      transferId: "transfer_1",
+      to: "bob",
+      sendSignal,
+      onFailed,
+    });
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "bob",
+        to: "alice",
+        description: "ice",
+        payload: JSON.stringify(endOfCandidates),
+      },
+      sendSignal,
+      onFailed,
+    });
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "bob",
+        to: "alice",
+        description: "ice",
+        payload: JSON.stringify(candidate),
+      },
+      sendSignal,
+      onFailed,
+    });
+
+    const instance = FakePeerConnection.instances[0];
+    if (!instance) {
+      throw new Error("expected fake connection");
+    }
+
+    await handleRtcSignal({
+      signal: {
+        transfer_id: "transfer_1",
+        correlation_id: "rtc_transfer_1",
+        from: "bob",
+        to: "alice",
+        description: "answer",
+        payload: "{\"type\":\"answer\",\"sdp\":\"opaque-answer\"}",
+      },
+      sendSignal,
+      onFailed,
+    });
+
+    expect(onFailed).not.toHaveBeenCalled();
+    expect(instance.addedIceCandidates).toEqual([candidate]);
+  });
+
   test("adds ICE candidates immediately after the sender accepts an answer", async () => {
     const sendSignal = vi.fn();
     const onFailed = vi.fn();

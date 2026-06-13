@@ -195,6 +195,10 @@ async function acceptIceCandidate(options: ReceiverOptions): Promise<void> {
     return;
   }
 
+  if (isEndOfCandidates(candidate)) {
+    return;
+  }
+
   if (!handle.connection.remoteDescription) {
     peerHandles.set(options.signal.transfer_id, {
       ...handle,
@@ -237,6 +241,10 @@ async function addIceCandidate(
   } catch (_error) {
     options.onFailed?.(transferId, "RTC ICE candidate was invalid.");
   }
+}
+
+function isEndOfCandidates(candidate: RTCIceCandidateInit): boolean {
+  return candidate.candidate === "";
 }
 
 function createPeerConnection(
