@@ -1,5 +1,6 @@
 import { cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, test } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ChatPanel } from "./ChatPanel";
 import { TransferQueue } from "./TransferQueue";
 import { useAppStore } from "./store";
@@ -40,6 +41,7 @@ describe("transfer mode labels", () => {
       messageDrafts: {},
       unreadByPeer: {},
       chatNotice: null,
+      reselectFileForTransfer: useAppStore.getInitialState().reselectFileForTransfer,
     });
   });
 
@@ -246,6 +248,29 @@ describe("transfer mode labels", () => {
     expect(card.getByText("Resumable")).toBeVisible();
     expect(card.getByText("Reselect the original file to resume sending.")).toBeVisible();
     expect(card.getByRole("button", { name: "Reselect file" })).toBeVisible();
+  });
+
+  test("runs the reselect flow from a resumable sender transfer", async () => {
+    const user = userEvent.setup();
+    const reselectFileForTransfer = vi.fn();
+    useAppStore.setState({
+      reselectFileForTransfer,
+      transfers: [
+        {
+          ...relayTransfer,
+          direction: "sending",
+          mode: "p2p",
+          status: "resumable",
+          notice: "Reselect the original file to resume sending.",
+        },
+      ],
+    });
+
+    render(<TransferQueue />);
+
+    await user.click(screen.getByRole("button", { name: "Reselect file" }));
+
+    expect(reselectFileForTransfer).toHaveBeenCalledWith("transfer_1");
   });
 
   test("reserves transfer cockpit states for P2P progress", () => {
