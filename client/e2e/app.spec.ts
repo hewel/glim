@@ -42,6 +42,7 @@ test("transfers a single file over P2P and reaches export completion", async ({ 
   await bobTransfer.getByRole("button", { name: "Accept" }).click();
 
   await expect(bobTransfer.getByText("Export ready")).toBeVisible({ timeout: 30_000 });
+  await expect.poll(() => completedResumePieceCount(bob), { timeout: 10_000 }).toBe(1);
 
   await bobTransfer.getByRole("button", { name: "Save" }).click();
 
@@ -73,5 +74,28 @@ async function mockSavePicker(page: import("@playwright/test").Page) {
         }),
       }),
     });
+  });
+}
+
+async function completedResumePieceCount(page: import("@playwright/test").Page): Promise<number> {
+  return page.evaluate(async () => {
+    const root = await navigator.storage.getDirectory();
+    const transfers = await root.getDirectoryHandle("transfers");
+    const transferEntries = (transfers as unknown as {
+      entries(): AsyncIterable<[string, FileSystemDirectoryHandle]>;
+    }).entries();
+
+    for await (const [, transfer] of transferEntries) {
+      const file = await transfer.getFileHandle("resume.json");
+      const resume = JSON.parse(await file.getFile().then((blob) => blob.text())) as {
+        files: Record<string, { completedPieces: number[] }>;
+      };
+      const firstFile = Object.values(resume.files)[0];
+      if (firstFile) {
+        return firstFile.completedPieces.length;
+      }
+    }
+
+    return 0;
   });
 }

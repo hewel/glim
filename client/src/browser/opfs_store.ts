@@ -75,6 +75,17 @@ export function markResumePieceFailed(
   };
 }
 
+export async function persistResumePieceCompleted(
+  transferId: string,
+  update: ResumePieceUpdate,
+  root?: OpfsDirectoryHandle,
+): Promise<ResumeState> {
+  const state = await readResumeState(transferId, root);
+  const nextState = markResumePieceCompleted(state, update);
+  await writeResumeState(nextState, root);
+  return nextState;
+}
+
 export async function writeChunkToOpfs(
   chunk: DecodedFileChunk,
   root?: OpfsDirectoryHandle,
@@ -136,6 +147,33 @@ export async function removeOpfsTransfer(
   await transfers.removeEntry?.(transferId, { recursive: true });
 }
 
+async function readResumeState(
+  transferId: string,
+  root?: OpfsDirectoryHandle,
+): Promise<ResumeState> {
+  const file = await resumeStateFile(transferId, root);
+  const blob = await file.getFile();
+  if (blob.size === 0) {
+    return emptyResumeState(transferId);
+  }
+
+  const parsed = JSON.parse(await blob.text()) as ResumeState;
+  return {
+    transfer_id: transferId,
+    files: parsed.files ?? {},
+  };
+}
+
+async function writeResumeState(
+  state: ResumeState,
+  root?: OpfsDirectoryHandle,
+): Promise<void> {
+  const file = await resumeStateFile(state.transfer_id, root);
+  const writable = await file.createWritable();
+  await writable.write(JSON.stringify(state));
+  await writable.close();
+}
+
 async function transferPartFile(
   transferId: string,
   root?: OpfsDirectoryHandle,
@@ -147,10 +185,27 @@ async function transferPartFile(
   return files.getFileHandle(`${transferId}.part`, { create: true });
 }
 
+async function resumeStateFile(
+  transferId: string,
+  root?: OpfsDirectoryHandle,
+): Promise<OpfsFileHandle> {
+  const directory = root ?? await navigator.storage.getDirectory();
+  const transfers = await directory.getDirectoryHandle("transfers", { create: true });
+  const transfer = await transfers.getDirectoryHandle(transferId, { create: true });
+  return transfer.getFileHandle("resume.json", { create: true });
+}
+
 function hex(buffer: ArrayBuffer): string {
   return [...new Uint8Array(buffer)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
+}
+
+function emptyResumeState(transferId: string): ResumeState {
+  return {
+    transfer_id: transferId,
+    files: {},
+  };
 }
 
 function resumeFileState(

@@ -6,6 +6,7 @@ import {
   hashOutgoingFile,
   loadDetectedProfile,
   loadIdentity,
+  persistResumePieceCompleted,
   prepareOutgoingFrame,
   receiveCapability,
   selectFile,
@@ -820,6 +821,19 @@ async function rtcDataFrameReceived(transferId: string, frame: ArrayBuffer): Pro
         retryOrFailPiece(transferId, receiverPiece);
         return;
       }
+
+      const transfer = useAppStore.getState().transfers.find((item) =>
+        item.transfer_id === transferId
+      );
+      if (!transfer) {
+        return;
+      }
+
+      await persistResumePieceCompleted(transferId, {
+        file_id: schedule.file_id,
+        size: transfer.size,
+        piece_index: receiverPiece.piece_index,
+      });
 
       const filled = fillReceiverPieceWindow(
         markReceiverPieceVerified(schedule, receiverPiece.piece_index),

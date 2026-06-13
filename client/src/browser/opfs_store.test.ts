@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   markResumePieceCompleted,
   markResumePieceFailed,
+  persistResumePieceCompleted,
   readOpfsTransferBlob,
   removeOpfsTransfer,
   verifyOpfsPieceHash,
@@ -24,6 +25,11 @@ class FakeWritable {
       next.set(new Uint8Array(this.file.bytes));
       next.set(data.data, data.position);
       this.file.bytes = next.buffer;
+      return;
+    }
+
+    if (typeof data === "string") {
+      this.file.bytes = new TextEncoder().encode(data).buffer;
     }
   }
 
@@ -118,6 +124,38 @@ describe("OPFS transfer storage", () => {
       size: 10,
       completedPieces: [1],
       failedPieces: [2],
+    });
+  });
+
+  test("persists completed resume pieces to resume.json", async () => {
+    const root = new FakeDirectoryHandle();
+
+    await persistResumePieceCompleted(
+      "transfer_1",
+      { file_id: "file_1", size: 10, piece_index: 1 },
+      root,
+    );
+    await persistResumePieceCompleted(
+      "transfer_1",
+      { file_id: "file_1", size: 10, piece_index: 2 },
+      root,
+    );
+
+    const resumeFile = root.directories
+      .get("transfers")
+      ?.directories.get("transfer_1")
+      ?.files.get("resume.json");
+    const resumeJson = await resumeFile?.getFile().then((file) => file.text());
+
+    expect(JSON.parse(resumeJson ?? "")).toEqual({
+      transfer_id: "transfer_1",
+      files: {
+        file_1: {
+          size: 10,
+          completedPieces: [1, 2],
+          failedPieces: [],
+        },
+      },
     });
   });
 
