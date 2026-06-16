@@ -24,7 +24,7 @@ Start the Vite client in another terminal:
 cd client && bun run dev
 ```
 
-Open <http://localhost:5173> in a browser. Vite proxies `/ws` to the Gleam server on <http://localhost:9143>.
+Open <http://localhost:5173> in a browser. Vite proxies `/ws` and `/api` to the Gleam server on <http://localhost:9143>.
 
 The server stores accepted text messages and final file-transfer metadata in
 `priv/glim.sqlite`. The schema is bootstrapped from `priv/schema.sql` at

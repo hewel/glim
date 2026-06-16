@@ -19,7 +19,7 @@ cd ..
 gleam run
 ```
 
-Open <http://localhost:5173>. Vite proxies `/ws` to the server on <http://localhost:9143>.
+Open <http://localhost:5173>. Vite proxies `/ws` and `/api` to the server on <http://localhost:9143>.
 
 Useful checks:
 
@@ -66,8 +66,8 @@ Supported:
 - auto-connect to `/ws` after identity load
 - retry interrupted WebSocket sessions with bounded backoff
 - send `peer.hello`
-- render `peer.list`, `peer.joined`, `peer.left`, `text.message`, and server `error` events
-- select a peer and send `text.send`
+- render `peer.list`, `peer.joined`, `peer.updated`, `peer.left`, `text.message`, `message.history`, `transfer.history`, and server `error` events
+- select a peer and send `text.send`; render message bodies as markdown
 - keep per-peer conversations and unread counts in memory for the current browser session
 - offer, accept, decline, cancel, and track online-only HTTP relay file transfers
 - upload selected file bytes through tokenized HTTP URLs after receiver acceptance
