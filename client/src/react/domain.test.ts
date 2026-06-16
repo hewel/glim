@@ -1,6 +1,7 @@
 import { describe, expect, test } from "vitest";
 import {
   activeTransferCount,
+  addTransferHistory,
   addIncomingTransfer,
   addTextMessage,
   clearPendingDraft,
@@ -10,9 +11,10 @@ import {
   markTransferProgress,
   maxRelayFileSizeBytes,
   otherPeers,
+  rememberMissingPeers,
   transferCanContinue,
 } from "./domain";
-import type { Peer, TextMessage, TransferItem } from "./types";
+import type { Peer, TextMessage, TransferHistory, TransferItem } from "./types";
 
 const peer: Peer = {
   id: "peer_1",
@@ -36,6 +38,22 @@ const relayTransfer: TransferItem = {
   mode: "relay",
   status: "transferring",
   notice: "Transferring",
+};
+
+const completedHistory: TransferHistory = {
+  transfer_id: "transfer_history_1",
+  client_offer_id: "offer_1",
+  from_device_id: "self",
+  from_display_name: "Self",
+  to_device_id: "peer_1",
+  to_display_name: "Peer",
+  file_name: "archive.zip",
+  file_size: 10,
+  mime_type: "application/zip",
+  final_status: "completed",
+  transferred_bytes: 10,
+  reason: null,
+  recorded_at_ms: 1000,
 };
 
 describe("React domain helpers", () => {
@@ -99,6 +117,20 @@ describe("React domain helpers", () => {
     expect(forgetPeer({ peer_1: peer, ada }, "peer_1")).toEqual({ ada });
   });
 
+  test("history peers do not overwrite richer known peer metadata", () => {
+    const historyPeer: Peer = {
+      ...peer,
+      display_name: "History Peer",
+      device_kind: "unknown",
+      os: "unknown",
+      browser: "unknown",
+    };
+
+    expect(rememberMissingPeers({ peer_1: peer }, [historyPeer])).toEqual({
+      peer_1: peer,
+    });
+  });
+
   test("adds relay incoming transfers when HTTP relay is available", () => {
     const transfers = addIncomingTransfer(
       [],
@@ -144,6 +176,33 @@ describe("React domain helpers", () => {
       status: "unsupported",
       notice: "HTTP relay download is not supported in this browser",
     });
+  });
+
+  test("maps replayed transfer history into read-only transfer cards", () => {
+    const transfers = addTransferHistory([], "self", [completedHistory]);
+
+    expect(transfers[0]).toMatchObject({
+      transfer_id: "transfer_history_1",
+      peer_id: "peer_1",
+      peer_name: "Peer",
+      name: "archive.zip",
+      direction: "sending",
+      mode: "relay",
+      status: "completed",
+      transferred: 10,
+      download_url: null,
+      notice: "Completed",
+    });
+  });
+
+  test("does not duplicate replayed history over live transfers", () => {
+    const transfers = addTransferHistory(
+      [relayTransfer],
+      "self",
+      [{ ...completedHistory, transfer_id: "transfer_1" }],
+    );
+
+    expect(transfers).toEqual([relayTransfer]);
   });
 
   test("marks relay upload progress as transferring", () => {

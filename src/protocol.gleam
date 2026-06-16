@@ -450,6 +450,19 @@ pub fn encode_message_history(
   |> json.to_string
 }
 
+pub fn encode_transfer_history(
+  history: List(shared_protocol.TransferHistory),
+) -> String {
+  let encoded_history =
+    history |> list.map(shared_protocol.encode_transfer_history_payload)
+
+  json.object([
+    #("type", json.string("transfer.history")),
+    #("history", json.preprocessed_array(encoded_history)),
+  ])
+  |> json.to_string
+}
+
 pub fn encode_file_offered(offer: shared_protocol.FileOffer) -> String {
   json.object([
     #("type", json.string("file.offered")),

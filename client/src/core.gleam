@@ -86,6 +86,7 @@ pub fn server_error_notice(
     "invalid_event" -> message
     "file_too_large" -> message
     "history_load_failed" -> message
+    "transfer_history_load_failed" -> message
     _ -> current
   }
 }
@@ -128,6 +129,11 @@ fn encode_server_event(event: shared_protocol.ServerEvent) -> String {
       json.object([
         #("kind", json.string("message_history")),
         #("messages", json.array(from: messages, of: text_message_json)),
+      ])
+    shared_protocol.TransferHistoryEvent(history:) ->
+      json.object([
+        #("kind", json.string("transfer_history")),
+        #("history", json.array(from: history, of: transfer_history_json)),
       ])
     shared_protocol.FileOffered(offer:) ->
       json.object([
@@ -200,6 +206,12 @@ fn text_message_json(message: shared_protocol.TextMessage) -> json.Json {
 
 fn file_offer_json(offer: shared_protocol.FileOffer) -> json.Json {
   shared_protocol.encode_file_offer_payload(offer)
+}
+
+fn transfer_history_json(
+  history: shared_protocol.TransferHistory,
+) -> json.Json {
+  shared_protocol.encode_transfer_history_payload(history)
 }
 
 fn transfer_id_event(kind: String, transfer_id: String) -> json.Json {

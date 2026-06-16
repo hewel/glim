@@ -42,6 +42,24 @@ export interface TransferProgressEvent {
   total: number;
 }
 
+export type TransferHistoryStatus = "completed" | "failed" | "cancelled" | "declined";
+
+export interface TransferHistory {
+  transfer_id: string;
+  client_offer_id: string | null;
+  from_device_id: string;
+  from_display_name: string;
+  to_device_id: string;
+  to_display_name: string;
+  file_name: string;
+  file_size: number;
+  mime_type: string;
+  final_status: TransferHistoryStatus;
+  transferred_bytes: number;
+  reason: string | null;
+  recorded_at_ms: number;
+}
+
 export type { ReceiveCapability };
 
 export type TransferDirection = "sending" | "receiving";
@@ -86,6 +104,7 @@ export type ServerEvent =
   | { kind: "peer_left"; device_id: string }
   | { kind: "text_message"; message: TextMessage }
   | { kind: "message_history"; messages: TextMessage[] }
+  | { kind: "transfer_history"; history: TransferHistory[] }
   | { kind: "file_offered"; offer: FileOffer }
   | { kind: "transfer_accepted"; transfer_id: string; upload_url: string }
   | { kind: "file_declined"; transfer_id: string }

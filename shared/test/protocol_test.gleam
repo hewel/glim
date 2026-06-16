@@ -128,6 +128,36 @@ pub fn decode_message_history_test() {
     )
 }
 
+pub fn decode_transfer_history_test() {
+  let assert Ok(protocol.TransferHistoryEvent([
+    protocol.TransferHistory(
+      transfer_id: "transfer_1",
+      client_offer_id: option.Some("offer_1"),
+      from_device_id: "alice",
+      from_display_name: "Alice",
+      to_device_id: "bob",
+      to_display_name: "Bob",
+      file_name: "clip.mov",
+      file_size: 1234,
+      mime_type: "video/quicktime",
+      final_status: protocol.HistoryCompleted,
+      transferred_bytes: 1234,
+      reason: option.None,
+      recorded_at_ms: 123,
+    ),
+  ])) =
+    protocol.decode_server_event(
+      "{\"type\":\"transfer.history\",\"history\":[{\"transfer_id\":\"transfer_1\",\"client_offer_id\":\"offer_1\",\"from_device_id\":\"alice\",\"from_display_name\":\"Alice\",\"to_device_id\":\"bob\",\"to_display_name\":\"Bob\",\"file_name\":\"clip.mov\",\"file_size\":1234,\"mime_type\":\"video/quicktime\",\"final_status\":\"completed\",\"transferred_bytes\":1234,\"reason\":null,\"recorded_at_ms\":123}]}",
+    )
+}
+
+pub fn decode_transfer_history_rejects_non_final_status_test() {
+  let assert Error(Nil) =
+    protocol.decode_server_event(
+      "{\"type\":\"transfer.history\",\"history\":[{\"transfer_id\":\"transfer_1\",\"client_offer_id\":null,\"from_device_id\":\"alice\",\"from_display_name\":\"Alice\",\"to_device_id\":\"bob\",\"to_display_name\":\"Bob\",\"file_name\":\"clip.mov\",\"file_size\":1234,\"mime_type\":\"video/quicktime\",\"final_status\":\"ready\",\"transferred_bytes\":1234,\"reason\":null,\"recorded_at_ms\":123}]}",
+    )
+}
+
 pub fn decode_file_offered_test() {
   let assert Ok(protocol.FileOffered(protocol.FileOffer(
     transfer_id: "transfer_1",

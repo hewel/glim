@@ -2,6 +2,7 @@
 ////
 
 import gleam/dynamic/decode
+import gleam/option.{type Option}
 import parrot/dev
 
 pub type InsertTextMessage {
@@ -110,5 +111,239 @@ pub fn select_device_message_history_decoder() -> decode.Decoder(
     to_device_id:,
     body:,
     created_at_ms:,
+  ))
+}
+
+pub type InsertTransferHistory {
+  InsertTransferHistory(
+    id: Int,
+    transfer_id: String,
+    client_offer_id: Option(String),
+    from_device_id: String,
+    from_display_name: String,
+    to_device_id: String,
+    to_display_name: String,
+    file_name: String,
+    file_size: Int,
+    mime_type: String,
+    final_status: String,
+    transferred_bytes: Int,
+    reason: Option(String),
+    recorded_at_ms: Int,
+  )
+}
+
+pub fn insert_transfer_history(
+  transfer_id transfer_id: String,
+  client_offer_id client_offer_id: Option(String),
+  from_device_id from_device_id: String,
+  from_display_name from_display_name: String,
+  to_device_id to_device_id: String,
+  to_display_name to_display_name: String,
+  file_name file_name: String,
+  file_size file_size: Int,
+  mime_type mime_type: String,
+  final_status final_status: String,
+  transferred_bytes transferred_bytes: Int,
+  reason reason: Option(String),
+  recorded_at_ms recorded_at_ms: Int,
+) {
+  let sql =
+    "INSERT INTO transfer_history (
+  transfer_id,
+  client_offer_id,
+  from_device_id,
+  from_display_name,
+  to_device_id,
+  to_display_name,
+  file_name,
+  file_size,
+  mime_type,
+  final_status,
+  transferred_bytes,
+  reason,
+  recorded_at_ms
+) VALUES (
+  ?,
+  ?,
+  ?,
+  ?,
+  ?,
+  ?,
+  ?,
+  ?,
+  ?,
+  ?,
+  ?,
+  ?,
+  ?
+)
+ON CONFLICT(transfer_id) DO UPDATE SET
+  client_offer_id = excluded.client_offer_id,
+  from_device_id = excluded.from_device_id,
+  from_display_name = excluded.from_display_name,
+  to_device_id = excluded.to_device_id,
+  to_display_name = excluded.to_display_name,
+  file_name = excluded.file_name,
+  file_size = excluded.file_size,
+  mime_type = excluded.mime_type,
+  final_status = excluded.final_status,
+  transferred_bytes = excluded.transferred_bytes,
+  reason = excluded.reason,
+  recorded_at_ms = excluded.recorded_at_ms
+RETURNING
+  id,
+  transfer_id,
+  client_offer_id,
+  from_device_id,
+  from_display_name,
+  to_device_id,
+  to_display_name,
+  file_name,
+  file_size,
+  mime_type,
+  final_status,
+  transferred_bytes,
+  reason,
+  recorded_at_ms"
+  #(
+    sql,
+    [
+      dev.ParamString(transfer_id),
+      dev.ParamNullable(
+        option.map(client_offer_id, fn(v) { dev.ParamString(v) }),
+      ),
+      dev.ParamString(from_device_id),
+      dev.ParamString(from_display_name),
+      dev.ParamString(to_device_id),
+      dev.ParamString(to_display_name),
+      dev.ParamString(file_name),
+      dev.ParamInt(file_size),
+      dev.ParamString(mime_type),
+      dev.ParamString(final_status),
+      dev.ParamInt(transferred_bytes),
+      dev.ParamNullable(option.map(reason, fn(v) { dev.ParamString(v) })),
+      dev.ParamInt(recorded_at_ms),
+    ],
+    insert_transfer_history_decoder(),
+  )
+}
+
+pub fn insert_transfer_history_decoder() -> decode.Decoder(
+  InsertTransferHistory,
+) {
+  use id <- decode.field(0, decode.int)
+  use transfer_id <- decode.field(1, decode.string)
+  use client_offer_id <- decode.field(2, decode.optional(decode.string))
+  use from_device_id <- decode.field(3, decode.string)
+  use from_display_name <- decode.field(4, decode.string)
+  use to_device_id <- decode.field(5, decode.string)
+  use to_display_name <- decode.field(6, decode.string)
+  use file_name <- decode.field(7, decode.string)
+  use file_size <- decode.field(8, decode.int)
+  use mime_type <- decode.field(9, decode.string)
+  use final_status <- decode.field(10, decode.string)
+  use transferred_bytes <- decode.field(11, decode.int)
+  use reason <- decode.field(12, decode.optional(decode.string))
+  use recorded_at_ms <- decode.field(13, decode.int)
+  decode.success(InsertTransferHistory(
+    id:,
+    transfer_id:,
+    client_offer_id:,
+    from_device_id:,
+    from_display_name:,
+    to_device_id:,
+    to_display_name:,
+    file_name:,
+    file_size:,
+    mime_type:,
+    final_status:,
+    transferred_bytes:,
+    reason:,
+    recorded_at_ms:,
+  ))
+}
+
+pub type SelectDeviceTransferHistory {
+  SelectDeviceTransferHistory(
+    id: Int,
+    transfer_id: String,
+    client_offer_id: Option(String),
+    from_device_id: String,
+    from_display_name: String,
+    to_device_id: String,
+    to_display_name: String,
+    file_name: String,
+    file_size: Int,
+    mime_type: String,
+    final_status: String,
+    transferred_bytes: Int,
+    reason: Option(String),
+    recorded_at_ms: Int,
+  )
+}
+
+pub fn select_device_transfer_history(
+  from_device_id from_device_id: String,
+  to_device_id to_device_id: String,
+) {
+  let sql =
+    "SELECT
+  id,
+  transfer_id,
+  client_offer_id,
+  from_device_id,
+  from_display_name,
+  to_device_id,
+  to_display_name,
+  file_name,
+  file_size,
+  mime_type,
+  final_status,
+  transferred_bytes,
+  reason,
+  recorded_at_ms
+FROM transfer_history
+WHERE from_device_id = ? OR to_device_id = ?
+ORDER BY recorded_at_ms ASC, id ASC"
+  #(
+    sql,
+    [dev.ParamString(from_device_id), dev.ParamString(to_device_id)],
+    select_device_transfer_history_decoder(),
+  )
+}
+
+pub fn select_device_transfer_history_decoder() -> decode.Decoder(
+  SelectDeviceTransferHistory,
+) {
+  use id <- decode.field(0, decode.int)
+  use transfer_id <- decode.field(1, decode.string)
+  use client_offer_id <- decode.field(2, decode.optional(decode.string))
+  use from_device_id <- decode.field(3, decode.string)
+  use from_display_name <- decode.field(4, decode.string)
+  use to_device_id <- decode.field(5, decode.string)
+  use to_display_name <- decode.field(6, decode.string)
+  use file_name <- decode.field(7, decode.string)
+  use file_size <- decode.field(8, decode.int)
+  use mime_type <- decode.field(9, decode.string)
+  use final_status <- decode.field(10, decode.string)
+  use transferred_bytes <- decode.field(11, decode.int)
+  use reason <- decode.field(12, decode.optional(decode.string))
+  use recorded_at_ms <- decode.field(13, decode.int)
+  decode.success(SelectDeviceTransferHistory(
+    id:,
+    transfer_id:,
+    client_offer_id:,
+    from_device_id:,
+    from_display_name:,
+    to_device_id:,
+    to_display_name:,
+    file_name:,
+    file_size:,
+    mime_type:,
+    final_status:,
+    transferred_bytes:,
+    reason:,
+    recorded_at_ms:,
   ))
 }

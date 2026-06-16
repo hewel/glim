@@ -6,6 +6,7 @@ import type {
   PendingDraftClear,
   ReceiveCapability,
   TextMessage,
+  TransferHistory,
   TransferItem,
   TransferProgressEvent,
   TransferStatus,
@@ -33,6 +34,19 @@ export function rememberPeer(knownPeers: Record<string, Peer>, peer: Peer): Reco
 
 export function rememberPeers(knownPeers: Record<string, Peer>, peers: Peer[]): Record<string, Peer> {
   return peers.reduce((acc, peer) => rememberPeer(acc, peer), knownPeers);
+}
+
+export function rememberMissingPeers(
+  knownPeers: Record<string, Peer>,
+  peers: Peer[],
+): Record<string, Peer> {
+  return peers.reduce((acc, peer) => {
+    if (acc[peer.id]) {
+      return acc;
+    }
+
+    return rememberPeer(acc, peer);
+  }, knownPeers);
 }
 
 export function forgetPeer(knownPeers: Record<string, Peer>, peerId: string): Record<string, Peer> {
@@ -68,6 +82,87 @@ export function addTextMessages(
     (acc, message) => addTextMessage(acc, ownDeviceId, message),
     messagesByPeer,
   );
+}
+
+export function transferHistoryPeers(
+  ownDeviceId: string,
+  history: TransferHistory[],
+): Peer[] {
+  return history.map((item) => {
+    const peerId = item.from_device_id === ownDeviceId
+      ? item.to_device_id
+      : item.from_device_id;
+    const displayName = item.from_device_id === ownDeviceId
+      ? item.to_display_name
+      : item.from_display_name;
+
+    return {
+      id: peerId,
+      display_name: displayName,
+      device_kind: "unknown",
+      os: "unknown",
+      browser: "unknown",
+      model: null,
+    };
+  });
+}
+
+export function addTransferHistory(
+  transfers: TransferItem[],
+  ownDeviceId: string,
+  history: TransferHistory[],
+): TransferItem[] {
+  return history.reduce((acc, item) => addTransferHistoryItem(acc, ownDeviceId, item), transfers);
+}
+
+function addTransferHistoryItem(
+  transfers: TransferItem[],
+  ownDeviceId: string,
+  history: TransferHistory,
+): TransferItem[] {
+  if (transfers.some((transfer) => transfer.transfer_id === history.transfer_id)) {
+    return transfers;
+  }
+
+  const sending = history.from_device_id === ownDeviceId;
+  const peerId = sending ? history.to_device_id : history.from_device_id;
+  const peerName = sending ? history.to_display_name : history.from_display_name;
+  const transferred = Math.max(0, Math.min(history.transferred_bytes, history.file_size));
+
+  return [
+    ...transfers,
+    {
+      transfer_id: history.transfer_id,
+      peer_id: peerId,
+      peer_name: peerName,
+      name: history.file_name,
+      mime_type: history.mime_type,
+      size: history.file_size,
+      transferred,
+      download_url: null,
+      direction: sending ? "sending" : "receiving",
+      mode: "relay",
+      status: history.final_status,
+      notice: transferHistoryNotice(history),
+    },
+  ];
+}
+
+function transferHistoryNotice(history: TransferHistory): string {
+  if (history.reason) {
+    return history.reason;
+  }
+
+  switch (history.final_status) {
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    case "cancelled":
+      return "Cancelled";
+    case "declined":
+      return "Declined";
+  }
 }
 
 export function clearPendingDraft(

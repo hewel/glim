@@ -1,3 +1,4 @@
+import clock
 import file_store
 import gleam/dict
 import gleam/erlang/process
@@ -21,6 +22,7 @@ pub type ClientMessage {
   SendPeerLeft(device_id: String)
   SendTextMessage(message: shared_protocol.TextMessage)
   SendMessageHistory(messages: List(shared_protocol.TextMessage))
+  SendTransferHistory(history: List(shared_protocol.TransferHistory))
   SendFileOffered(offer: shared_protocol.FileOffer)
   SendFileDeclined(transfer_id: String)
   SendFileCancelled(transfer_id: String, reason: String)
@@ -374,7 +376,15 @@ fn send_join_snapshot(
   device_id: String,
 ) -> Nil {
   process.send(client, SendPeerList(sorted_peers(state.peers)))
+  send_message_history_snapshot(state, client, device_id)
+  send_transfer_history_snapshot(state, client, device_id)
+}
 
+fn send_message_history_snapshot(
+  state: State,
+  client: process.Subject(ClientMessage),
+  device_id: String,
+) -> Nil {
   case
     message_store.load_device_message_history(
       state.message_store,
@@ -389,6 +399,30 @@ fn send_join_snapshot(
         SendError(
           code: "history_load_failed",
           message: "Message history could not be loaded.",
+        ),
+      )
+  }
+}
+
+fn send_transfer_history_snapshot(
+  state: State,
+  client: process.Subject(ClientMessage),
+  device_id: String,
+) -> Nil {
+  case
+    message_store.load_device_transfer_history(
+      state.message_store,
+      device_id: device_id,
+      timeout: message_store_timeout_ms,
+    )
+  {
+    Ok(history) -> process.send(client, SendTransferHistory(history))
+    Error(_) ->
+      process.send(
+        client,
+        SendError(
+          code: "transfer_history_load_failed",
+          message: "Transfer history could not be loaded.",
         ),
       )
   }
@@ -654,6 +688,13 @@ fn decline_file(
 ) -> actor.Next(State, Message) {
   case transfer_for_receiver(state, from, transfer_id, client) {
     Ok(file_transfer) -> {
+      record_final_transfer_history(
+        state,
+        file_transfer,
+        shared_protocol.HistoryDeclined,
+        0,
+        option.None,
+      )
       let state = remove_transfer(state, transfer_id)
       notify_transfer_participants(
         state,
@@ -674,6 +715,13 @@ fn cancel_file(
 ) -> actor.Next(State, Message) {
   case transfer_for_participant(state, from, transfer_id, client) {
     Ok(file_transfer) -> {
+      record_final_transfer_history(
+        state,
+        file_transfer,
+        shared_protocol.HistoryCancelled,
+        transfer_transferred_bytes(file_transfer),
+        option.Some("Transfer cancelled."),
+      )
       let state = remove_transfer(state, transfer_id)
       file_store.remove_transfer_files(spool_dir, transfer_id)
       notify_transfer_participants(
@@ -795,6 +843,13 @@ fn complete_upload(
     Ok(#(transfer, tokens)) -> {
       case bytes == transfer.offer.size {
         False -> {
+          record_final_transfer_history(
+            state,
+            transfer,
+            shared_protocol.HistoryFailed,
+            bytes,
+            option.Some("upload_size_mismatch"),
+          )
           notify_transfer_participants(
             state,
             transfer.offer,
@@ -861,6 +916,13 @@ fn fail_upload(
 ) -> actor.Next(State, Message) {
   case upload_tokens(state, transfer_id, token) {
     Ok(#(transfer, _tokens)) -> {
+      record_final_transfer_history(
+        state,
+        transfer,
+        shared_protocol.HistoryFailed,
+        transfer_transferred_bytes(transfer),
+        option.Some(reason),
+      )
       let state = remove_transfer(state, transfer_id)
       notify_transfer_participants(
         state,
@@ -879,6 +941,13 @@ fn complete_download(
 ) -> actor.Next(State, Message) {
   case dict.get(state.transfers, transfer_id) {
     Ok(transfer) -> {
+      record_final_transfer_history(
+        state,
+        transfer,
+        shared_protocol.HistoryCompleted,
+        transfer.offer.size,
+        option.None,
+      )
       let state = remove_transfer(state, transfer_id)
       notify_transfer_participants(
         state,
@@ -1086,6 +1155,13 @@ fn cancel_transfers_for_device(state: State, device_id: String) -> State {
     file_transfer.offer.from == device_id || file_transfer.offer.to == device_id
   })
   |> list.fold(state, fn(state, file_transfer) {
+    record_final_transfer_history(
+      state,
+      file_transfer,
+      shared_protocol.HistoryCancelled,
+      transfer_transferred_bytes(file_transfer),
+      option.Some("Peer disconnected."),
+    )
     let state = remove_transfer(state, file_transfer.offer.transfer_id)
     file_store.remove_transfer_files(spool_dir, file_transfer.offer.transfer_id)
     notify_transfer_participants(
@@ -1095,6 +1171,70 @@ fn cancel_transfers_for_device(state: State, device_id: String) -> State {
     )
     state
   })
+}
+
+fn record_final_transfer_history(
+  state: State,
+  transfer: Transfer,
+  status: shared_protocol.TransferHistoryStatus,
+  transferred_bytes: Int,
+  reason: option.Option(String),
+) -> Nil {
+  message_store.record_transfer_history(
+    state.message_store,
+    history: transfer_history(
+      state,
+      transfer,
+      status,
+      transferred_bytes,
+      reason,
+    ),
+  )
+}
+
+fn transfer_history(
+  state: State,
+  transfer: Transfer,
+  status: shared_protocol.TransferHistoryStatus,
+  transferred_bytes: Int,
+  reason: option.Option(String),
+) -> shared_protocol.TransferHistory {
+  let offer = transfer.offer
+
+  shared_protocol.TransferHistory(
+    transfer_id: offer.transfer_id,
+    client_offer_id: offer.client_offer_id,
+    from_device_id: offer.from,
+    from_display_name: peer_display_name(state.peers, offer.from),
+    to_device_id: offer.to,
+    to_display_name: peer_display_name(state.peers, offer.to),
+    file_name: offer.name,
+    file_size: offer.size,
+    mime_type: offer.mime_type,
+    final_status: status,
+    transferred_bytes: transferred_bytes,
+    reason: reason,
+    recorded_at_ms: clock.now_ms(),
+  )
+}
+
+fn peer_display_name(
+  peers: dict.Dict(String, PeerSession),
+  device_id: String,
+) -> String {
+  case dict.get(peers, device_id) {
+    Ok(session) -> session.peer.display_name
+    Error(_) -> device_id
+  }
+}
+
+fn transfer_transferred_bytes(transfer: Transfer) -> Int {
+  case transfer.status {
+    Pending -> 0
+    Accepted(_) -> 0
+    Uploading(uploaded_bytes:, ..) -> uploaded_bytes
+    Ready(_) -> transfer.offer.size
+  }
 }
 
 fn notify_transfer_participants(

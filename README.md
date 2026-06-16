@@ -26,8 +26,9 @@ cd client && bun run dev
 
 Open <http://localhost:5173> in a browser. Vite proxies `/ws` to the Gleam server on <http://localhost:9143>.
 
-The server stores accepted text messages in `priv/glim.sqlite`. The schema is
-bootstrapped from `priv/schema.sql` at startup.
+The server stores accepted text messages and final file-transfer metadata in
+`priv/glim.sqlite`. The schema is bootstrapped from `priv/schema.sql` at
+startup.
 
 ## Production Client Bundle
 
@@ -39,7 +40,9 @@ cd client && bun run build
 
 `ws://localhost:9143/ws`
 
-This slice supports presence, text chat, message history, and online-only file transfer control events. The UI sends a JSON hello message:
+This slice supports presence, text chat, message history, final transfer
+history, and online-only file transfer control events. The UI sends a JSON hello
+message:
 
 ```json
 {"type":"peer.hello","device_id":"device_abc","display_name":"Zed","device_kind":"desktop"}
@@ -110,6 +113,17 @@ The receiver downloads through the tokenized `download_url`. The server emits
 `transfer.done` when the authorized download response is prepared; this does
 not prove the browser saved the file to disk.
 
+When a transfer reaches a final state, the server persists history metadata and
+replays it on the next join:
+
+```json
+{"type":"transfer.history","history":[{"transfer_id":"transfer_abc","client_offer_id":"offer_abc","from_device_id":"device_abc","from_display_name":"Zed","to_device_id":"device_xyz","to_display_name":"Ada","file_name":"clip.mov","file_size":1234,"mime_type":"video/quicktime","final_status":"completed","transferred_bytes":1234,"reason":null,"recorded_at_ms":123}]}
+```
+
+Transfer history is read-only UI history. It does not persist file bytes, spool
+paths, upload tokens, download tokens, active transfer state, or restart/resume
+capability.
+
 ## SQL Code Generation
 
 Type-safe SQL is generated with Parrot from files under `src/sql`.
@@ -130,7 +144,8 @@ cd .. && gleam test
 
 ## Known Limitations (Current Slice)
 
-- File transfers are not persisted and require both peers to stay online.
+- Final transfer metadata is persisted for history. Active transfer state and
+  file bytes are not persisted and require both peers to stay online.
 - Only one active file transfer is allowed at a time.
 - Uploads and downloads are not resumable.
 - `transfer.done` means the server started/prepared the download response, not

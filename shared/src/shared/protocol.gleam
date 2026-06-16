@@ -47,6 +47,31 @@ pub type FileOffer {
   )
 }
 
+pub type TransferHistoryStatus {
+  HistoryCompleted
+  HistoryFailed
+  HistoryCancelled
+  HistoryDeclined
+}
+
+pub type TransferHistory {
+  TransferHistory(
+    transfer_id: String,
+    client_offer_id: option.Option(String),
+    from_device_id: String,
+    from_display_name: String,
+    to_device_id: String,
+    to_display_name: String,
+    file_name: String,
+    file_size: Int,
+    mime_type: String,
+    final_status: TransferHistoryStatus,
+    transferred_bytes: Int,
+    reason: option.Option(String),
+    recorded_at_ms: Int,
+  )
+}
+
 pub type ServerEvent {
   PeerList(peers: List(Peer))
   PeerJoined(peer: Peer)
@@ -54,6 +79,7 @@ pub type ServerEvent {
   PeerLeft(device_id: String)
   TextMessageEvent(message: TextMessage)
   MessageHistory(messages: List(TextMessage))
+  TransferHistoryEvent(history: List(TransferHistory))
   FileOffered(offer: FileOffer)
   FileDeclined(transfer_id: String)
   FileCancelled(transfer_id: String, reason: String)
@@ -73,6 +99,7 @@ type ServerEventType {
   PeerLeftEvent
   TextMessageServerEvent
   MessageHistoryEvent
+  TransferHistoryServerEvent
   FileOfferedEvent
   FileDeclinedEvent
   FileCancelledEvent
@@ -229,6 +256,27 @@ pub fn encode_file_offer_payload(offer: FileOffer) -> json.Json {
   ])
 }
 
+pub fn encode_transfer_history_payload(history: TransferHistory) -> json.Json {
+  json.object([
+    #("transfer_id", json.string(history.transfer_id)),
+    #("client_offer_id", json.nullable(history.client_offer_id, json.string)),
+    #("from_device_id", json.string(history.from_device_id)),
+    #("from_display_name", json.string(history.from_display_name)),
+    #("to_device_id", json.string(history.to_device_id)),
+    #("to_display_name", json.string(history.to_display_name)),
+    #("file_name", json.string(history.file_name)),
+    #("file_size", json.int(history.file_size)),
+    #("mime_type", json.string(history.mime_type)),
+    #(
+      "final_status",
+      json.string(transfer_history_status_to_string(history.final_status)),
+    ),
+    #("transferred_bytes", json.int(history.transferred_bytes)),
+    #("reason", json.nullable(history.reason, json.string)),
+    #("recorded_at_ms", json.int(history.recorded_at_ms)),
+  ])
+}
+
 pub fn encode_transfer_progress_payload(
   transfer_id: String,
   phase: String,
@@ -302,6 +350,57 @@ fn file_offer_decoder() -> decode.Decoder(FileOffer) {
   ))
 }
 
+fn transfer_history_decoder() -> decode.Decoder(TransferHistory) {
+  use transfer_id <- decode.field("transfer_id", decode.string)
+  use client_offer_id <- decode.optional_field(
+    "client_offer_id",
+    option.None,
+    decode.optional(decode.string),
+  )
+  use from_device_id <- decode.field("from_device_id", decode.string)
+  use from_display_name <- decode.field("from_display_name", decode.string)
+  use to_device_id <- decode.field("to_device_id", decode.string)
+  use to_display_name <- decode.field("to_display_name", decode.string)
+  use file_name <- decode.field("file_name", decode.string)
+  use file_size <- decode.field("file_size", decode.int)
+  use mime_type <- decode.field("mime_type", decode.string)
+  use final_status <- decode.field(
+    "final_status",
+    transfer_history_status_decoder(),
+  )
+  use transferred_bytes <- decode.field("transferred_bytes", decode.int)
+  use reason <- decode.optional_field(
+    "reason",
+    option.None,
+    decode.optional(decode.string),
+  )
+  use recorded_at_ms <- decode.field("recorded_at_ms", decode.int)
+  decode.success(TransferHistory(
+    transfer_id: transfer_id,
+    client_offer_id: client_offer_id,
+    from_device_id: from_device_id,
+    from_display_name: from_display_name,
+    to_device_id: to_device_id,
+    to_display_name: to_display_name,
+    file_name: file_name,
+    file_size: file_size,
+    mime_type: mime_type,
+    final_status: final_status,
+    transferred_bytes: transferred_bytes,
+    reason: reason,
+    recorded_at_ms: recorded_at_ms,
+  ))
+}
+
+fn transfer_history_status_decoder() -> decode.Decoder(TransferHistoryStatus) {
+  use raw <- decode.then(decode.string)
+  case transfer_history_status_from_string(raw) {
+    Ok(status) -> decode.success(status)
+    Error(Nil) ->
+      decode.failure(HistoryFailed, expected: "transfer history status")
+  }
+}
+
 fn decode_known_server_event(
   input: String,
   event_type: ServerEventType,
@@ -346,6 +445,16 @@ fn decode_known_server_event(
           decode.list(text_message_decoder()),
         )
         decode.success(MessageHistory(messages: messages))
+      }
+      json.parse(from: input, using: decoder)
+    }
+    TransferHistoryServerEvent -> {
+      let decoder = {
+        use history <- decode.field(
+          "history",
+          decode.list(transfer_history_decoder()),
+        )
+        decode.success(TransferHistoryEvent(history: history))
       }
       json.parse(from: input, using: decoder)
     }
@@ -448,6 +557,7 @@ fn classify_server_event_type(event_type: String) -> ServerEventType {
     "peer.left" -> PeerLeftEvent
     "text.message" -> TextMessageServerEvent
     "message.history" -> MessageHistoryEvent
+    "transfer.history" -> TransferHistoryServerEvent
     "file.offered" -> FileOfferedEvent
     "file.declined" -> FileDeclinedEvent
     "file.cancelled" -> FileCancelledEvent
@@ -458,6 +568,29 @@ fn classify_server_event_type(event_type: String) -> ServerEventType {
     "transfer.failed" -> TransferFailedEvent
     "error" -> ErrorServerEvent
     other -> UnknownEventType(raw: other)
+  }
+}
+
+pub fn transfer_history_status_to_string(
+  status: TransferHistoryStatus,
+) -> String {
+  case status {
+    HistoryCompleted -> "completed"
+    HistoryFailed -> "failed"
+    HistoryCancelled -> "cancelled"
+    HistoryDeclined -> "declined"
+  }
+}
+
+pub fn transfer_history_status_from_string(
+  status: String,
+) -> Result(TransferHistoryStatus, Nil) {
+  case status {
+    "completed" -> Ok(HistoryCompleted)
+    "failed" -> Ok(HistoryFailed)
+    "cancelled" -> Ok(HistoryCancelled)
+    "declined" -> Ok(HistoryDeclined)
+    _ -> Error(Nil)
   }
 }
 

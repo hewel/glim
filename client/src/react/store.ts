@@ -21,10 +21,10 @@ import {
   addOutgoingTransfer,
   addTextMessage,
   addTextMessages,
+  addTransferHistory,
   bindOutgoingTransfer,
   clearPendingDraft,
   conversationPeerId,
-  forgetPeer,
   interruptedTransferIds,
   isRelayFileSizeAllowed,
   isPeerOnline,
@@ -35,10 +35,12 @@ import {
   markTransferReady,
   markTransferStatus,
   otherPeers,
+  rememberMissingPeers,
   rememberPeer,
   rememberPeers,
   removePeer,
   setDraft,
+  transferHistoryPeers,
   upsertPeer,
 } from "./domain";
 import { formatBytes } from "./format";
@@ -473,7 +475,6 @@ function handleServerEvent(raw: string): void {
     case "peer_left":
       useAppStore.setState((state) => ({
         peers: removePeer(state.peers, event.device_id),
-        knownPeers: forgetPeer(state.knownPeers, event.device_id),
       }));
       break;
     case "text_message":
@@ -485,6 +486,19 @@ function handleServerEvent(raw: string): void {
           state.messagesByPeer,
           state.deviceId,
           event.messages,
+        ),
+      }));
+      break;
+    case "transfer_history":
+      useAppStore.setState((state) => ({
+        knownPeers: rememberMissingPeers(
+          state.knownPeers,
+          transferHistoryPeers(state.deviceId, event.history),
+        ),
+        transfers: addTransferHistory(
+          state.transfers,
+          state.deviceId,
+          event.history,
         ),
       }));
       break;

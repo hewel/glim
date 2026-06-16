@@ -46,6 +46,7 @@ pub fn apply_server_event_to_peers(
       remove_peer(peers, device_id)
     Ok(shared_protocol.TextMessageEvent(message: _)) -> peers
     Ok(shared_protocol.MessageHistory(messages: _)) -> peers
+    Ok(shared_protocol.TransferHistoryEvent(history: _)) -> peers
     Ok(shared_protocol.FileOffered(offer: _)) -> peers
     Ok(shared_protocol.FileDeclined(transfer_id: _)) -> peers
     Ok(shared_protocol.FileCancelled(transfer_id: _, reason: _)) -> peers

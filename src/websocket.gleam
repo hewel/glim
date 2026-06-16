@@ -102,6 +102,8 @@ fn encode_room_message(message: room.ClientMessage) -> String {
     room.SendTextMessage(message) -> protocol.encode_text_message(message)
     room.SendMessageHistory(messages) ->
       protocol.encode_message_history(messages)
+    room.SendTransferHistory(history) ->
+      protocol.encode_transfer_history(history)
     room.SendFileOffered(offer) -> protocol.encode_file_offered(offer)
     room.SendFileDeclined(transfer_id) ->
       protocol.encode_file_declined(transfer_id)

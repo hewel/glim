@@ -13,10 +13,12 @@ import type { ConnectionStatus, Peer } from "./types";
 export function Sidebar() {
   const status = useAppStore((state) => state.status);
   const peers = useAppStore((state) => state.peers);
+  const knownPeers = useAppStore((state) => state.knownPeers);
   const selectedPeerId = useAppStore((state) => state.selectedPeerId);
   const unreadByPeer = useAppStore((state) => state.unreadByPeer);
   const selectPeer = useAppStore((state) => state.selectPeer);
   const setLogOpen = useAppStore((state) => state.setLogOpen);
+  const visiblePeers = Object.values(knownPeers);
 
   return (
     <div className="flex h-full flex-col p-5">
@@ -36,12 +38,12 @@ export function Sidebar() {
       </nav>
 
       <section className="mt-7 min-h-0 flex-1 space-y-2 overflow-y-auto custom-scrollbar">
-        {peers.length === 0 ? (
+        {visiblePeers.length === 0 ? (
           <div className="rounded-md border border-outline-variant bg-surface-container p-4 text-sm text-on-surface-variant">
             Waiting for peers.
           </div>
         ) : (
-          peers.map((peer) => (
+          visiblePeers.map((peer) => (
             <PeerButton
               key={peer.id}
               online={peers.some((onlinePeer) => onlinePeer.id === peer.id)}

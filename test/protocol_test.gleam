@@ -220,6 +220,36 @@ pub fn encode_message_history_contains_fields_test() {
   let assert True = string.contains(json, "\"to\":\"bob\"")
 }
 
+pub fn encode_transfer_history_contains_fields_test() {
+  let json =
+    protocol.encode_transfer_history([
+      shared_protocol.TransferHistory(
+        transfer_id: "transfer_1",
+        client_offer_id: option.Some("offer_1"),
+        from_device_id: "alice",
+        from_display_name: "Alice",
+        to_device_id: "bob",
+        to_display_name: "Bob",
+        file_name: "clip.mov",
+        file_size: 1234,
+        mime_type: "video/quicktime",
+        final_status: shared_protocol.HistoryCompleted,
+        transferred_bytes: 1234,
+        reason: option.None,
+        recorded_at_ms: 123,
+      ),
+    ])
+
+  let assert True = string.contains(json, "\"type\":\"transfer.history\"")
+  let assert True = string.contains(json, "\"history\"")
+  let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
+  let assert True = string.contains(json, "\"client_offer_id\":\"offer_1\"")
+  let assert True = string.contains(json, "\"from_display_name\":\"Alice\"")
+  let assert True = string.contains(json, "\"final_status\":\"completed\"")
+  let assert False = string.contains(json, "token")
+  let assert False = string.contains(json, "spool")
+}
+
 fn repeat_char(char: String, count: Int) -> String {
   case count {
     0 -> ""
