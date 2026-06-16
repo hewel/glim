@@ -2,114 +2,71 @@
 
 ## Project: Glim
 
-Build an experimental local-network instant messaging and file sharing service in Gleam. The project is intentionally experimental: prefer a small, understandable, working vertical slice over a polished production system.
+Experimental local-network instant messaging and file sharing service in Gleam. Devices on the same LAN join one shared room with no account registration; each connected device is a temporary peer. Peers chat and exchange files through a central Gleam server.
 
-The application should let devices on the same LAN join a shared room without account registration. Each connected device is treated as a temporary user. Users can see online peers, send text messages, offer files, accept or reject incoming file transfers, upload files to the server, and download accepted files.
+Prefer a small, understandable, working vertical slice over a polished production system. Keep the system LAN-first: no public relay, NAT traversal, or internet-account features.
 
 ## Product Goals
 
-- No account registration.
-- A device connected to the LAN can join as a peer.
-- Peers can send text messages to each other.
-- Peers can send file offers to each other.
-- The receiver must explicitly accept a file before the sender uploads it.
-- WebSocket is used for real-time control events.
-- HTTP is used for file upload and download.
-- The first client UI can be a plain browser page.
-- Keep the system LAN-first. Do not build public relay, NAT traversal, or internet account features in the MVP.
+- No account registration; a LAN device joins as a peer.
+- Peers send text messages (markdown-rendered) to each other.
+- Peers offer files; the receiver must explicitly accept before the sender uploads.
+- WebSocket carries real-time control events (presence, chat, consent, progress, history).
+- HTTP carries file upload/download bytes, tokenized per transfer.
+- Final transfer metadata and chat messages persist across restarts in SQLite.
 
-## Non-Goals for the MVP
+## Non-Goals (unless explicitly requested)
 
-Do not implement these in the first version unless explicitly requested later:
+- User registration / cloud identity.
+- GraphQL, gRPC, Protobuf.
+- Full P2P / WebRTC file transfer (removed; relay-only — see ADR 0003).
+- End-to-end encryption; offline message delivery; multi-room.
+- Native desktop/mobile beyond the current Tauri shell.
+- LAN auto-discovery (mDNS/UDP broadcast).
+- Range-based resumable upload/download; concurrent transfers.
 
-- User registration or cloud identity.
-- GraphQL.
-- gRPC.
-- Protobuf.
-- Full P2P file transfer.
-- End-to-end encryption.
-- Offline message delivery.
-- Multi-room support.
-- Native desktop or mobile clients.
-- LAN auto-discovery via mDNS or UDP broadcast.
-- Range-based resumable downloads.
-- Chunked resumable uploads.
-- SQLite persistence.
+## Technology Stack
 
-These can be considered later after the basic WebSocket + HTTP file relay works.
+- **Server / shared / client core:** Gleam on Erlang/BEAM. HTTP + WebSocket via Mist. State via `gleam/otp` actors (no supervisor tree — `main` wires them by hand). JSON via `gleam_json`. SQLite via a small SQL FFI (`src/glim/sql.gleam`) through the `MessageStore` actor.
+- **Web client:** React + Vite + TypeScript (`client/`), with a Gleam client-core package (`client/src/*.gleam`) compiled to JS. Markdown via `react-markdown` + `remark-gfm`. Effect is available for fallible/external-boundary TypeScript logic; keep React rendering and simple pure helpers plain unless they need Effect.
+- **Desktop shell:** Tauri (`src-tauri/`), optional.
 
-## Preferred Technology Stack
-
-- Language: Gleam.
-- Runtime target: Erlang / BEAM.
-- HTTP and WebSocket server: Mist.
-- Concurrency/state management: gleam_otp actors and supervisors.
-- JSON: gleam_json.
-- HTTP types: gleam_http.
-- Erlang interop if needed: gleam_erlang.
-- File streaming if needed: file_streams or small Erlang FFI modules.
-- Frontend MVP: plain HTML, CSS, and JavaScript under `priv/static`.
-
-Use TypeScript only if a frontend build step is deliberately introduced later. For the MVP, avoid requiring Node.js tooling.
+The authoritative protocol codecs live in `shared/src/shared/protocol.gleam` (shared) and `src/protocol.gleam` (server-side decode + encode). Treat those files as the wire-spec source of truth, not this document.
 
 ## Repository Layout
 
-Use this structure unless the existing repository already has a better one:
-
 ```text
-lan_share/
-├── AGENTS.md
-├── README.md
-├── gleam.toml
-├── src/
-│   ├── lan_share.gleam          # Application entry point
-│   ├── http_server.gleam        # Mist server setup and routing
-│   ├── websocket.gleam          # WebSocket connection handling
-│   ├── room.gleam               # RoomActor and peer/message routing
-│   ├── transfer.gleam           # Transfer types and TransferActor
-│   ├── protocol.gleam           # JSON event encode/decode
-│   ├── file_store.gleam         # Spool paths, upload/download helpers
-│   ├── ids.gleam                # ID generation helpers
-│   ├── clock.gleam              # Time helpers
-│   └── validation.gleam         # Input validation and filename sanitization
-├── priv/
-│   ├── static/
-│   │   ├── index.html
-│   │   ├── app.js
-│   │   └── style.css
-│   └── spool/
-└── test/
-    ├── protocol_test.gleam
-    ├── validation_test.gleam
-    └── transfer_test.gleam
+glim/
+├── src/              # Server: glim, http_server, websocket, room, protocol, validation, message_store, file_store, ids, clock, glim/sql (SQLite FFI)
+├── shared/src/       # Shared wire types + JSON codecs (single source of truth for protocol)
+├── client/src/       # React/Vite/TS UI + Gleam client core (core, chat, transfer)
+│   ├── browser/      # TS browser adapters (ffi, file_transfer, socket, worker)
+│   └── react/        # React store, domain, UI components
+├── src-tauri/        # Tauri desktop shell
+├── priv/             # static assets, schema.sql, spool/
+├── test/ shared/test/ client/test/   # Gleam tests
+├── docs/adr/         # Architecture decisions (0001 React shell, 0002 P2P superseded, 0003 HTTP relay)
+└── docs/agents/      # DESIGN.md, domain.md, issue-tracker.md, triage-labels.md
 ```
 
-If the project is not created yet, start with:
+## Build, Format, Test, Run
 
 ```sh
-gleam new lan_share
-cd lan_share
-gleam add mist gleam_http gleam_json gleam_erlang gleam_otp logging file_streams
-```
-
-## Build, Format, Test, and Run Commands
-
-Use these commands during development:
-
-```sh
-gleam format
-gleam check
-gleam test
-gleam run
-```
-
-When changing code, run at minimum:
-
-```sh
+# Server (root)
 gleam format && gleam check && gleam test
+gleam run                       # starts the Mist server
+
+# Shared protocol package
+cd shared && gleam format && gleam check && gleam test
+
+# Client
+cd client && gleam format && gleam check && gleam test      # Gleam client core
+cd client && bun run check:ts && bun run test:ts && bun run build
+cd client && bun run dev                                     # Vite dev server
+cd client && bun run test:e2e                                # Playwright (boots `gleam run`)
 ```
 
-If tests do not exist yet, add focused tests for protocol parsing, validation, and transfer state transitions.
+When changing Gleam code, run `gleam format && gleam check && gleam test` for the affected package(s) at minimum. Add focused tests for protocol parsing, validation, and transfer state transitions; do not ship untested security-sensitive logic.
 
 ## Engineering Rules
 
@@ -117,693 +74,103 @@ If tests do not exist yet, add focused tests for protocol parsing, validation, a
 - Prefer simple, explicit Gleam types over dynamic maps.
 - Keep protocol parsing and validation separate from business logic.
 - Do not read large uploaded files fully into memory.
-- WebSocket is for control events only. Do not transfer large file bytes through WebSocket.
-- File bytes must travel through HTTP endpoints.
-- Use `.part` files during upload and rename only after the upload completes successfully.
+- WebSocket is for control events only — never large file bytes. File bytes travel through HTTP endpoints.
+- Use `.part` files during upload; rename to `.blob` only after the upload completes and the byte count matches the offer.
 - All files must stay under the configured spool directory.
-- Never trust filenames from clients.
-- Never allow path traversal such as `../`.
+- Never trust filenames from clients; never allow path traversal (`../`).
 - Do not auto-open downloaded files.
-- Add clear TODO comments when a temporary MVP limitation is introduced.
-- Keep each commit or task focused on one feature.
+- Add clear TODO comments for temporary MVP limitations.
+- Keep each commit focused on one feature; do not invent Gleam APIs (verify names/signatures from dependencies or write a small adapter / TODO).
 
-## MVP Architecture
+## Client TypeScript / Effect Rules
 
-Use a central LAN room server:
+- Use Effect in `client/` for fallible or external-boundary TypeScript: WebSocket payloads, JSON parsing/decoding, `localStorage`, browser/file APIs, `fetch`/`XMLHttpRequest`, and unknown data crossing from compiled Gleam into TypeScript.
+- Keep ordinary JSX rendering, pure view helpers, formatting, and local state transitions plain TypeScript unless they directly call a fallible boundary.
+- Effect modules should return `Effect` values; run them at Zustand actions, browser adapter entrypoints, app bootstrap, or UI event-handler edges.
+- Expected failures are typed tagged errors. Prefer schema-backed errors and boundary schemas for untrusted data; use throws only for defects or truly impossible top-level states.
+- New client TypeScript should not introduce `any`, `as` casts, unsafe assertions, or `namespace`. Existing unsafe sites are tracked in GitHub issue #13.
+- The user manages Effect package updates. When future work adds `@effect/*` packages, keep them beta-aligned with `effect`; substantial Effect tests should add aligned `@effect/vitest`.
+
+## Architecture
+
+`main` (`src/glim.gleam`) wires three long-lived components by hand (no `gleam_otp` supervisor tree): it starts the `MessageStore` actor on `priv/glim.sqlite`, starts the `RoomActor` with a handle to the store, and boots the Mist HTTP/WebSocket server bound to `0.0.0.0:9143`.
 
 ```text
-Browser Client A ── WebSocket + HTTP ──┐
-Browser Client B ── WebSocket + HTTP ──┼── Gleam LAN Share Server
-Browser Client C ── WebSocket + HTTP ──┘
+Mist HTTP/WebSocket server ──┐
+RoomActor                    ├── MessageStore actor (SQLite: messages + final transfer history)
+(presence, chat, consent,    │   priv/spool/<transfer_id>.{part,blob}
+ transfer lifecycle, tokens, │
+ history replay)             │
 ```
 
-The server relays messages and files. It stores temporary uploaded files in `priv/spool` or a configured data directory.
+- **RoomActor** registers peers on `peer.hello`, removes them on socket close, replaces on reconnect; sends `peer.list`; broadcasts join/updated/left; routes `text.send`→`text.message`; validates and offers files; mints canonical `transfer_id`s and per-transfer upload/download tokens; enforces a single active transfer; coordinates HTTP leases (`BeginUpload`/`UploadProgress`/`CompleteUpload`/`FailUpload`/`BeginDownload`/`CompleteDownload`) and emits `transfer.progress` during upload; persists and replays final transfer history on join.
+- **HTTP relay** (ADR 0003): `POST /api/transfers/:id/upload?token=...` streams the sender body to `spool/<id>.part` (size-capped to the lease), renames to `.blob` after the byte count matches, and emits progress; `GET /api/transfers/:id/download?token=...` serves the blob as an attachment via `mist.send_file`. File bytes never touch the WebSocket.
 
-### Main Runtime Components
+## Protocol (control plane = JSON over WebSocket)
 
-```text
-Application supervisor
-├── Mist HTTP/WebSocket server
-├── RoomActor
-├── TransferSupervisor
-│   ├── TransferActor(transfer_1)
-│   ├── TransferActor(transfer_2)
-│   └── ...
-└── CleanupActor (later; optional for first vertical slice)
-```
+Every event has a `type` string; server-generated messages carry stable IDs where useful. Event categories (full field shapes live in the codec modules):
 
-### RoomActor Responsibilities
+- **Client → server:** `peer.hello`, `peer.update`, `text.send`, `file.offer` (`to`, `client_offer_id`, `name`, `size`, `mime_type`), `file.accept`, `file.decline`, `file.cancel`.
+- **Server → client:** `peer.list`, `peer.joined`, `peer.updated`, `peer.left`, `text.message`, `message.history`, `transfer.history`, `file.offered`, `file.declined`, `file.cancelled`, `transfer.accepted` (`transfer_id`, `upload_url`), `transfer.progress` (`transfer_id`, `phase`, `bytes`, `total`), `transfer.ready` (`transfer_id`, `download_url`), `transfer.done`, `transfer.failed` (`transfer_id`, `reason`), `error`.
 
-- Maintain online peers.
-- Register a peer when a WebSocket sends `peer.hello`.
-- Remove a peer when its WebSocket closes.
-- Send `peer.list` to newly joined peers.
-- Broadcast `peer.joined` and `peer.left`.
-- Route `text.send` into `text.message`.
-- Create file transfer records for `file.offer`.
-- Route `file.offered`, `transfer.accepted`, `transfer.rejected`, `transfer.ready`, and `transfer.failed` events.
-
-### TransferActor Responsibilities
-
-- Model one file transfer.
-- Enforce valid state transitions.
-- Track sender, receiver, metadata, spool path, and state.
-- Mark accepted, rejected, uploading, ready, done, failed, or cancelled.
-- Never handle raw file bytes directly unless necessary; prefer `file_store` for byte-level work.
-
-## Core Domain Types
-
-Use names close to these. Adjust syntax to match the actual Gleam code style.
-
-```gleam
-pub type DeviceId =
-  String
-
-pub type TransferId =
-  String
-
-pub type Peer {
-  Peer(
-    id: DeviceId,
-    name: String,
-    joined_at_ms: Int,
-  )
-}
-
-pub type FileMeta {
-  FileMeta(
-    name: String,
-    size: Int,
-    mime: String,
-    sha256: Option(String),
-  )
-}
-
-pub type TransferState {
-  Offered
-  Accepted
-  Uploading(uploaded_bytes: Int)
-  ReadyToDownload
-  Downloading(downloaded_bytes: Int)
-  Done
-  Rejected
-  Cancelled
-  Failed(reason: String)
-}
-
-pub type Transfer {
-  Transfer(
-    id: TransferId,
-    from: DeviceId,
-    to: DeviceId,
-    file: FileMeta,
-    state: TransferState,
-    spool_path: String,
-    created_at_ms: Int,
-    updated_at_ms: Int,
-  )
-}
-```
-
-## Protocol
-
-Use JSON for MVP events. Every event must have a `type` string. Every server-generated message should have stable IDs where useful.
-
-### Client to Server Events
-
-#### `peer.hello`
-
-Sent after WebSocket connection opens.
-
-```json
-{
-  "type": "peer.hello",
-  "device_id": "device_abc",
-  "display_name": "Zed's Laptop"
-}
-```
-
-Rules:
-
-- `device_id` is generated by the browser and stored in `localStorage`.
-- `display_name` is user-editable.
-- If the same `device_id` reconnects, replace the previous live session.
-
-#### `text.send`
-
-```json
-{
-  "type": "text.send",
-  "to": "device_xyz",
-  "body": "hello"
-}
-```
-
-Rules:
-
-- Reject empty messages.
-- Limit message body length, for example 10,000 characters.
-- Sender is inferred from the WebSocket session, not trusted from client JSON.
-
-#### `file.offer`
-
-```json
-{
-  "type": "file.offer",
-  "to": "device_xyz",
-  "file": {
-    "name": "demo.zip",
-    "size": 104857600,
-    "mime": "application/zip",
-    "sha256": null
-  }
-}
-```
-
-Rules:
-
-- Receiver must be online for MVP.
-- Validate file size against configured limits.
-- Sanitize filename for display and disk safety.
-- Create a transfer in `Offered` state.
-
-#### `file.accept`
-
-```json
-{
-  "type": "file.accept",
-  "transfer_id": "tr_abc"
-}
-```
-
-Rules:
-
-- Only the intended receiver can accept.
-- State must be `Offered`.
-- On success, move to `Accepted` and notify sender.
-
-#### `file.reject`
-
-```json
-{
-  "type": "file.reject",
-  "transfer_id": "tr_abc"
-}
-```
-
-Rules:
-
-- Only the intended receiver can reject.
-- State must be `Offered`.
-- On success, move to `Rejected` and notify sender.
-
-#### `transfer.cancel`
-
-```json
-{
-  "type": "transfer.cancel",
-  "transfer_id": "tr_abc"
-}
-```
-
-Rules:
-
-- Sender or receiver can cancel before `Done`.
-- Notify both sides.
-
-### Server to Client Events
-
-#### `peer.list`
-
-```json
-{
-  "type": "peer.list",
-  "peers": [
-    {
-      "id": "device_abc",
-      "display_name": "Zed's Laptop"
-    }
-  ]
-}
-```
-
-#### `peer.joined`
-
-```json
-{
-  "type": "peer.joined",
-  "peer": {
-    "id": "device_abc",
-    "display_name": "Zed's Laptop"
-  }
-}
-```
-
-#### `peer.left`
-
-```json
-{
-  "type": "peer.left",
-  "device_id": "device_abc"
-}
-```
-
-#### `text.message`
-
-```json
-{
-  "type": "text.message",
-  "id": "msg_abc",
-  "from": "device_abc",
-  "to": "device_xyz",
-  "body": "hello",
-  "created_at_ms": 1760000000000
-}
-```
-
-#### `file.offered`
-
-```json
-{
-  "type": "file.offered",
-  "transfer_id": "tr_abc",
-  "from": "device_abc",
-  "file": {
-    "name": "demo.zip",
-    "size": 104857600,
-    "mime": "application/zip",
-    "sha256": null
-  }
-}
-```
-
-#### `transfer.accepted`
-
-```json
-{
-  "type": "transfer.accepted",
-  "transfer_id": "tr_abc",
-  "upload_url": "/api/transfers/tr_abc/upload"
-}
-```
-
-#### `transfer.rejected`
-
-```json
-{
-  "type": "transfer.rejected",
-  "transfer_id": "tr_abc"
-}
-```
-
-#### `transfer.progress`
-
-```json
-{
-  "type": "transfer.progress",
-  "transfer_id": "tr_abc",
-  "phase": "uploading",
-  "bytes": 524288,
-  "total": 104857600
-}
-```
-
-Progress events are useful but optional in the first vertical slice. If streaming progress is difficult in the first pass, add a TODO and implement upload complete / ready events first.
-
-#### `transfer.ready`
-
-```json
-{
-  "type": "transfer.ready",
-  "transfer_id": "tr_abc",
-  "download_url": "/api/transfers/tr_abc/download"
-}
-```
-
-#### `transfer.done`
-
-```json
-{
-  "type": "transfer.done",
-  "transfer_id": "tr_abc"
-}
-```
-
-#### `transfer.failed`
-
-```json
-{
-  "type": "transfer.failed",
-  "transfer_id": "tr_abc",
-  "reason": "upload_failed"
-}
-```
-
-## HTTP Routes
-
-### `GET /`
-
-Serve `priv/static/index.html`.
-
-### `GET /assets/*`
-
-Serve static assets from `priv/static`.
-
-### `GET /ws`
-
-Upgrade to WebSocket.
-
-### `POST /api/transfers/:id/upload`
-
-Upload bytes for an accepted transfer.
-
-Rules:
-
-- Transfer must exist.
-- State must be `Accepted` or `Uploading`.
-- Sender must be authorized. For MVP, use a token in the upload URL or query string if session binding is hard. Prefer a random per-transfer token generated by the server.
-- Enforce max file size.
-- Stream request body to `spool/<transfer_id>.part`.
-- After successful upload, verify actual byte count matches declared file size.
-- Rename to `spool/<transfer_id>.blob`.
-- Move transfer to `ReadyToDownload`.
-- Notify receiver with `transfer.ready`.
-
-### `GET /api/transfers/:id/download`
-
-Download uploaded file.
-
-Rules:
-
-- Transfer must exist.
-- State must be `ReadyToDownload`, `Downloading`, or `Done`.
-- Only the intended receiver should be able to download. For MVP, a random download token in the URL is acceptable if WebSocket session auth is not available in HTTP handlers.
-- Use Mist file response / sendfile where possible.
-- Set `Content-Disposition: attachment` with a sanitized filename.
-- Do not expose raw spool paths.
+Rules: reject empty messages and oversized bodies; the sender is inferred from the WebSocket session, never trusted from client JSON. Only the intended receiver can accept/decline; sender or receiver can cancel before completion; only one transfer is active at a time. `file.accept` carries only `transfer_id` (no negotiation fields). The server mints canonical `transfer_id`s and per-transfer upload/download tokens; the browser's `client_offer_id` correlates the locally selected file with the canonical ID returned in `file.offered`.
 
 ## Transfer Flow
 
 ```text
-Sender selects file
-Sender sends file.offer over WebSocket
-Server validates offer and creates transfer
-Server sends file.offered to receiver
-Receiver accepts over WebSocket
-Server moves transfer to Accepted
-Server sends transfer.accepted with upload_url to sender
-Sender uploads bytes over HTTP POST
-Server writes .part file under spool
-Server renames .part to .blob after successful upload
-Server moves transfer to ReadyToDownload
-Server sends transfer.ready with download_url to receiver
-Receiver downloads bytes over HTTP GET
-Server may mark transfer Done after successful download response is sent
+sender selects file → file.offer (WS) → server validates + mints transfer_id + tokens
+→ file.offered to receiver → receiver accepts (WS) → server marks Accepted
+→ transfer.accepted (upload_url) to sender → sender uploads (HTTP, streamed) → .part written
+→ transfer.progress emitted during upload → size verified → renamed .blob
+→ transfer.ready (download_url) to receiver → receiver downloads (HTTP)
+→ transfer.done → server persists final transfer history; replays via transfer.history on next join
 ```
 
-## Validation and Security Requirements
-
-Implement these early, not as an afterthought:
-
-- Maximum display name length: 64 characters.
-- Maximum text message length: 10,000 characters.
-- Maximum file size for MVP: choose a conservative limit such as 256 MB or 1 GB. Make it a config constant.
-- Reject negative or missing file sizes.
-- Reject filenames that are empty after sanitization.
-- Strip path separators from filenames.
-- Reject or replace control characters in filenames.
-- Never concatenate untrusted filenames into paths.
-- Use only server-generated transfer IDs for spool file names.
-- Use random unguessable upload/download tokens if HTTP endpoints cannot authenticate against WebSocket state.
-- Do not allow download before receiver accepts.
-- Clean up failed `.part` files.
-- Return safe error messages to clients.
-- Log useful internal errors without leaking local paths to clients.
+## Validation & Security
+- Limits (constants in `src/validation.gleam`): display name 64, text body 10 000, file name 255, transfer id 128, MIME type 128, device model 80 chars; file size ≤ 268 435 456 bytes (256 MiB). Oversized files surface `file_too_large` (with the max) to the client.
+- Reject negative/missing file sizes; reject empty/sanitized filenames; strip path separators and control characters; validate device kind/os/browser against fixed enums.
+- Never concatenate untrusted filenames into paths; use only server-generated transfer IDs for spool names.
+- Upload/download tokens travel in the `?token=` query string; never allow download before the receiver accepts. HTTP relay status codes: 404 not found, 403 invalid token, 409 invalid state / cancelled, 400 size mismatch.
+- Clean up failed `.part` files; return safe error messages; log internal errors without leaking local paths. Never expose stack traces to clients.
 
 ## File Store Rules
 
-Use server-generated names on disk:
-
-```text
-priv/spool/<transfer_id>.part
-priv/spool/<transfer_id>.blob
-```
-
-Keep the original sanitized filename only for display and `Content-Disposition`.
-
-Implement functions similar to:
-
-```gleam
-pub fn sanitize_filename(name: String) -> Result(String, String)
-pub fn transfer_part_path(spool_dir: String, transfer_id: TransferId) -> String
-pub fn transfer_blob_path(spool_dir: String, transfer_id: TransferId) -> String
-pub fn ensure_spool_dir(spool_dir: String) -> Result(Nil, String)
-pub fn remove_transfer_files(spool_dir: String, transfer_id: TransferId) -> Result(Nil, String)
-```
-
-## Frontend MVP
-
-Use plain browser APIs:
-
-- `localStorage` for `device_id` and display name.
-- `crypto.randomUUID()` to generate device IDs when available.
-- `WebSocket` for real-time events.
-- `fetch` or `XMLHttpRequest` for file upload. Use `XMLHttpRequest` if upload progress is needed early.
-- `<input type="file">` for file selection.
-- Simple peer list and chat panel.
-
-The frontend should support:
-
-- Enter or edit display name.
-- Connect to WebSocket.
-- Show online peers.
-- Select a peer.
-- Send text.
-- Offer a file.
-- Accept or reject incoming file offers.
-- Upload accepted files.
-- Download ready files.
-
-Keep the UI minimal but usable. Do not introduce a frontend framework in the MVP.
+On disk use server-generated names only: `priv/spool/<transfer_id>.part` and `<transfer_id>.blob`. Keep the original sanitized filename solely for display and `Content-Disposition`. Do not expose raw spool paths.
 
 ## Error Handling
 
-Prefer explicit errors and typed results.
-
-Examples:
-
-- Invalid JSON: send `error` event and keep socket open.
-- Unknown event type: send `error` event and keep socket open.
-- Unauthorized transfer action: send `error` event.
-- Peer offline: send `error` event.
-- Upload failure: mark transfer failed and notify both sender and receiver.
-- WebSocket close: remove peer session and broadcast `peer.left` if appropriate.
-
-Server error event shape:
-
-```json
-{
-  "type": "error",
-  "code": "invalid_event",
-  "message": "The event payload is invalid."
-}
-```
-
-Do not expose stack traces to clients.
+Prefer explicit typed results. Invalid JSON / unknown events / unauthorized actions / peer-offline all yield an `error` event and keep the socket open (except fatal cases). Upload failure marks the transfer failed and notifies both sides. Socket close removes the peer session and broadcasts `peer.left`.
 
 ## Testing Guidance
 
-Prioritize tests for pure modules:
-
-- `validation.gleam`
-  - filename sanitization
-  - message length validation
-  - display name validation
-- `protocol.gleam`
-  - decode valid events
-  - reject missing `type`
-  - reject unknown event type
-  - reject malformed nested file metadata
-- `transfer.gleam`
-  - valid state transitions
-  - invalid state transitions
-  - authorization rules for accept/reject/cancel
-- `file_store.gleam`
-  - generated spool paths never include user filenames
-  - sanitized filenames are safe for `Content-Disposition`
-
-For integration tests, add them only after the pure tests are stable.
-
-## Implementation Plan for Codex
-
-Follow this order. Do not skip ahead to advanced features.
-
-### Step 1: Scaffold and boot
-
-- Create the Gleam project if missing.
-- Add dependencies.
-- Create `priv/static/index.html`, `app.js`, and `style.css`.
-- Start a Mist server on a configurable port, default `8080`.
-- Serve the static page.
-- Add a README with run instructions.
-
-Acceptance:
-
-- `gleam run` starts the server.
-- Browser can open `http://localhost:8080`.
-- `gleam format && gleam check && gleam test` pass.
-
-### Step 2: WebSocket echo
-
-- Add `GET /ws` WebSocket route.
-- Accept text frames.
-- Parse JSON minimally.
-- Echo a simple acknowledgement for `peer.hello`.
-
-Acceptance:
-
-- Browser connects to `/ws`.
-- Browser sends `peer.hello`.
-- Server responds with `peer.list`.
-
-### Step 3: RoomActor and presence
-
-- Add `RoomActor`.
-- Track peers by `device_id`.
-- Broadcast join and leave events.
-- Replace old session if the same device reconnects.
-
-Acceptance:
-
-- Two browser tabs can see each other.
-- Closing one tab updates the other.
-
-### Step 4: Text messages
-
-- Implement `text.send`.
-- Route as `text.message` to the target peer.
-- Add basic validation.
-
-Acceptance:
-
-- Peer A can send text to Peer B.
-- Invalid message payload returns an `error` event.
-
-### Step 5: File offers
-
-- Implement file metadata validation.
-- Implement `file.offer`, `file.accept`, and `file.reject`.
-- Add transfer state model.
-
-Acceptance:
-
-- Peer A can offer a file to Peer B.
-- Peer B sees incoming file offer.
-- Peer B can accept or reject.
-- Peer A is notified.
-
-### Step 6: HTTP upload and download
-
-- Implement `POST /api/transfers/:id/upload`.
-- Implement `GET /api/transfers/:id/download`.
-- Store uploaded bytes in spool.
-- Use `.part` then `.blob`.
-- Return `transfer.ready` to receiver.
-
-Acceptance:
-
-- A selected file can be uploaded after receiver accepts.
-- Receiver can download it.
-- The downloaded file byte length matches the uploaded file byte length.
-
-### Step 7: Cleanup and hardening
-
-- Add cleanup for failed `.part` files.
-- Add transfer expiration.
-- Add max file size config.
-- Add upload/download tokens if not already present.
-- Improve error reporting.
-
-Acceptance:
-
-- Expired or failed transfers do not leave stale files forever.
-- Unauthorized upload/download attempts fail.
+Prioritize pure-module tests: `validation` (filename sanitization, length limits), `protocol`/`shared/protocol` (decode valid events, reject missing `type`, reject unknown/malformed events, size-limit errors), `message_store` (history round-trips), `room` (accept/decline/cancel authorization, one-active-transfer, history replay). Client: `domain` relay helpers, browser `file_transfer` capability/selection, Playwright e2e for the end-to-end relay transfer. Add integration tests only after pure tests are stable.
 
 ## Definition of Done
 
-A task is done only when:
+A task is done only when: code is formatted; `gleam check` + `gleam test` pass for the affected package(s) (or the lack of tests is explicitly justified for that change); `check:ts` + `test:ts` + `build` pass for client changes; new behavior is documented; new public functions have clear names and small responsibilities; security-sensitive logic has tests; the final response summarizes what changed, how it was verified, and known limitations.
 
-- Code is formatted.
-- `gleam check` passes.
-- `gleam test` passes, or the lack of tests is explicitly justified for that exact change.
-- New behavior is documented in README or comments where appropriate.
-- New public functions have clear names and small responsibilities.
-- Security-sensitive logic has tests.
-- The final response summarizes what changed, how it was verified, and any known limitations.
+## Known Limitations
 
-## Known MVP Tradeoffs
-
-It is acceptable for the first version to have these limitations:
-
-- Only one shared room.
-- No persistence across server restarts.
-- Only online users can receive messages or file offers.
-- Upload progress may be approximate or omitted initially.
-- Download completion may be inferred after response creation rather than strictly after the browser finishes saving.
-- No LAN auto-discovery; users manually open the server URL or scan a QR code if implemented.
-
-Make these limitations explicit in README.
+- One shared room; online-only delivery (only final metadata + messages persist, not active transfer state or file bytes).
+- One active transfer at a time.
+- Download completion is inferred after the response is created, not strictly after the browser finishes saving.
+- No LAN auto-discovery (open the URL manually).
 
 ## Future Roadmap
 
-After MVP works, consider:
+QR join code; upload/download progress events; SHA-256 verification; transfer expiration UI; mDNS/UDP LAN discovery; room passcode; multiple rooms; resumable upload/download; end-to-end encryption; desktop packaging.
 
-1. SQLite persistence for messages and transfer history.
-2. QR code display for joining from phones.
-3. Upload/download progress events.
-4. SHA-256 hash verification.
-5. Transfer expiration UI.
-6. mDNS or UDP broadcast LAN discovery.
-7. Room passcode.
-8. Multiple rooms.
-9. Resumable upload/download.
-10. End-to-end encryption.
-11. Desktop packaging.
-12. Optional P2P direct transfer.
+## Agent Behavior Instructions
 
-## Codex Behavior Instructions
+- Read this file and inspect current code before proposing edits; prefer small, verifiable changes.
+- If a dependency API is uncertain, inspect installed package docs/examples before coding; do not invent Gleam APIs — write a small adapter or a clear TODO instead.
+- After editing, run the relevant Gleam/TS commands.
+- Final response must include: files changed, behavior implemented, commands run, tests added/updated, known limitations.
 
-When working on this repository:
+## Agent Skills
 
-- Read this file before making changes.
-- Inspect the current code before proposing edits.
-- Prefer small, verifiable changes.
-- If a dependency API is uncertain, inspect installed package docs or examples before coding.
-- Do not invent Gleam APIs. Verify names and signatures from project dependencies.
-- If a feature requires an unavailable library function, implement a small adapter or mark a clear TODO rather than writing fake code.
-- After editing, run the relevant Gleam commands.
-- In the final response, include:
-  - files changed,
-  - behavior implemented,
-  - commands run,
-  - tests added or updated,
-  - known limitations.
-
-
-## Agent skills
-
-### Issue tracker
-
-Issues and PRDs live in GitHub Issues for this repo, accessed with the `gh` CLI. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Triage roles use the canonical labels: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, and `wontfix`. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-This repo uses a single-context domain-doc layout. See `docs/agents/domain.md`.
-
-## Design
-
-See `docs/agents/DESIGN.md`
+- **Issue tracker:** GitHub Issues via `gh` CLI — see `docs/agents/issue-tracker.md`.
+- **Triage labels:** `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix` — see `docs/agents/triage-labels.md`.
+- **Domain docs:** single-context layout — see `docs/agents/domain.md`.
+- **Design:** `docs/agents/DESIGN.md`.
+- **Effect TypeScript client:** use `.agents/skills/effect-ts-client` for client TypeScript involving Effect, async/fallible browser logic, external-boundary data, validation/decoding, or unsafe-type cleanup.
