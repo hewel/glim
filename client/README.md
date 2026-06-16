@@ -79,3 +79,7 @@ Not included in this slice:
 - resumable upload/download
 - concurrent active transfers
 - LAN auto-discovery
+
+## License
+
+The Glim client is licensed under `AGPL-3.0-only`. See the repository root `LICENSE`.

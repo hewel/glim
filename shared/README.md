@@ -72,3 +72,7 @@ Not included in this slice:
 
 - file bytes travel over HTTP relay endpoints, not through these codecs
 - persistence schema (lives in the root server `priv/schema.sql`)
+
+## License
+
+The shared protocol package is licensed under `AGPL-3.0-only`. See the repository root `LICENSE`.

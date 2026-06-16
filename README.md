@@ -151,3 +151,7 @@ cd .. && gleam test
 - `transfer.done` means the server started/prepared the download response, not
   confirmed browser disk save.
 - No LAN auto-discovery.
+
+## License
+
+Glim is licensed under the GNU Affero General Public License v3.0 only (`AGPL-3.0-only`). See `LICENSE`.

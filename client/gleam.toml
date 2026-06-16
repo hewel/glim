@@ -1,6 +1,7 @@
 name = "client"
 version = "1.0.0"
 target = "javascript"
+licences = ["AGPL-3.0-only"]
 
 [javascript]
 source_maps = true
@@ -10,7 +11,6 @@ typescript_declarations = true
 # your project to the Hex package manager.
 #
 # description = ""
-# licences = ["Apache-2.0"]
 # repository = { type = "github", user = "", repo = "" }
 # links = [{ title = "Website", href = "" }]
 #
