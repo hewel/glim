@@ -1,5 +1,4 @@
 import type {
-  FileChunkAck,
   FileOffer,
   FileSelection,
   LocalFile,
@@ -8,11 +7,9 @@ import type {
   ReceiveCapability,
   TextMessage,
   TransferItem,
+  TransferProgressEvent,
   TransferStatus,
 } from "./types";
-
-// Keep relay frames comfortably under typical WebSocket frame limits.
-export const chunkSize = 240 * 1024;
 
 export function upsertPeer(peers: Peer[], peer: Peer): Peer[] {
   return peers.some((existing) => existing.id === peer.id)
@@ -116,13 +113,14 @@ export function addOutgoingTransfer(
   selection: FileSelection,
 ): TransferItem[] {
   const item: TransferItem = {
-    transfer_id: selection.transfer_id,
+    transfer_id: selection.client_offer_id,
     peer_id: peerId,
     peer_name: peerName,
     name: selection.name,
     mime_type: selection.mime_type,
     size: selection.size,
     transferred: 0,
+    download_url: null,
     direction: "sending",
     mode: "relay",
     status: "offered",
@@ -145,14 +143,34 @@ export function addIncomingTransfer(
     mime_type: offer.mime_type,
     size: offer.size,
     transferred: 0,
+    download_url: null,
     direction: "receiving",
     mode: "relay",
     status: capability === "relay" ? "offered" : "unsupported",
     notice: capability === "relay"
       ? "Waiting for your response"
-      : "Stream-to-save is not supported in this browser",
+      : "HTTP relay download is not supported in this browser",
   };
   return [...transfers.filter((transfer) => transfer.transfer_id !== item.transfer_id), item];
+}
+
+export function bindOutgoingTransfer(
+  transfers: TransferItem[],
+  clientOfferId: string,
+  offer: FileOffer,
+): TransferItem[] {
+  return transfers.map((transfer) =>
+    transfer.transfer_id === clientOfferId
+      ? {
+          ...transfer,
+          transfer_id: offer.transfer_id,
+          name: offer.name,
+          mime_type: offer.mime_type,
+          size: offer.size,
+          notice: "Waiting for acceptance",
+        }
+      : transfer,
+  );
 }
 
 export function markTransferStatus(
@@ -182,16 +200,33 @@ export function markTransferModeAndStatus(
 
 export function markTransferProgress(
   transfers: TransferItem[],
-  ack: FileChunkAck,
+  progress: TransferProgressEvent,
 ): TransferItem[] {
-  const transferred = ack.offset + ack.byte_length;
   return transfers.map((transfer) =>
-    transfer.transfer_id === ack.transfer_id
+    transfer.transfer_id === progress.transfer_id
       ? {
           ...transfer,
-          transferred,
-          status: ack.final ? "completed" : "transferring",
-          notice: ack.final ? "Complete" : "Transferring",
+          transferred: progress.bytes,
+          status: "transferring",
+          notice: "Uploading",
+        }
+      : transfer,
+  );
+}
+
+export function markTransferReady(
+  transfers: TransferItem[],
+  transferId: string,
+  downloadUrl: string | null,
+): TransferItem[] {
+  return transfers.map((transfer) =>
+    transfer.transfer_id === transferId
+      ? {
+          ...transfer,
+          transferred: transfer.size,
+          download_url: downloadUrl,
+          status: "ready",
+          notice: downloadUrl ? "Ready to download" : "Ready for receiver",
         }
       : transfer,
   );
@@ -222,18 +257,7 @@ export function activeTransferCount(transfers: TransferItem[]): number {
 
 export function localFile(selection: FileSelection): LocalFile {
   return {
-    file_id: selection.file_id,
-    size: selection.size,
-    next_sequence: 0,
-    next_offset: 0,
-  };
-}
-
-export function updateLocalFileAfterAck(file: LocalFile, ack: FileChunkAck): LocalFile {
-  return {
-    ...file,
-    next_sequence: ack.sequence + 1,
-    next_offset: ack.offset + ack.byte_length,
+    client_offer_id: selection.client_offer_id,
   };
 }
 
@@ -242,5 +266,5 @@ export function isPeerOnline(peers: Peer[], peerId: string): boolean {
 }
 
 function isActiveTransferStatus(status: TransferStatus): boolean {
-  return ["offered", "awaiting_save", "transferring"].includes(status);
+  return ["offered", "transferring", "ready"].includes(status);
 }

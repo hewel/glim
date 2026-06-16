@@ -2,7 +2,7 @@
 
 Experimental local-network instant messaging and file sharing service in Gleam.
 
-The current slice is a React client backed by Gleam protocol helpers, a Mist WebSocket presence server, and LAN text chat. Browser development is served by Vite.
+The current slice is a React client backed by Gleam protocol helpers, a Mist WebSocket presence server, LAN text chat, and HTTP relay file transfers. Browser development is served by Vite.
 
 ## Development Run
 
@@ -39,7 +39,7 @@ cd client && bun run build
 
 `ws://localhost:9143/ws`
 
-This slice supports presence, text chat, message history, and online-only binary file transfer events. The UI sends a JSON hello message:
+This slice supports presence, text chat, message history, and online-only file transfer control events. The UI sends a JSON hello message:
 
 ```json
 {"type":"peer.hello","device_id":"device_abc","display_name":"Zed","device_kind":"desktop"}
@@ -81,12 +81,34 @@ device was either sender or receiver:
 History replay is restored state, not new activity. The UI does not mark
 replayed messages unread.
 
-File transfers are online-only relays. Control events use JSON text frames:
-`file.offer`, `file.accept`, `file.decline`, `file.cancel`, and
-`file.chunk_ack`. File bytes use binary WebSocket frames with a 4-byte
-big-endian JSON header length, a UTF-8 JSON `file.chunk` header, then raw bytes.
-The sender sends one 256 KiB chunk at a time and waits for receiver ACK after
-the browser writes the chunk to the selected save stream.
+File transfers are online-only HTTP relays. Consent and lifecycle events use
+WebSocket JSON text frames. File bytes use tokenized HTTP endpoints.
+
+The sender offers a file with a client-local correlation id:
+
+```json
+{"type":"file.offer","to":"device_xyz","client_offer_id":"offer_abc","name":"clip.mov","size":1234,"mime_type":"video/quicktime"}
+```
+
+The server generates the canonical `transfer_id`, sends `file.offered`, and on
+receiver acceptance sends the sender:
+
+```json
+{"type":"transfer.accepted","transfer_id":"transfer_abc","upload_url":"/api/transfers/transfer_abc/upload?token=..."}
+```
+
+The sender streams the raw file body to `upload_url`. The server writes
+`priv/spool/<transfer_id>.part`, emits `transfer.progress` to both peers,
+renames the upload to `.blob` after the byte count matches the offer, then
+sends the receiver:
+
+```json
+{"type":"transfer.ready","transfer_id":"transfer_abc","download_url":"/api/transfers/transfer_abc/download?token=..."}
+```
+
+The receiver downloads through the tokenized `download_url`. The server emits
+`transfer.done` when the authorized download response is prepared; this does
+not prove the browser saved the file to disk.
 
 ## SQL Code Generation
 
@@ -108,7 +130,9 @@ cd .. && gleam test
 
 ## Known Limitations (Current Slice)
 
-- File transfers require browser stream-to-save support on the receiver.
 - File transfers are not persisted and require both peers to stay online.
-- No upload or download endpoints.
+- Only one active file transfer is allowed at a time.
+- Uploads and downloads are not resumable.
+- `transfer.done` means the server started/prepared the download response, not
+  confirmed browser disk save.
 - No LAN auto-discovery.

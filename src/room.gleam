@@ -1,3 +1,4 @@
+import file_store
 import gleam/dict
 import gleam/erlang/process
 import gleam/list
@@ -5,10 +6,13 @@ import gleam/option
 import gleam/otp/actor
 import gleam/result
 import gleam/string
+import ids
 import message_store
 import shared/protocol as shared_protocol
 
 const message_store_timeout_ms = 1000
+
+const spool_dir = "priv/spool"
 
 pub type ClientMessage {
   SendPeerList(peers: List(shared_protocol.Peer))
@@ -18,12 +22,18 @@ pub type ClientMessage {
   SendTextMessage(message: shared_protocol.TextMessage)
   SendMessageHistory(messages: List(shared_protocol.TextMessage))
   SendFileOffered(offer: shared_protocol.FileOffer)
-  SendFileAccepted(transfer_id: String)
   SendFileDeclined(transfer_id: String)
   SendFileCancelled(transfer_id: String, reason: String)
-  SendFileChunk(frame: BitArray)
-  SendFileChunkAck(ack: shared_protocol.FileChunkAck)
-  SendFileCompleted(transfer_id: String)
+  SendTransferAccepted(transfer_id: String, upload_url: String)
+  SendTransferProgress(
+    transfer_id: String,
+    phase: String,
+    bytes: Int,
+    total: Int,
+  )
+  SendTransferReady(transfer_id: String, download_url: option.Option(String))
+  SendTransferDone(transfer_id: String)
+  SendTransferFailed(transfer_id: String, reason: String)
   SendError(code: String, message: String)
   SessionReplaced
 }
@@ -50,7 +60,7 @@ pub type Message {
   OfferFile(
     from: String,
     to: String,
-    transfer_id: String,
+    client_offer_id: String,
     name: String,
     size: Int,
     mime_type: String,
@@ -71,17 +81,61 @@ pub type Message {
     transfer_id: String,
     client: process.Subject(ClientMessage),
   )
-  ForwardFileChunk(
-    from: String,
-    ack: shared_protocol.FileChunkAck,
-    frame: BitArray,
-    client: process.Subject(ClientMessage),
+  BeginUpload(
+    reply: process.Subject(Result(UploadLease, HttpTransferError)),
+    transfer_id: String,
+    token: String,
   )
-  AcknowledgeFileChunk(
-    from: String,
-    ack: shared_protocol.FileChunkAck,
-    client: process.Subject(ClientMessage),
+  UploadProgress(
+    reply: process.Subject(Result(Nil, HttpTransferError)),
+    transfer_id: String,
+    token: String,
+    bytes: Int,
   )
+  CompleteUpload(
+    reply: process.Subject(Result(Nil, HttpTransferError)),
+    transfer_id: String,
+    token: String,
+    bytes: Int,
+  )
+  FailUpload(transfer_id: String, token: String, reason: String)
+  BeginDownload(
+    reply: process.Subject(Result(DownloadLease, HttpTransferError)),
+    transfer_id: String,
+    token: String,
+  )
+  CompleteDownload(transfer_id: String)
+}
+
+pub type UploadLease {
+  UploadLease(transfer_id: String, size: Int)
+}
+
+pub type DownloadLease {
+  DownloadLease(transfer_id: String, name: String, size: Int)
+}
+
+pub type HttpTransferError {
+  HttpTransferNotFound
+  HttpTransferInvalidToken
+  HttpTransferInvalidState
+  HttpTransferSizeMismatch
+  HttpTransferCancelled
+}
+
+type TransferTokens {
+  TransferTokens(upload: String, download: String)
+}
+
+type TransferStatus {
+  Pending
+  Accepted(tokens: TransferTokens)
+  Uploading(tokens: TransferTokens, uploaded_bytes: Int)
+  Ready(tokens: TransferTokens)
+}
+
+type Transfer {
+  Transfer(offer: shared_protocol.FileOffer, status: TransferStatus)
 }
 
 type PeerSession {
@@ -113,15 +167,6 @@ type SendTextRejection {
     code: String,
     message: String,
   )
-}
-
-type TransferStatus {
-  Pending
-  Active
-}
-
-type Transfer {
-  Transfer(offer: shared_protocol.FileOffer, status: TransferStatus)
 }
 
 type State {
@@ -177,18 +222,34 @@ fn handle_message(
     Leave(device_id:, client:) -> leave(state, device_id, client)
     SendText(from:, to:, body:, client:) ->
       send_text(state, from, to, body, client)
-    OfferFile(from:, to:, transfer_id:, name:, size:, mime_type:, client:) ->
-      offer_file(state, from, to, transfer_id, name, size, mime_type, client)
+    OfferFile(from:, to:, client_offer_id:, name:, size:, mime_type:, client:) ->
+      offer_file(
+        state,
+        from,
+        to,
+        client_offer_id,
+        name,
+        size,
+        mime_type,
+        client,
+      )
     AcceptFile(from:, transfer_id:, client:) ->
       accept_file(state, from, transfer_id, client)
     DeclineFile(from:, transfer_id:, client:) ->
       decline_file(state, from, transfer_id, client)
     CancelFile(from:, transfer_id:, client:) ->
       cancel_file(state, from, transfer_id, client)
-    ForwardFileChunk(from:, ack:, frame:, client:) ->
-      forward_file_chunk(state, from, ack, frame, client)
-    AcknowledgeFileChunk(from:, ack:, client:) ->
-      acknowledge_file_chunk(state, from, ack, client)
+    BeginUpload(reply:, transfer_id:, token:) ->
+      begin_upload(state, reply, transfer_id, token)
+    UploadProgress(reply:, transfer_id:, token:, bytes:) ->
+      upload_progress(state, reply, transfer_id, token, bytes)
+    CompleteUpload(reply:, transfer_id:, token:, bytes:) ->
+      complete_upload(state, reply, transfer_id, token, bytes)
+    FailUpload(transfer_id:, token:, reason:) ->
+      fail_upload(state, transfer_id, token, reason)
+    BeginDownload(reply:, transfer_id:, token:) ->
+      begin_download(state, reply, transfer_id, token)
+    CompleteDownload(transfer_id:) -> complete_download(state, transfer_id)
   }
 }
 
@@ -466,17 +527,19 @@ fn offer_file(
   state: State,
   from: String,
   to: String,
-  transfer_id: String,
+  client_offer_id: String,
   name: String,
   size: Int,
   mime_type: String,
   client: process.Subject(ClientMessage),
 ) -> actor.Next(State, Message) {
+  let transfer_id = ids.transfer_id()
   case offer_file_route(state, from, to, transfer_id, client) {
-    Ok(OfferFileRoute(receiver:, sender: _)) -> {
+    Ok(OfferFileRoute(receiver:, sender:)) -> {
       let offer =
         shared_protocol.FileOffer(
           transfer_id: transfer_id,
+          client_offer_id: option.Some(client_offer_id),
           from: from,
           to: to,
           name: name,
@@ -491,6 +554,7 @@ fn offer_file(
         )
 
       process.send(receiver.client, SendFileOffered(offer))
+      process.send(sender.client, SendFileOffered(offer))
       actor.continue(State(..state, transfers: transfers))
     }
     Error(rejection) -> reject_send_text(state, rejection)
@@ -505,15 +569,29 @@ fn accept_file(
 ) -> actor.Next(State, Message) {
   case accept_file_route(state, from, transfer_id, client) {
     Ok(AcceptFileRoute(transfer:, sender:, receiver:)) -> {
+      let tokens =
+        TransferTokens(
+          upload: ids.transfer_token(),
+          download: ids.transfer_token(),
+        )
       let transfers =
         dict.insert(
           into: state.transfers,
           for: transfer_id,
-          insert: Transfer(..transfer, status: Active),
+          insert: Transfer(..transfer, status: Accepted(tokens: tokens)),
         )
+      let upload_url = upload_url(transfer_id, tokens.upload)
 
-      process.send(sender.client, SendFileAccepted(transfer_id))
-      process.send(receiver.client, SendFileAccepted(transfer_id))
+      process.send(sender.client, SendTransferAccepted(transfer_id, upload_url))
+      process.send(
+        receiver.client,
+        SendTransferProgress(
+          transfer_id: transfer_id,
+          phase: "uploading",
+          bytes: 0,
+          total: transfer.offer.size,
+        ),
+      )
       actor.continue(
         State(
           ..state,
@@ -597,6 +675,7 @@ fn cancel_file(
   case transfer_for_participant(state, from, transfer_id, client) {
     Ok(file_transfer) -> {
       let state = remove_transfer(state, transfer_id)
+      file_store.remove_transfer_files(spool_dir, transfer_id)
       notify_transfer_participants(
         state,
         file_transfer.offer,
@@ -608,52 +687,185 @@ fn cancel_file(
   }
 }
 
-fn forward_file_chunk(
+fn begin_upload(
   state: State,
-  from: String,
-  ack: shared_protocol.FileChunkAck,
-  frame: BitArray,
-  client: process.Subject(ClientMessage),
+  reply: process.Subject(Result(UploadLease, HttpTransferError)),
+  transfer_id: String,
+  token: String,
 ) -> actor.Next(State, Message) {
-  case active_transfer_for_sender(state, from, ack.transfer_id, client) {
-    Ok(file_transfer) -> {
-      case dict.get(state.peers, file_transfer.offer.to) {
-        Ok(receiver) -> process.send(receiver.client, SendFileChunk(frame))
-        Error(_) -> Nil
-      }
+  case upload_tokens(state, transfer_id, token) {
+    Ok(#(transfer, tokens)) -> {
+      process.send(
+        reply,
+        Ok(UploadLease(transfer_id: transfer_id, size: transfer.offer.size)),
+      )
+      let transfers =
+        dict.insert(
+          into: state.transfers,
+          for: transfer_id,
+          insert: Transfer(
+            ..transfer,
+            status: Uploading(tokens: tokens, uploaded_bytes: 0),
+          ),
+        )
+      actor.continue(State(..state, transfers: transfers))
+    }
+    Error(error) -> {
+      process.send(reply, Error(error))
       actor.continue(state)
     }
-    Error(rejection) -> reject_send_text(state, rejection)
   }
 }
 
-fn acknowledge_file_chunk(
+fn upload_progress(
   state: State,
-  from: String,
-  ack: shared_protocol.FileChunkAck,
-  client: process.Subject(ClientMessage),
+  reply: process.Subject(Result(Nil, HttpTransferError)),
+  transfer_id: String,
+  token: String,
+  bytes: Int,
 ) -> actor.Next(State, Message) {
-  case active_transfer_for_receiver(state, from, ack.transfer_id, client) {
-    Ok(file_transfer) -> {
-      case dict.get(state.peers, file_transfer.offer.from) {
-        Ok(sender) -> process.send(sender.client, SendFileChunkAck(ack))
-        Error(_) -> Nil
-      }
+  case upload_tokens(state, transfer_id, token) {
+    Ok(#(transfer, tokens)) -> {
+      let transfers =
+        dict.insert(
+          into: state.transfers,
+          for: transfer_id,
+          insert: Transfer(
+            ..transfer,
+            status: Uploading(tokens: tokens, uploaded_bytes: bytes),
+          ),
+        )
+      notify_transfer_participants(
+        state,
+        transfer.offer,
+        SendTransferProgress(
+          transfer_id: transfer_id,
+          phase: "uploading",
+          bytes: bytes,
+          total: transfer.offer.size,
+        ),
+      )
+      process.send(reply, Ok(Nil))
+      actor.continue(State(..state, transfers: transfers))
+    }
+    Error(error) -> {
+      process.send(reply, Error(error))
+      actor.continue(state)
+    }
+  }
+}
 
-      case ack.final {
-        True -> {
-          let state = remove_transfer(state, ack.transfer_id)
+fn complete_upload(
+  state: State,
+  reply: process.Subject(Result(Nil, HttpTransferError)),
+  transfer_id: String,
+  token: String,
+  bytes: Int,
+) -> actor.Next(State, Message) {
+  case upload_tokens(state, transfer_id, token) {
+    Ok(#(transfer, tokens)) -> {
+      case bytes == transfer.offer.size {
+        False -> {
           notify_transfer_participants(
             state,
-            file_transfer.offer,
-            SendFileCompleted(ack.transfer_id),
+            transfer.offer,
+            SendTransferFailed(transfer_id, "upload_size_mismatch"),
           )
+          let state = remove_transfer(state, transfer_id)
+          process.send(reply, Error(HttpTransferSizeMismatch))
           actor.continue(state)
         }
-        False -> actor.continue(state)
+        True -> {
+          let transfers =
+            dict.insert(
+              into: state.transfers,
+              for: transfer_id,
+              insert: Transfer(..transfer, status: Ready(tokens: tokens)),
+            )
+          notify_transfer_participants(
+            state,
+            transfer.offer,
+            SendTransferProgress(
+              transfer_id: transfer_id,
+              phase: "uploading",
+              bytes: bytes,
+              total: transfer.offer.size,
+            ),
+          )
+          notify_ready(state, transfer.offer, transfer_id, tokens.download)
+          process.send(reply, Ok(Nil))
+          actor.continue(State(..state, transfers: transfers))
+        }
       }
     }
-    Error(rejection) -> reject_send_text(state, rejection)
+    Error(error) -> {
+      process.send(reply, Error(error))
+      actor.continue(state)
+    }
+  }
+}
+
+fn begin_download(
+  state: State,
+  reply: process.Subject(Result(DownloadLease, HttpTransferError)),
+  transfer_id: String,
+  token: String,
+) -> actor.Next(State, Message) {
+  case ready_transfer(state, transfer_id, token) {
+    Ok(transfer) -> {
+      process.send(
+        reply,
+        Ok(DownloadLease(
+          transfer_id: transfer_id,
+          name: transfer.offer.name,
+          size: transfer.offer.size,
+        )),
+      )
+      actor.continue(state)
+    }
+    Error(error) -> {
+      process.send(reply, Error(error))
+      actor.continue(state)
+    }
+  }
+}
+
+fn fail_upload(
+  state: State,
+  transfer_id: String,
+  token: String,
+  reason: String,
+) -> actor.Next(State, Message) {
+  case upload_tokens(state, transfer_id, token) {
+    Ok(#(transfer, _tokens)) -> {
+      let state = remove_transfer(state, transfer_id)
+      notify_transfer_participants(
+        state,
+        transfer.offer,
+        SendTransferFailed(transfer_id, reason),
+      )
+      actor.continue(state)
+    }
+    Error(_) -> actor.continue(state)
+  }
+}
+
+fn complete_download(
+  state: State,
+  transfer_id: String,
+) -> actor.Next(State, Message) {
+  case dict.get(state.transfers, transfer_id) {
+    Ok(transfer) -> {
+      let state = remove_transfer(state, transfer_id)
+      notify_transfer_participants(
+        state,
+        transfer.offer,
+        SendTransferDone(transfer_id),
+      )
+      file_store.remove_transfer_files(spool_dir, transfer_id)
+      actor.continue(state)
+    }
+    Error(_) -> actor.continue(state)
   }
 }
 
@@ -731,76 +943,6 @@ fn transfer_for_participant(
   }
 }
 
-fn active_transfer_for_sender(
-  state: State,
-  from: String,
-  transfer_id: String,
-  client: process.Subject(ClientMessage),
-) -> Result(Transfer, SendTextRejection) {
-  use file_transfer <- result.try(active_transfer(state, transfer_id, client))
-  use sender <- result.try(find_sender(state.peers, from, client))
-
-  case file_transfer.offer.from == from && sender.client == client {
-    True -> Ok(file_transfer)
-    False ->
-      Error(SendTextRejection(
-        client: client,
-        code: "invalid_transfer_sender",
-        message: "Only the file sender can stream chunks.",
-      ))
-  }
-}
-
-fn active_transfer_for_receiver(
-  state: State,
-  from: String,
-  transfer_id: String,
-  client: process.Subject(ClientMessage),
-) -> Result(Transfer, SendTextRejection) {
-  use file_transfer <- result.try(active_transfer(state, transfer_id, client))
-  use receiver <- result.try(find_sender(state.peers, from, client))
-
-  case file_transfer.offer.to == from && receiver.client == client {
-    True -> Ok(file_transfer)
-    False ->
-      Error(SendTextRejection(
-        client: client,
-        code: "invalid_transfer_receiver",
-        message: "Only the file receiver can acknowledge chunks.",
-      ))
-  }
-}
-
-fn active_transfer(
-  state: State,
-  transfer_id: String,
-  client: process.Subject(ClientMessage),
-) -> Result(Transfer, SendTextRejection) {
-  use transfer <- result.try(find_transfer(state, transfer_id, client))
-
-  case transfer.status, state.active_transfer {
-    Active, option.Some(active_id) if active_id == transfer_id -> Ok(transfer)
-    Pending, _ ->
-      Error(SendTextRejection(
-        client: client,
-        code: "transfer_not_active",
-        message: "That file transfer has not been accepted.",
-      ))
-    Active, option.None ->
-      Error(SendTextRejection(
-        client: client,
-        code: "transfer_not_active",
-        message: "That file transfer is not active.",
-      ))
-    Active, option.Some(_) ->
-      Error(SendTextRejection(
-        client: client,
-        code: "transfer_not_active",
-        message: "That file transfer is not active.",
-      ))
-  }
-}
-
 fn find_transfer(
   state: State,
   transfer_id: String,
@@ -815,6 +957,89 @@ fn find_transfer(
         message: "That file transfer is no longer available.",
       ))
   }
+}
+
+fn upload_tokens(
+  state: State,
+  transfer_id: String,
+  token: String,
+) -> Result(#(Transfer, TransferTokens), HttpTransferError) {
+  use transfer <- result.try(http_transfer(state, transfer_id))
+
+  case transfer.status {
+    Accepted(tokens) | Uploading(tokens:, uploaded_bytes: _) ->
+      case tokens.upload == token {
+        True -> Ok(#(transfer, tokens))
+        False -> Error(HttpTransferInvalidToken)
+      }
+    Pending -> Error(HttpTransferInvalidState)
+    Ready(_) -> Error(HttpTransferInvalidState)
+  }
+}
+
+fn ready_transfer(
+  state: State,
+  transfer_id: String,
+  token: String,
+) -> Result(Transfer, HttpTransferError) {
+  use transfer <- result.try(http_transfer(state, transfer_id))
+
+  case transfer.status {
+    Ready(tokens) ->
+      case tokens.download == token {
+        True -> Ok(transfer)
+        False -> Error(HttpTransferInvalidToken)
+      }
+    Pending -> Error(HttpTransferInvalidState)
+    Accepted(_) -> Error(HttpTransferInvalidState)
+    Uploading(_, _) -> Error(HttpTransferInvalidState)
+  }
+}
+
+fn http_transfer(
+  state: State,
+  transfer_id: String,
+) -> Result(Transfer, HttpTransferError) {
+  case dict.get(state.transfers, transfer_id) {
+    Ok(transfer) -> Ok(transfer)
+    Error(_) -> Error(HttpTransferNotFound)
+  }
+}
+
+fn notify_ready(
+  state: State,
+  offer: shared_protocol.FileOffer,
+  transfer_id: String,
+  download_token: String,
+) -> Nil {
+  case dict.get(state.peers, offer.from) {
+    Ok(sender) ->
+      process.send(
+        sender.client,
+        SendTransferReady(transfer_id: transfer_id, download_url: option.None),
+      )
+    Error(_) -> Nil
+  }
+
+  case dict.get(state.peers, offer.to) {
+    Ok(receiver) ->
+      process.send(
+        receiver.client,
+        SendTransferReady(
+          transfer_id: transfer_id,
+          download_url: option.Some(download_url(transfer_id, download_token)),
+        ),
+      )
+    Error(_) -> Nil
+  }
+}
+
+fn upload_url(transfer_id: String, token: String) -> String {
+  "/api/transfers/" <> transfer_id <> "/upload?token=" <> token
+}
+
+fn download_url(transfer_id: String, token: String) -> String {
+  "/api/transfers/" <> transfer_id <> "/download?token=" <> token
 }
 
 fn remove_transfer(state: State, transfer_id: String) -> State {
@@ -838,6 +1063,7 @@ fn cancel_transfers_for_device(state: State, device_id: String) -> State {
   })
   |> list.fold(state, fn(state, file_transfer) {
     let state = remove_transfer(state, file_transfer.offer.transfer_id)
+    file_store.remove_transfer_files(spool_dir, file_transfer.offer.transfer_id)
     notify_transfer_participants(
       state,
       file_transfer.offer,

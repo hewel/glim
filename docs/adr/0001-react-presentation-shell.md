@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The browser client started as a Lustre application. File transfer support now needs more direct browser API work, including workers, file picker handles, stream-to-save writes, and Vite development ergonomics. Keeping the whole UI in Lustre makes the browser layer heavier than the project needs.
+The browser client started as a Lustre application. File transfer support needs direct browser API work, including file picker handles, HTTP upload/download behavior, and Vite development ergonomics. Keeping the whole UI in Lustre makes the browser layer heavier than the project needs.
 
 The server and protocol logic are still intentionally Gleam-first. Gleam remains the source of truth for protocol codecs, reconnect timing, and other pure client decisions that should stay shared and testable.
 
@@ -18,7 +18,7 @@ The client architecture is:
 
 - React components render the three-pane Glim interface.
 - Zustand owns browser UI state and event handlers.
-- TypeScript browser adapters wrap WebSocket, identity, worker, file picker, and stream-to-save APIs.
+- TypeScript browser adapters wrap WebSocket, identity, file picker, HTTP upload, and download APIs.
 - Gleam modules expose protocol encoders/decoders and pure domain helpers through Vite's Gleam build path.
 
 Do not reintroduce Lustre for the browser UI unless the project intentionally reverses this ADR.

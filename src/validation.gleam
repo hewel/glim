@@ -8,6 +8,8 @@ pub const max_transfer_id_length = 128
 
 pub const max_file_name_length = 255
 
+pub const max_file_size = 268_435_456
+
 pub const max_mime_type_length = 128
 
 pub const max_device_model_length = 80
@@ -23,6 +25,7 @@ pub type ValidationError {
   EmptyFileName
   FileNameTooLong(max: Int)
   NegativeFileSize
+  FileSizeTooLarge(max: Int)
   MimeTypeTooLong(max: Int)
   InvalidDeviceKind
   InvalidDeviceOs
@@ -84,22 +87,31 @@ pub fn validate_transfer_id(
 }
 
 pub fn validate_file_name(name: String) -> Result(String, ValidationError) {
-  let trimmed = string.trim(name)
-  case trimmed {
+  let sanitized =
+    name
+    |> string.replace("\\", "_")
+    |> string.replace("/", "_")
+    |> string.replace("\"", "'")
+    |> string.replace("\u{0000}", "_")
+    |> string.trim
+
+  case sanitized {
     "" -> Error(EmptyFileName)
     _ -> {
-      case string.length(trimmed) > max_file_name_length {
+      case string.length(sanitized) > max_file_name_length {
         True -> Error(FileNameTooLong(max: max_file_name_length))
-        False -> Ok(trimmed)
+        False -> Ok(sanitized)
       }
     }
   }
 }
 
 pub fn validate_file_size(size: Int) -> Result(Int, ValidationError) {
-  case size < 0 {
-    True -> Error(NegativeFileSize)
-    False -> Ok(size)
+  case size {
+    value if value < 0 -> Error(NegativeFileSize)
+    value if value > max_file_size ->
+      Error(FileSizeTooLarge(max: max_file_size))
+    _ -> Ok(size)
   }
 }
 

@@ -1,10 +1,11 @@
 export { loadDetectedProfile, loadIdentity, saveDisplayName } from "./identity";
 export { delay, formatTime } from "./timer";
 export {
-  closeReceiveFile,
-  prepareOutgoingFrame,
+  bindSelectedFile,
+  cancelUpload,
+  downloadFile,
   receiveCapability,
   selectFile,
-  startReceiveFile,
+  uploadSelectedFile,
 } from "./file_transfer";
-export { connect, send, sendFileChunk } from "./socket";
+export { connect, send } from "./socket";

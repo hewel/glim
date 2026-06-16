@@ -1,4 +1,3 @@
-import file_frame
 import gleam/erlang/process
 import gleam/option
 import mist
@@ -42,23 +41,32 @@ pub fn handle_message(
           handle_peer_update(state, conn, patch)
         Ok(protocol.TextSend(to:, body:)) ->
           handle_text_send(state, conn, to, body)
-        Ok(protocol.FileOffer(to:, transfer_id:, name:, size:, mime_type:)) ->
-          handle_file_offer(state, conn, to, transfer_id, name, size, mime_type)
+        Ok(protocol.FileOffer(to:, client_offer_id:, name:, size:, mime_type:)) ->
+          handle_file_offer(
+            state,
+            conn,
+            to,
+            client_offer_id,
+            name,
+            size,
+            mime_type,
+          )
         Ok(protocol.FileAccept(transfer_id:)) ->
           handle_file_accept(state, conn, transfer_id)
         Ok(protocol.FileDecline(transfer_id:)) ->
           handle_file_decline(state, conn, transfer_id)
         Ok(protocol.FileCancel(transfer_id:)) ->
           handle_file_cancel(state, conn, transfer_id)
-        Ok(protocol.FileChunkAck(ack:)) ->
-          handle_file_chunk_ack(state, conn, ack)
         Error(_) -> {
           send_invalid_event(conn)
           mist.continue(state)
         }
       }
     }
-    mist.Binary(frame) -> handle_file_chunk(state, conn, frame)
+    mist.Binary(_) -> {
+      send_invalid_event(conn)
+      mist.continue(state)
+    }
     mist.Custom(room.SendPeerList(peers)) -> {
       let _ = mist.send_text_frame(conn, protocol.encode_peer_list(peers))
       mist.continue(state)
@@ -88,9 +96,12 @@ pub fn handle_message(
       let _ = mist.send_text_frame(conn, protocol.encode_file_offered(offer))
       mist.continue(state)
     }
-    mist.Custom(room.SendFileAccepted(transfer_id)) -> {
+    mist.Custom(room.SendTransferAccepted(transfer_id, upload_url)) -> {
       let _ =
-        mist.send_text_frame(conn, protocol.encode_file_accepted(transfer_id))
+        mist.send_text_frame(
+          conn,
+          protocol.encode_transfer_accepted(transfer_id, upload_url),
+        )
       mist.continue(state)
     }
     mist.Custom(room.SendFileDeclined(transfer_id)) -> {
@@ -106,17 +117,33 @@ pub fn handle_message(
         )
       mist.continue(state)
     }
-    mist.Custom(room.SendFileChunk(frame)) -> {
-      let _ = mist.send_binary_frame(conn, frame)
-      mist.continue(state)
-    }
-    mist.Custom(room.SendFileChunkAck(ack)) -> {
-      let _ = mist.send_text_frame(conn, protocol.encode_file_chunk_ack(ack))
-      mist.continue(state)
-    }
-    mist.Custom(room.SendFileCompleted(transfer_id)) -> {
+    mist.Custom(room.SendTransferProgress(transfer_id, phase, bytes, total)) -> {
       let _ =
-        mist.send_text_frame(conn, protocol.encode_file_completed(transfer_id))
+        mist.send_text_frame(
+          conn,
+          protocol.encode_transfer_progress(transfer_id, phase, bytes, total),
+        )
+      mist.continue(state)
+    }
+    mist.Custom(room.SendTransferReady(transfer_id, download_url)) -> {
+      let _ =
+        mist.send_text_frame(
+          conn,
+          protocol.encode_transfer_ready(transfer_id, download_url),
+        )
+      mist.continue(state)
+    }
+    mist.Custom(room.SendTransferDone(transfer_id)) -> {
+      let _ =
+        mist.send_text_frame(conn, protocol.encode_transfer_done(transfer_id))
+      mist.continue(state)
+    }
+    mist.Custom(room.SendTransferFailed(transfer_id, reason)) -> {
+      let _ =
+        mist.send_text_frame(
+          conn,
+          protocol.encode_transfer_failed(transfer_id, reason),
+        )
       mist.continue(state)
     }
     mist.Custom(room.SendError(code:, message:)) -> {
@@ -228,7 +255,7 @@ fn handle_file_offer(
   state: State,
   conn: mist.WebsocketConnection,
   to: String,
-  transfer_id: String,
+  client_offer_id: String,
   name: String,
   size: Int,
   mime_type: String,
@@ -244,7 +271,7 @@ fn handle_file_offer(
         room.OfferFile(
           from: from,
           to: to,
-          transfer_id: transfer_id,
+          client_offer_id: client_offer_id,
           name: name,
           size: size,
           mime_type: mime_type,
@@ -300,55 +327,6 @@ fn handle_transfer_id(
     }
     option.Some(from) -> {
       process.send(state.room, to_message(from, transfer_id, state.client))
-      mist.continue(state)
-    }
-  }
-}
-
-fn handle_file_chunk_ack(
-  state: State,
-  conn: mist.WebsocketConnection,
-  ack: shared_protocol.FileChunkAck,
-) -> mist.Next(State, room.ClientMessage) {
-  case state.device_id {
-    option.None -> {
-      send_not_joined(conn)
-      mist.continue(state)
-    }
-    option.Some(from) -> {
-      process.send(
-        state.room,
-        room.AcknowledgeFileChunk(from: from, ack: ack, client: state.client),
-      )
-      mist.continue(state)
-    }
-  }
-}
-
-fn handle_file_chunk(
-  state: State,
-  conn: mist.WebsocketConnection,
-  frame: BitArray,
-) -> mist.Next(State, room.ClientMessage) {
-  case state.device_id, file_frame.decode_chunk_frame(frame) {
-    option.None, _ -> {
-      send_not_joined(conn)
-      mist.continue(state)
-    }
-    option.Some(from), Ok(file_frame.ChunkFrame(header:, chunk: _)) -> {
-      process.send(
-        state.room,
-        room.ForwardFileChunk(
-          from: from,
-          ack: header,
-          frame: frame,
-          client: state.client,
-        ),
-      )
-      mist.continue(state)
-    }
-    option.Some(_), Error(_) -> {
-      send_invalid_event(conn)
       mist.continue(state)
     }
   }

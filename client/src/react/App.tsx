@@ -1,8 +1,6 @@
 import {
   IconBinaryTree,
   IconPlugConnected,
-  IconTerminal2,
-  IconArrowsTransferUp,
 } from "@tabler/icons-react";
 import { useEffect } from "react";
 import { ChatPanel } from "./ChatPanel";
@@ -27,10 +25,6 @@ export function App() {
   const setTransfersOpen = useAppStore((state) => state.setTransfersOpen);
   const topologyOpen = useAppStore((state) => state.topologyOpen);
   const setTopologyOpen = useAppStore((state) => state.setTopologyOpen);
-  const transfers = useAppStore((state) => state.transfers);
-
-  const activeTransfers = transfers.filter((t) => ["offered", "awaiting_save", "transferring"].includes(t.status)).length;
-
   useEffect(() => {
     initialize();
   }, [initialize]);

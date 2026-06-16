@@ -1,4 +1,4 @@
-import type { FileSelection, ReceiveCapability, WrittenChunk } from "../browser/types";
+import type { FileSelection, ReceiveCapability, TransferProgress } from "../browser/types";
 import type { BrowserFamily, DeviceKind, DeviceOs, DeviceProfile } from "../browser/device_profile";
 
 export type ConnectionStatus =
@@ -27,6 +27,7 @@ export interface TextMessage {
 
 export interface FileOffer {
   transfer_id: string;
+  client_offer_id: string | null;
   from: string;
   to: string;
   name: string;
@@ -34,12 +35,11 @@ export interface FileOffer {
   mime_type: string;
 }
 
-export interface FileChunkAck {
+export interface TransferProgressEvent {
   transfer_id: string;
-  sequence: number;
-  offset: number;
-  byte_length: number;
-  final: boolean;
+  phase: "uploading";
+  bytes: number;
+  total: number;
 }
 
 export type { ReceiveCapability };
@@ -47,8 +47,8 @@ export type { ReceiveCapability };
 export type TransferDirection = "sending" | "receiving";
 export type TransferStatus =
   | "offered"
-  | "awaiting_save"
   | "transferring"
+  | "ready"
   | "completed"
   | "failed"
   | "cancelled"
@@ -63,6 +63,7 @@ export interface TransferItem {
   mime_type: string;
   size: number;
   transferred: number;
+  download_url: string | null;
   direction: TransferDirection;
   mode: "relay";
   status: TransferStatus;
@@ -70,10 +71,7 @@ export interface TransferItem {
 }
 
 export interface LocalFile {
-  file_id: string;
-  size: number;
-  next_sequence: number;
-  next_offset: number;
+  client_offer_id: string;
 }
 
 export interface PendingDraftClear {
@@ -89,14 +87,16 @@ export type ServerEvent =
   | { kind: "text_message"; message: TextMessage }
   | { kind: "message_history"; messages: TextMessage[] }
   | { kind: "file_offered"; offer: FileOffer }
-  | { kind: "file_accepted"; transfer_id: string }
+  | { kind: "transfer_accepted"; transfer_id: string; upload_url: string }
   | { kind: "file_declined"; transfer_id: string }
   | { kind: "file_cancelled"; transfer_id: string; reason: string }
-  | { kind: "file_chunk_ack"; ack: FileChunkAck }
-  | { kind: "file_completed"; transfer_id: string }
+  | { kind: "transfer_progress"; progress: TransferProgressEvent }
+  | { kind: "transfer_ready"; transfer_id: string; download_url: string | null }
+  | { kind: "transfer_done"; transfer_id: string }
+  | { kind: "transfer_failed"; transfer_id: string; reason: string }
   | { kind: "error"; code: string; message: string }
   | { kind: "unknown"; event_type: string }
   | { kind: "invalid"; message: string };
 
-export type { FileSelection, WrittenChunk };
+export type { FileSelection, TransferProgress };
 export type { BrowserFamily, DeviceKind, DeviceOs, DeviceProfile };

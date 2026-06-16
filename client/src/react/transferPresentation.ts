@@ -8,10 +8,10 @@ export function transferStatusLabel(transfer: TransferItem): string {
   switch (transfer.status) {
     case "offered":
       return "Offered";
-    case "awaiting_save":
-      return "Awaiting save";
     case "transferring":
       return "Transferring";
+    case "ready":
+      return "Ready";
     case "completed":
       return "Completed";
     case "failed":
@@ -26,5 +26,5 @@ export function transferStatusLabel(transfer: TransferItem): string {
 }
 
 export function isActiveTransferStatus(status: TransferItem["status"]): boolean {
-  return ["offered", "awaiting_save", "transferring"].includes(status);
+  return ["offered", "transferring", "ready"].includes(status);
 }

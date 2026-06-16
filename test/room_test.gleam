@@ -1,9 +1,8 @@
-import file_frame
-import gleam/bit_array
 import gleam/erlang/process
 import gleam/option
 import gleam/otp/actor
 import gleam/result
+import gleam/string
 import gleeunit
 import message_store
 import room
@@ -463,7 +462,7 @@ pub fn history_load_failure_still_joins_test() {
   )) = process.receive(from: alice, within: 1000)
 }
 
-pub fn file_offer_accept_chunk_ack_and_complete_test() {
+pub fn file_offer_accept_upload_progress_ready_and_done_test() {
   let assert Ok(room_subject) = room.start()
   let alice = process.new_subject()
   let bob = process.new_subject()
@@ -475,7 +474,7 @@ pub fn file_offer_accept_chunk_ack_and_complete_test() {
     room.OfferFile(
       from: "alice",
       to: "bob",
-      transfer_id: "transfer_1",
+      client_offer_id: "offer_1",
       name: "clip.mov",
       size: 5,
       mime_type: "video/quicktime",
@@ -484,54 +483,81 @@ pub fn file_offer_accept_chunk_ack_and_complete_test() {
   )
 
   let assert Ok(room.SendFileOffered(shared_protocol.FileOffer(
-    transfer_id: "transfer_1",
+    transfer_id: transfer_id,
+    client_offer_id: option.Some("offer_1"),
     from: "alice",
     to: "bob",
     name: "clip.mov",
     size: 5,
     mime_type: "video/quicktime",
   ))) = process.receive(from: bob, within: 1000)
+  let assert Ok(room.SendFileOffered(_)) =
+    process.receive(from: alice, within: 1000)
 
   process.send(
     room_subject,
-    room.AcceptFile(from: "bob", transfer_id: "transfer_1", client: bob),
+    room.AcceptFile(from: "bob", transfer_id: transfer_id, client: bob),
   )
 
-  let assert Ok(room.SendFileAccepted("transfer_1")) =
+  let assert Ok(room.SendTransferAccepted(_, upload_url)) =
     process.receive(from: alice, within: 1000)
-  let assert Ok(room.SendFileAccepted("transfer_1")) =
+  let assert Ok(room.SendTransferProgress(_, "uploading", 0, 5)) =
+    process.receive(from: bob, within: 1000)
+  let token = token_from_upload_url(upload_url)
+
+  let progress_reply = process.new_subject()
+  process.send(
+    room_subject,
+    room.UploadProgress(
+      reply: progress_reply,
+      transfer_id: transfer_id,
+      token: token,
+      bytes: 3,
+    ),
+  )
+  let assert Ok(Ok(Nil)) = process.receive(from: progress_reply, within: 1000)
+  let assert Ok(room.SendTransferProgress(_, "uploading", 3, 5)) =
+    process.receive(from: alice, within: 1000)
+  let assert Ok(room.SendTransferProgress(_, "uploading", 3, 5)) =
     process.receive(from: bob, within: 1000)
 
-  let ack =
-    shared_protocol.FileChunkAck(
-      transfer_id: "transfer_1",
-      sequence: 0,
-      offset: 0,
-      byte_length: 5,
-      final: True,
-    )
-  let frame = file_frame.encode_chunk_frame(ack, bit_array.from_string("hello"))
-
+  let complete_reply = process.new_subject()
   process.send(
     room_subject,
-    room.ForwardFileChunk(from: "alice", ack: ack, frame: frame, client: alice),
+    room.CompleteUpload(
+      reply: complete_reply,
+      transfer_id: transfer_id,
+      token: token,
+      bytes: 5,
+    ),
   )
-
-  let assert Ok(room.SendFileChunk(received_frame)) =
+  let assert Ok(Ok(Nil)) = process.receive(from: complete_reply, within: 1000)
+  let assert Ok(room.SendTransferProgress(_, "uploading", 5, 5)) =
+    process.receive(from: alice, within: 1000)
+  let assert Ok(room.SendTransferProgress(_, "uploading", 5, 5)) =
     process.receive(from: bob, within: 1000)
-  let assert True = frame == received_frame
+  let assert Ok(room.SendTransferReady(_, option.None)) =
+    process.receive(from: alice, within: 1000)
+  let assert Ok(room.SendTransferReady(_, option.Some(download_url))) =
+    process.receive(from: bob, within: 1000)
+  let download_token = token_from_download_url(download_url)
 
+  let download_reply = process.new_subject()
   process.send(
     room_subject,
-    room.AcknowledgeFileChunk(from: "bob", ack: ack, client: bob),
+    room.BeginDownload(
+      reply: download_reply,
+      transfer_id: transfer_id,
+      token: download_token,
+    ),
   )
+  let assert Ok(Ok(room.DownloadLease(name: "clip.mov", size: 5, ..))) =
+    process.receive(from: download_reply, within: 1000)
 
-  let assert Ok(room.SendFileChunkAck(received_ack)) =
+  process.send(room_subject, room.CompleteDownload(transfer_id))
+  let assert Ok(room.SendTransferDone(_)) =
     process.receive(from: alice, within: 1000)
-  let assert True = ack == received_ack
-  let assert Ok(room.SendFileCompleted("transfer_1")) =
-    process.receive(from: alice, within: 1000)
-  let assert Ok(room.SendFileCompleted("transfer_1")) =
+  let assert Ok(room.SendTransferDone(_)) =
     process.receive(from: bob, within: 1000)
 }
 
@@ -548,7 +574,7 @@ pub fn second_active_file_transfer_is_rejected_test() {
     room.OfferFile(
       from: "alice",
       to: "bob",
-      transfer_id: "transfer_2",
+      client_offer_id: "offer_2",
       name: "next.mov",
       size: 5,
       mime_type: "video/quicktime",
@@ -557,10 +583,14 @@ pub fn second_active_file_transfer_is_rejected_test() {
   )
   let assert Ok(room.SendFileOffered(_)) =
     process.receive(from: bob, within: 1000)
+  let assert Ok(room.SendFileOffered(shared_protocol.FileOffer(
+    transfer_id: transfer_id,
+    ..,
+  ))) = process.receive(from: alice, within: 1000)
 
   process.send(
     room_subject,
-    room.AcceptFile(from: "bob", transfer_id: "transfer_2", client: bob),
+    room.AcceptFile(from: "bob", transfer_id: transfer_id, client: bob),
   )
 
   let assert Ok(room.SendError(
@@ -609,32 +639,46 @@ fn offer_and_accept(
   room_subject: process.Subject(room.Message),
   alice: process.Subject(room.ClientMessage),
   bob: process.Subject(room.ClientMessage),
-  transfer_id: String,
+  client_offer_id: String,
 ) -> Nil {
   process.send(
     room_subject,
     room.OfferFile(
       from: "alice",
       to: "bob",
-      transfer_id: transfer_id,
+      client_offer_id: client_offer_id,
       name: "clip.mov",
       size: 5,
       mime_type: "video/quicktime",
       client: alice,
     ),
   )
+  let assert Ok(room.SendFileOffered(shared_protocol.FileOffer(
+    transfer_id: transfer_id,
+    ..,
+  ))) = process.receive(from: bob, within: 1000)
   let assert Ok(room.SendFileOffered(_)) =
-    process.receive(from: bob, within: 1000)
+    process.receive(from: alice, within: 1000)
 
   process.send(
     room_subject,
     room.AcceptFile(from: "bob", transfer_id: transfer_id, client: bob),
   )
-  let assert Ok(room.SendFileAccepted(_)) =
+  let assert Ok(room.SendTransferAccepted(_, _)) =
     process.receive(from: alice, within: 1000)
-  let assert Ok(room.SendFileAccepted(_)) =
+  let assert Ok(room.SendTransferProgress(_, "uploading", 0, 5)) =
     process.receive(from: bob, within: 1000)
   Nil
+}
+
+fn token_from_upload_url(url: String) -> String {
+  let assert Ok(#(_, token)) = string.split_once(url, "?token=")
+  token
+}
+
+fn token_from_download_url(url: String) -> String {
+  let assert Ok(#(_, token)) = string.split_once(url, "?token=")
+  token
 }
 
 fn peer(id: String, display_name: String) -> shared_protocol.Peer {

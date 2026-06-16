@@ -169,8 +169,7 @@ pub fn text_message_event_does_not_update_peer_list_test() {
 pub fn transfer_add_outgoing_and_progress_test() {
   let selection =
     transfer.FileSelection(
-      transfer_id: "transfer_1",
-      file_id: "file_1",
+      client_offer_id: "transfer_1",
       name: "clip.mov",
       size: 512,
       mime_type: "video/quicktime",
@@ -185,19 +184,11 @@ pub fn transfer_add_outgoing_and_progress_test() {
     mime_type: "video/quicktime",
     size: 512,
     transferred: 0,
+    download_url: option.None,
     direction: transfer.Sending,
     status: transfer.Offered,
     notice: "Waiting for acceptance",
   )) = transfer.find(items, "transfer_1")
-
-  let ack =
-    shared_protocol.FileChunkAck(
-      transfer_id: "transfer_1",
-      sequence: 0,
-      offset: 0,
-      byte_length: 512,
-      final: True,
-    )
 
   let assert option.Some(transfer.Item(
     transfer_id: "transfer_1",
@@ -207,16 +198,21 @@ pub fn transfer_add_outgoing_and_progress_test() {
     mime_type: "video/quicktime",
     size: 512,
     transferred: 512,
+    download_url: option.None,
     direction: transfer.Sending,
-    status: transfer.Completed,
-    notice: "Complete",
-  )) = items |> transfer.mark_progress(ack) |> transfer.find("transfer_1")
+    status: transfer.Transferring,
+    notice: "Uploading",
+  )) =
+    items
+    |> transfer.mark_progress("transfer_1", 512)
+    |> transfer.find("transfer_1")
 }
 
 pub fn transfer_add_incoming_marks_unsupported_test() {
   let offer =
     shared_protocol.FileOffer(
       transfer_id: "transfer_1",
+      client_offer_id: option.None,
       from: "alice",
       to: "bob",
       name: "clip.mov",
@@ -233,9 +229,10 @@ pub fn transfer_add_incoming_marks_unsupported_test() {
     mime_type: "video/quicktime",
     size: 512,
     transferred: 0,
+    download_url: option.None,
     direction: transfer.Receiving,
     status: transfer.Unsupported,
-    notice: "Stream-to-save is not supported in this browser",
+    notice: "HTTP relay download is not supported in this browser",
   )) = transfer.find(items, "transfer_1")
 }
 
@@ -256,21 +253,21 @@ pub fn core_encodes_file_accept_test() {
   let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
 }
 
-pub fn core_decodes_file_accepted_for_browser_test() {
+pub fn core_decodes_transfer_accepted_for_browser_test() {
   let json =
     core.server_event_json(
-      "{\"type\":\"file.accepted\",\"transfer_id\":\"transfer_1\"}",
+      "{\"type\":\"transfer.accepted\",\"transfer_id\":\"transfer_1\",\"upload_url\":\"/api/transfers/transfer_1/upload?token=abc\"}",
     )
 
-  let assert True = string.contains(json, "\"kind\":\"file_accepted\"")
+  let assert True = string.contains(json, "\"kind\":\"transfer_accepted\"")
   let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
+  let assert True = string.contains(json, "\"upload_url\"")
 }
 
 pub fn transfer_connection_loss_marks_active_transfers_failed_test() {
   let selection =
     transfer.FileSelection(
-      transfer_id: "transfer_1",
-      file_id: "file_1",
+      client_offer_id: "transfer_1",
       name: "clip.mov",
       size: 512,
       mime_type: "video/quicktime",
@@ -284,6 +281,7 @@ pub fn transfer_connection_loss_marks_active_transfers_failed_test() {
       mime_type: "text/plain",
       size: 10,
       transferred: 10,
+      download_url: option.None,
       direction: transfer.Sending,
       status: transfer.Completed,
       notice: "Complete",
@@ -302,6 +300,7 @@ pub fn transfer_connection_loss_marks_active_transfers_failed_test() {
     mime_type: "video/quicktime",
     size: 512,
     transferred: 0,
+    download_url: option.None,
     direction: transfer.Sending,
     status: transfer.Failed,
     notice: "Connection lost.",

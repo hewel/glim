@@ -8,19 +8,17 @@ export interface Identity {
 }
 
 export interface FileSelection {
-  transfer_id: string;
-  file_id: string;
+  client_offer_id: string;
   name: string;
   size: number;
   mime_type: string;
 }
 
-export interface WrittenChunk {
+export interface TransferProgress {
   transfer_id: string;
-  sequence: number;
-  offset: number;
-  byte_length: number;
-  final: boolean;
+  phase: "uploading";
+  bytes: number;
+  total: number;
 }
 
 export type ReceiveCapability = "relay" | "unsupported";
@@ -28,5 +26,4 @@ export type ReceiveCapability = "relay" | "unsupported";
 export type VoidCallback = () => void;
 export type StringCallback = (value: string) => void;
 export type FileSelectionCallback = (selection: FileSelection) => void;
-export type WrittenChunkCallback = (chunk: WrittenChunk) => void;
 export type ReceiveErrorCallback = (transferId: string, reason: string) => void;

@@ -54,12 +54,12 @@ pub fn encode_text_send(to: String, body: String) -> String {
 
 pub fn encode_file_offer(
   to: String,
-  transfer_id: String,
+  client_offer_id: String,
   name: String,
   size: Int,
   mime_type: String,
 ) -> String {
-  shared_protocol.encode_file_offer(to, transfer_id, name, size, mime_type)
+  shared_protocol.encode_file_offer(to, client_offer_id, name, size, mime_type)
 }
 
 pub fn encode_file_accept(transfer_id: String) -> String {
@@ -72,23 +72,6 @@ pub fn encode_file_decline(transfer_id: String) -> String {
 
 pub fn encode_file_cancel(transfer_id: String) -> String {
   shared_protocol.encode_file_cancel(transfer_id)
-}
-
-pub fn encode_file_chunk_ack(
-  transfer_id: String,
-  sequence: Int,
-  offset: Int,
-  byte_length: Int,
-  final: Bool,
-) -> String {
-  shared_protocol.FileChunkAck(
-    transfer_id: transfer_id,
-    sequence: sequence,
-    offset: offset,
-    byte_length: byte_length,
-    final: final,
-  )
-  |> shared_protocol.encode_file_chunk_ack
 }
 
 pub fn server_error_notice(
@@ -150,10 +133,11 @@ fn encode_server_event(event: shared_protocol.ServerEvent) -> String {
         #("kind", json.string("file_offered")),
         #("offer", file_offer_json(offer)),
       ])
-    shared_protocol.FileAccepted(transfer_id:) ->
+    shared_protocol.TransferAccepted(transfer_id:, upload_url:) ->
       json.object([
-        #("kind", json.string("file_accepted")),
+        #("kind", json.string("transfer_accepted")),
         #("transfer_id", json.string(transfer_id)),
+        #("upload_url", json.string(upload_url)),
       ])
     shared_protocol.FileDeclined(transfer_id:) ->
       transfer_id_event("file_declined", transfer_id)
@@ -163,13 +147,33 @@ fn encode_server_event(event: shared_protocol.ServerEvent) -> String {
         #("transfer_id", json.string(transfer_id)),
         #("reason", json.string(reason)),
       ])
-    shared_protocol.FileChunkAcknowledged(ack:) ->
+    shared_protocol.TransferProgress(transfer_id:, phase:, bytes:, total:) ->
       json.object([
-        #("kind", json.string("file_chunk_ack")),
-        #("ack", file_chunk_ack_json(ack)),
+        #("kind", json.string("transfer_progress")),
+        #(
+          "progress",
+          shared_protocol.encode_transfer_progress_payload(
+            transfer_id,
+            phase,
+            bytes,
+            total,
+          ),
+        ),
       ])
-    shared_protocol.FileCompleted(transfer_id:) ->
-      transfer_id_event("file_completed", transfer_id)
+    shared_protocol.TransferReady(transfer_id:, download_url:) ->
+      json.object([
+        #("kind", json.string("transfer_ready")),
+        #("transfer_id", json.string(transfer_id)),
+        #("download_url", json.nullable(download_url, json.string)),
+      ])
+    shared_protocol.TransferDone(transfer_id:) ->
+      transfer_id_event("transfer_done", transfer_id)
+    shared_protocol.TransferFailed(transfer_id:, reason:) ->
+      json.object([
+        #("kind", json.string("transfer_failed")),
+        #("transfer_id", json.string(transfer_id)),
+        #("reason", json.string(reason)),
+      ])
     shared_protocol.ErrorEvent(code:, message:) ->
       json.object([
         #("kind", json.string("error")),
@@ -195,10 +199,6 @@ fn text_message_json(message: shared_protocol.TextMessage) -> json.Json {
 
 fn file_offer_json(offer: shared_protocol.FileOffer) -> json.Json {
   shared_protocol.encode_file_offer_payload(offer)
-}
-
-fn file_chunk_ack_json(ack: shared_protocol.FileChunkAck) -> json.Json {
-  shared_protocol.encode_file_chunk_ack_payload(ack)
 }
 
 fn transfer_id_event(kind: String, transfer_id: String) -> json.Json {

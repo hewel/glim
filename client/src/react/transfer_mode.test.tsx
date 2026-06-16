@@ -23,6 +23,7 @@ const relayTransfer: TransferItem = {
   mime_type: "application/octet-stream",
   size: 1024,
   transferred: 256,
+  download_url: null,
   direction: "sending",
   status: "transferring",
   notice: "Transferring",

@@ -9,8 +9,8 @@ pub type Direction {
 
 pub type Status {
   Offered
-  AwaitingSave
   Transferring
+  Ready
   Completed
   Failed
   Cancelled
@@ -20,8 +20,7 @@ pub type Status {
 
 pub type FileSelection {
   FileSelection(
-    transfer_id: String,
-    file_id: String,
+    client_offer_id: String,
     name: String,
     size: Int,
     mime_type: String,
@@ -29,7 +28,7 @@ pub type FileSelection {
 }
 
 pub type LocalFile {
-  LocalFile(file_id: String, size: Int, next_sequence: Int, next_offset: Int)
+  LocalFile(client_offer_id: String)
 }
 
 pub type Item {
@@ -41,6 +40,7 @@ pub type Item {
     mime_type: String,
     size: Int,
     transferred: Int,
+    download_url: option.Option(String),
     direction: Direction,
     status: Status,
     notice: String,
@@ -56,13 +56,14 @@ pub fn add_outgoing(
   append_or_replace(
     items,
     Item(
-      transfer_id: selection.transfer_id,
+      transfer_id: selection.client_offer_id,
       peer_id: peer_id,
       peer_name: peer_name,
       name: selection.name,
       mime_type: selection.mime_type,
       size: selection.size,
       transferred: 0,
+      download_url: option.None,
       direction: Sending,
       status: Offered,
       notice: "Waiting for acceptance",
@@ -78,7 +79,10 @@ pub fn add_incoming(
 ) -> List(Item) {
   let #(status, notice) = case supported {
     True -> #(Offered, "Waiting for your response")
-    False -> #(Unsupported, "Stream-to-save is not supported in this browser")
+    False -> #(
+      Unsupported,
+      "HTTP relay download is not supported in this browser",
+    )
   }
 
   append_or_replace(
@@ -91,6 +95,7 @@ pub fn add_incoming(
       mime_type: offer.mime_type,
       size: offer.size,
       transferred: 0,
+      download_url: option.None,
       direction: Receiving,
       status: status,
       notice: notice,
@@ -99,23 +104,7 @@ pub fn add_incoming(
 }
 
 pub fn local_file(selection: FileSelection) -> LocalFile {
-  LocalFile(
-    file_id: selection.file_id,
-    size: selection.size,
-    next_sequence: 0,
-    next_offset: 0,
-  )
-}
-
-pub fn update_local_file_after_ack(
-  file: LocalFile,
-  ack: shared_protocol.FileChunkAck,
-) -> LocalFile {
-  LocalFile(
-    ..file,
-    next_sequence: ack.sequence + 1,
-    next_offset: ack.offset + ack.byte_length,
-  )
+  LocalFile(client_offer_id: selection.client_offer_id)
 }
 
 pub fn mark_status(
@@ -135,24 +124,39 @@ pub fn mark_status(
 
 pub fn mark_progress(
   items: List(Item),
-  ack: shared_protocol.FileChunkAck,
+  transfer_id: String,
+  bytes: Int,
 ) -> List(Item) {
-  let transferred = ack.offset + ack.byte_length
   items
   |> list.map(fn(item) {
-    case item.transfer_id == ack.transfer_id {
+    case item.transfer_id == transfer_id {
       True ->
         Item(
           ..item,
-          transferred: transferred,
-          status: case ack.final {
-            True -> Completed
-            False -> Transferring
-          },
-          notice: case ack.final {
-            True -> "Complete"
-            False -> "Transferring"
-          },
+          transferred: bytes,
+          status: Transferring,
+          notice: "Uploading",
+        )
+      False -> item
+    }
+  })
+}
+
+pub fn mark_ready(
+  items: List(Item),
+  transfer_id: String,
+  download_url: option.Option(String),
+) -> List(Item) {
+  items
+  |> list.map(fn(item) {
+    case item.transfer_id == transfer_id {
+      True ->
+        Item(
+          ..item,
+          transferred: item.size,
+          download_url: download_url,
+          status: Ready,
+          notice: "Ready to download",
         )
       False -> item
     }
@@ -164,8 +168,8 @@ pub fn mark_connection_lost(items: List(Item)) -> List(Item) {
   |> list.map(fn(item) {
     case item.status {
       Offered -> Item(..item, status: Failed, notice: "Connection lost.")
-      AwaitingSave -> Item(..item, status: Failed, notice: "Connection lost.")
       Transferring -> Item(..item, status: Failed, notice: "Connection lost.")
+      Ready -> Item(..item, status: Failed, notice: "Connection lost.")
       Completed -> item
       Failed -> item
       Cancelled -> item
@@ -180,8 +184,8 @@ pub fn interrupted_transfer_ids(items: List(Item)) -> List(String) {
   |> list.filter(fn(item) {
     case item.status {
       Offered -> True
-      AwaitingSave -> True
       Transferring -> True
+      Ready -> True
       Completed -> False
       Failed -> False
       Cancelled -> False
@@ -197,8 +201,8 @@ pub fn active_count(items: List(Item)) -> Int {
   |> list.filter(fn(item) {
     case item.status {
       Offered -> True
-      AwaitingSave -> True
       Transferring -> True
+      Ready -> True
       Completed -> False
       Failed -> False
       Cancelled -> False

@@ -37,6 +37,7 @@ export function ChatPanel() {
   const acceptFile = useAppStore((state) => state.acceptFile);
   const declineFile = useAppStore((state) => state.declineFile);
   const cancelFile = useAppStore((state) => state.cancelFile);
+  const downloadTransfer = useAppStore((state) => state.downloadTransfer);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   if (!selectedPeerId) {
@@ -113,6 +114,7 @@ export function ChatPanel() {
               onAccept={() => acceptFile(transfer.transfer_id)}
               onCancel={() => cancelFile(transfer.transfer_id)}
               onDecline={() => declineFile(transfer.transfer_id)}
+              onDownload={() => downloadTransfer(transfer.transfer_id)}
               transfer={transfer}
             />
           ))}
@@ -205,11 +207,13 @@ function TransferCard({
   onAccept,
   onDecline,
   onCancel,
+  onDownload,
 }: {
   transfer: TransferItem;
   onAccept: () => void;
   onDecline: () => void;
   onCancel: () => void;
+  onDownload: () => void;
 }) {
   const percent = progressPercent(transfer.transferred, transfer.size);
   const isSending = transfer.direction === "sending";
@@ -229,7 +233,7 @@ function TransferCard({
   } else if (transfer.status === "transferring") {
     borderClass = "border-sky-500/30 bg-sky-50/20";
     progressBg = "bg-sky-500 animate-pulse-subtle";
-  } else if (["offered", "awaiting_save"].includes(transfer.status)) {
+  } else if (["offered", "ready"].includes(transfer.status)) {
     borderClass = "border-amber-500/30 bg-amber-50/20";
     progressBg = "bg-amber-500";
   }
@@ -277,6 +281,9 @@ function TransferCard({
             <ActionButton label="Accept" onClick={onAccept} />
             <ActionButton label="Decline" quiet onClick={onDecline} />
           </>
+        ) : null}
+        {transfer.direction === "receiving" && transfer.status === "ready" ? (
+          <ActionButton label="Download" onClick={onDownload} />
         ) : null}
         {isActiveTransferStatus(transfer.status) ? (
           <ActionButton label="Cancel" quiet onClick={onCancel} />

@@ -4,6 +4,7 @@
 
 Superseded
 Superseded by the relay-only transfer implementation that removed WebRTC signaling and P2P DataChannels.
+Superseded again by ADR 0003, which moves file bytes from WebSocket binary frames to HTTP relay upload/download streams.
 
 ## Context
 

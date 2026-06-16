@@ -2,31 +2,15 @@ import type {
   FileSelection,
   FileSelectionCallback,
   ReceiveCapability,
-  ReceiveErrorCallback,
   VoidCallback,
-  WrittenChunkCallback,
 } from "./types";
-import {
-  decodeIncomingChunk,
-  encodeOutgoingChunk,
-  registerFile,
-} from "./worker_client";
-
-type WritableFileStream = {
-  write(data: Uint8Array): Promise<void>;
-  close(): Promise<void>;
-};
-
-type SaveFileHandle = {
-  createWritable(): Promise<WritableFileStream>;
-};
 
 type SavePickerWindow = Window & {
   showOpenFilePicker?: (options: { multiple?: boolean }) => Promise<FileSystemFileHandle[]>;
-  showSaveFilePicker?: (options: { suggestedName?: string }) => Promise<SaveFileHandle>;
 };
 
-const receiveWriters = new Map<string, WritableFileStream>();
+const selectedFiles = new Map<string, File>();
+const activeUploads = new Map<string, XMLHttpRequest>();
 
 export function selectFile(
   onSelected: FileSelectionCallback,
@@ -48,6 +32,79 @@ export function selectFile(
   input.click();
 }
 
+export function receiveCapability(): ReceiveCapability {
+  return "relay";
+}
+
+export function bindSelectedFile(clientOfferId: string, transferId: string): boolean {
+  const file = selectedFiles.get(clientOfferId);
+  if (!file) {
+    return false;
+  }
+
+  selectedFiles.delete(clientOfferId);
+  selectedFiles.set(transferId, file);
+  return true;
+}
+
+export function uploadSelectedFile(
+  transferId: string,
+  uploadUrl: string,
+  onProgress: (bytes: number, total: number) => void,
+  onComplete: VoidCallback,
+  onError: (reason: string) => void,
+): void {
+  const file = selectedFiles.get(transferId);
+  if (!file) {
+    onError("Selected file is no longer available.");
+    return;
+  }
+
+  const request = new XMLHttpRequest();
+  activeUploads.set(transferId, request);
+  request.open("POST", uploadUrl);
+  request.setRequestHeader("content-type", file.type || "application/octet-stream");
+
+  request.upload.addEventListener("progress", (event) => {
+    if (event.lengthComputable) {
+      onProgress(event.loaded, event.total);
+    }
+  });
+
+  request.addEventListener("load", () => {
+    activeUploads.delete(transferId);
+    if (request.status >= 200 && request.status < 300) {
+      selectedFiles.delete(transferId);
+      onComplete();
+      return;
+    }
+
+    onError("Upload failed.");
+  });
+
+  request.addEventListener("error", () => {
+    activeUploads.delete(transferId);
+    onError("Upload failed.");
+  });
+
+  request.addEventListener("abort", () => {
+    activeUploads.delete(transferId);
+    onError("Upload cancelled.");
+  });
+
+  request.send(file);
+}
+
+export function cancelUpload(transferId: string): void {
+  const request = activeUploads.get(transferId);
+  activeUploads.delete(transferId);
+  request?.abort();
+}
+
+export function downloadFile(downloadUrl: string): void {
+  window.location.assign(downloadUrl);
+}
+
 async function handleOpenFileSelection(
   picker: NonNullable<SavePickerWindow["showOpenFilePicker"]>,
   onSelected: FileSelectionCallback,
@@ -60,93 +117,9 @@ async function handleOpenFileSelection(
       return;
     }
 
-    await completeFileSelection(await handle.getFile(), onSelected, onError);
+    completeFileSelection(await handle.getFile(), onSelected);
   } catch {
     onError();
-  }
-}
-
-export function receiveCapability(): ReceiveCapability {
-  return typeof savePickerWindow().showSaveFilePicker === "function"
-    ? "relay"
-    : "unsupported";
-}
-
-export async function startReceiveFile(
-  transferId: string,
-  name: string,
-  onReady: VoidCallback,
-  onError: (reason: string) => void,
-  onUnsupported: VoidCallback,
-): Promise<void> {
-  const picker = savePickerWindow().showSaveFilePicker;
-  if (!picker) {
-    onUnsupported();
-    return;
-  }
-
-  try {
-    const handle = await picker({ suggestedName: name || "download" });
-    const writer = await handle.createWritable();
-    receiveWriters.set(transferId, writer);
-    onReady();
-  } catch (error) {
-    onError(error instanceof DOMException && error.name === "AbortError"
-      ? "Save cancelled."
-      : "Save target could not be opened.");
-  }
-}
-
-export async function prepareOutgoingFrame(
-  fileId: string,
-  transferId: string,
-  sequence: number,
-  offset: number,
-  chunkSize: number,
-): Promise<ArrayBuffer> {
-  return encodeOutgoingChunk(fileId, transferId, sequence, offset, chunkSize);
-}
-
-export async function writeIncomingFrame(
-  frame: ArrayBuffer,
-  onChunkWritten: WrittenChunkCallback,
-  onReceiveError: ReceiveErrorCallback,
-): Promise<void> {
-  try {
-    const chunk = await decodeIncomingChunk(frame);
-    const writer = receiveWriters.get(chunk.transfer_id);
-    if (!writer) {
-      onReceiveError(chunk.transfer_id || "", "No save target is open for this transfer.");
-      return;
-    }
-
-    await writer.write(new Uint8Array(chunk.bytes));
-
-    if (chunk.final) {
-      await writer.close();
-      receiveWriters.delete(chunk.transfer_id);
-    }
-
-    onChunkWritten({
-      transfer_id: chunk.transfer_id,
-      sequence: chunk.sequence,
-      offset: chunk.offset,
-      byte_length: chunk.byte_length,
-      final: chunk.final,
-    });
-  } catch {
-    onReceiveError("", "File chunk could not be written.");
-  }
-}
-
-export function closeReceiveFile(transferId: string): void {
-  const writer = receiveWriters.get(transferId);
-  receiveWriters.delete(transferId);
-
-  if (writer) {
-    void writer.close().catch(() => {
-      // The transfer may already have closed or aborted.
-    });
   }
 }
 
@@ -163,28 +136,21 @@ async function handleFileSelection(
     return;
   }
 
-  await completeFileSelection(file, onSelected, onError);
+  completeFileSelection(file, onSelected);
 }
 
-async function completeFileSelection(
+function completeFileSelection(
   file: File,
   onSelected: FileSelectionCallback,
-  onError: VoidCallback,
-): Promise<void> {
-  const selection: FileSelection = {
-    transfer_id: randomId("transfer"),
-    file_id: randomId("file"),
+): void {
+  const clientOfferId = randomId("offer");
+  selectedFiles.set(clientOfferId, file);
+  onSelected({
+    client_offer_id: clientOfferId,
     name: file.name || "download",
     size: file.size,
     mime_type: file.type || "application/octet-stream",
-  };
-
-  try {
-    await registerFile(selection.file_id, file);
-    onSelected(selection);
-  } catch {
-    onError();
-  }
+  });
 }
 
 function randomId(prefix: string): string {

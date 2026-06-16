@@ -23,3 +23,7 @@ _Avoid_: Upload, download, file sync
 **Transfer mode**:
 The transport choice used for a file transfer, such as relay or peer-to-peer.
 _Avoid_: Transfer type, backend, protocol
+
+**HTTP relay transfer mode**:
+A transfer mode where the room host temporarily holds accepted file bytes so the receiving peer can fetch them.
+_Avoid_: File library, cloud upload, sync folder

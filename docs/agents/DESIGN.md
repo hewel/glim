@@ -160,17 +160,17 @@ File transfers are online-only and require both peers to remain connected. They 
 The UI must represent these states:
 
 - Offered: pending receiver response.
-- Awaiting save: receiver accepted intent and is choosing a save target.
-- Transferring: chunks are streaming with receiver ACK pacing.
-- Completed: final chunk written and acknowledged.
+- Transferring: sender upload is streaming through the HTTP relay.
+- Ready: upload is complete and the receiver can download through the tokenized URL.
+- Completed: the authorized download response has been prepared or started.
 - Declined: receiver rejected the offer.
 - Cancelled: either side cancelled the transfer.
-- Failed: browser, socket, save-stream, or connection-loss error.
-- Unsupported: receiver browser cannot stream to a save target.
+- Failed: browser, socket, upload, download, or connection-loss error.
+- Unsupported: receiver browser cannot use the HTTP relay path.
 
-The sender sends one 256 KiB chunk at a time. The receiver writes the chunk to the selected save stream before sending `file.chunk_ack`. This flow preserves no-app-cap semantics by avoiding full in-memory assembly.
+The sender uploads the raw file body to the tokenized HTTP upload URL after receiver acceptance. The server reports observed upload progress to both peers, then sends the receiver a tokenized download URL when the relay blob is ready.
 
-When stream-to-save APIs are unsupported, the receiver must not accept the file. Show unsupported state and allow decline/cancel.
+The browser download action uses the normal browser download flow. Do not claim the browser has saved the file; `transfer.done` means the server prepared or started the download response.
 
 ## Component Guidance
 
@@ -196,8 +196,8 @@ Use concise operational copy:
 - "Mesh Online", "Discovery Active", "Connecting", "Reconnecting", "Connection Issue"
 - "Select a peer before sending."
 - "That peer is offline."
-- "Choose where to save this file"
-- "Stream-to-save is not supported in this browser"
+- "Ready to download"
+- "Upload failed."
 - "Peer disconnected."
 
 Avoid consumer/social copy such as "friends", "profiles", "upload to cloud", "inbox", or "followers".
@@ -206,8 +206,7 @@ Avoid consumer/social copy such as "friends", "profiles", "upload to cloud", "in
 
 - The browser UI is React with Zustand state; Gleam remains the pure protocol and domain helper layer.
 - The server persists accepted text messages in SQLite.
-- File transfers are relayed over WebSocket only while both peers are online.
+- File transfer control uses WebSocket, while file bytes use HTTP relay upload/download endpoints.
 - Browser clients auto-reconnect with bounded backoff after WebSocket loss.
-- File bytes use binary WebSocket frames with a length-prefixed JSON header.
 - The right rail is a transfer queue, not a general file library.
-- There are no upload/download HTTP endpoints and no LAN auto-discovery yet.
+- There is no LAN auto-discovery yet.

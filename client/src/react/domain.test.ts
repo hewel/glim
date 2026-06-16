@@ -29,6 +29,7 @@ const relayTransfer: TransferItem = {
   mime_type: "application/octet-stream",
   size: 4,
   transferred: 0,
+  download_url: null,
   direction: "sending",
   mode: "relay",
   status: "transferring",
@@ -96,11 +97,12 @@ describe("React domain helpers", () => {
     expect(forgetPeer({ peer_1: peer, ada }, "peer_1")).toEqual({ ada });
   });
 
-  test("adds relay incoming transfers when save streaming is available", () => {
+  test("adds relay incoming transfers when HTTP relay is available", () => {
     const transfers = addIncomingTransfer(
       [],
       {
         transfer_id: "transfer_1",
+        client_offer_id: null,
         from: "peer_1",
         to: "self",
         name: "demo.bin",
@@ -119,11 +121,12 @@ describe("React domain helpers", () => {
     });
   });
 
-  test("marks unsupported incoming transfers when save streaming is unavailable", () => {
+  test("marks unsupported incoming transfers when HTTP relay is unavailable", () => {
     const transfers = addIncomingTransfer(
       [],
       {
         transfer_id: "transfer_1",
+        client_offer_id: null,
         from: "peer_1",
         to: "self",
         name: "demo.bin",
@@ -137,39 +140,37 @@ describe("React domain helpers", () => {
     expect(transfers[0]).toMatchObject({
       mode: "relay",
       status: "unsupported",
-      notice: "Stream-to-save is not supported in this browser",
+      notice: "HTTP relay download is not supported in this browser",
     });
   });
 
-  test("marks final relay acknowledgements as completed", () => {
+  test("marks relay upload progress as transferring", () => {
     const updated = markTransferProgress([relayTransfer], {
       transfer_id: "transfer_1",
-      sequence: 0,
-      offset: 0,
-      byte_length: 4,
-      final: true,
+      phase: "uploading",
+      bytes: 4,
+      total: 4,
     });
 
     expect(updated[0]).toMatchObject({
       transferred: 4,
-      status: "completed",
-      notice: "Complete",
+      status: "transferring",
+      notice: "Uploading",
     });
   });
 
-  test("keeps non-final relay acknowledgements transferring", () => {
+  test("keeps partial relay upload progress transferring", () => {
     const updated = markTransferProgress([relayTransfer], {
       transfer_id: "transfer_1",
-      sequence: 0,
-      offset: 0,
-      byte_length: 2,
-      final: false,
+      phase: "uploading",
+      bytes: 2,
+      total: 4,
     });
 
     expect(updated[0]).toMatchObject({
       transferred: 2,
       status: "transferring",
-      notice: "Transferring",
+      notice: "Uploading",
     });
   });
 
@@ -192,7 +193,7 @@ describe("React domain helpers", () => {
     expect(transferCanContinue([{ ...relayTransfer, status: "failed" }], "transfer_1")).toBe(false);
     expect(activeTransferCount([
       relayTransfer,
-      { ...relayTransfer, transfer_id: "transfer_2", status: "awaiting_save" },
+      { ...relayTransfer, transfer_id: "transfer_2", status: "ready" },
       { ...relayTransfer, transfer_id: "transfer_3", status: "completed" },
     ])).toBe(2);
   });

@@ -52,7 +52,7 @@ bun run test:e2e
 - `src/core.gleam` exposes framework-neutral protocol helpers for the React shell.
 - `src/chat.gleam` owns pure peer-list and per-peer chat bookkeeping.
 - `src/transfer.gleam` owns pure file-transfer state transitions.
-- `src/browser/*.ts` contains direct `localStorage`, file picker, save stream, WebSocket, and file-frame worker access.
+- `src/browser/*.ts` contains direct `localStorage`, file picker, WebSocket, HTTP upload, and download navigation access.
 - `src/main.tsx` is the Vite entrypoint that starts the React app.
 - `test/client_test.gleam` covers pure Gleam peer-list, chat, reconnect, and transfer behavior.
 - `src/**/*.test.ts` covers TypeScript browser and React-domain helpers with Vitest.
@@ -69,11 +69,13 @@ Supported:
 - render `peer.list`, `peer.joined`, `peer.left`, `text.message`, and server `error` events
 - select a peer and send `text.send`
 - keep per-peer conversations and unread counts in memory for the current browser session
-- offer, accept, decline, cancel, and stream online-only file transfers over binary WebSocket frames
-- stream received file bytes to a browser-selected save target when supported
+- offer, accept, decline, cancel, and track online-only HTTP relay file transfers
+- upload selected file bytes through tokenized HTTP URLs after receiver acceptance
+- download accepted files through tokenized HTTP URLs when the server reports them ready
 
 Not included in this slice:
 
-- upload/download endpoints
 - file-transfer persistence or offline download
+- resumable upload/download
+- concurrent active transfers
 - LAN auto-discovery

@@ -1,18 +1,18 @@
 import { create } from "zustand";
 import {
-  closeReceiveFile,
+  bindSelectedFile,
+  cancelUpload,
   connect,
+  downloadFile,
   loadDetectedProfile,
   loadIdentity,
-  prepareOutgoingFrame,
   receiveCapability,
   selectFile,
   send,
-  sendFileChunk,
   saveDisplayName,
-  startReceiveFile,
+  uploadSelectedFile,
 } from "../browser/ffi";
-import type { FileSelection, WrittenChunk } from "../browser/types";
+import type { FileSelection } from "../browser/types";
 import * as core from "../core.gleam";
 import * as reconnect from "../reconnect.gleam";
 import {
@@ -20,7 +20,7 @@ import {
   addOutgoingTransfer,
   addTextMessage,
   addTextMessages,
-  chunkSize,
+  bindOutgoingTransfer,
   clearPendingDraft,
   conversationPeerId,
   forgetPeer,
@@ -28,20 +28,20 @@ import {
   isPeerOnline,
   localFile,
   markConnectionLost,
-  markTransferModeAndStatus,
   markTransferProgress,
+  markTransferReady,
   markTransferStatus,
   otherPeers,
   rememberPeer,
   rememberPeers,
   removePeer,
   setDraft,
-  updateLocalFileAfterAck,
   upsertPeer,
 } from "./domain";
 import type {
   ConnectionStatus,
   DeviceProfile,
+  FileOffer,
   LocalFile,
   Peer,
   PendingDraftClear,
@@ -90,6 +90,7 @@ interface AppState {
   acceptFile: (transferId: string) => void;
   declineFile: (transferId: string) => void;
   cancelFile: (transferId: string) => void;
+  downloadTransfer: (transferId: string) => void;
   clearLog: () => void;
   activePeer: () => Peer | null;
   selectedMessages: () => TextMessage[];
@@ -254,13 +255,13 @@ export const useAppStore = create<AppState>()((set, get) => ({
       transfers: addOutgoingTransfer(current.transfers, peerId, peerName, selection),
       localFiles: {
         ...current.localFiles,
-        [selection.transfer_id]: localFile(selection),
+        [selection.client_offer_id]: localFile(selection),
       },
     }));
     send(
       core.encode_file_offer(
         peerId,
-        selection.transfer_id,
+        selection.client_offer_id,
         selection.name,
         selection.size,
         selection.mime_type,
@@ -277,11 +278,6 @@ export const useAppStore = create<AppState>()((set, get) => ({
       return;
     }
 
-    if (item.status === "unsupported") {
-      set({ chatNotice: "This browser cannot stream incoming files to disk." });
-      return;
-    }
-
     if (item.status !== "offered") {
       return;
     }
@@ -290,41 +286,11 @@ export const useAppStore = create<AppState>()((set, get) => ({
       transfers: markTransferStatus(
         state.transfers,
         transferId,
-        "awaiting_save",
-        "Choose where to save this file",
+        "transferring",
+        "Waiting for upload",
       ),
     }));
-    void startReceiveFile(
-      transferId,
-      item.name,
-      () => {
-        set((state) => ({
-          transfers: markTransferStatus(
-            state.transfers,
-            transferId,
-            "transferring",
-            "Ready to receive",
-          ),
-        }));
-        send(core.encode_file_accept(transferId), sendFailed);
-      },
-      (reason) => {
-        set((state) => ({
-          transfers: markTransferStatus(state.transfers, transferId, "failed", reason),
-        }));
-        send(core.encode_file_cancel(transferId), sendFailed);
-      },
-      () => {
-        set((state) => ({
-          transfers: markTransferStatus(
-            state.transfers,
-            transferId,
-            "unsupported",
-            "Stream-to-save is not supported in this browser",
-          ),
-        }));
-      },
-    );
+    send(core.encode_file_accept(transferId), sendFailed);
   },
 
   declineFile(transferId) {
@@ -344,7 +310,17 @@ export const useAppStore = create<AppState>()((set, get) => ({
       };
     });
     send(core.encode_file_cancel(transferId), sendFailed);
-    closeReceiveFile(transferId);
+    cancelUpload(transferId);
+  },
+
+  downloadTransfer(transferId) {
+    const transfer = get().transfers.find((item) => item.transfer_id === transferId);
+    if (!transfer?.download_url) {
+      set({ chatNotice: "This transfer is not ready to download." });
+      return;
+    }
+
+    downloadFile(transfer.download_url);
   },
 
 
@@ -392,7 +368,6 @@ function connectWithAttempt(
     () => connectionLost(generation),
     () => connectionLost(generation),
     (raw) => socketReceived(generation, raw),
-    fileChunkWritten,
     fileReceiveFailed,
   );
 }
@@ -420,7 +395,7 @@ function connectionLost(generation: number): void {
   const attempt = state.reconnectAttempt + 1;
   const delay = reconnect.retry_delay_ms(attempt);
   for (const transferId of interruptedTransferIds(state.transfers)) {
-    closeReceiveFile(transferId);
+    cancelUpload(transferId);
   }
 
   useAppStore.setState({
@@ -501,17 +476,10 @@ function handleServerEvent(raw: string): void {
       }));
       break;
     case "file_offered":
-      useAppStore.setState((state) => ({
-        transfers: addIncomingTransfer(
-          state.transfers,
-          event.offer,
-          peerDisplayName(state, event.offer.from),
-          receiveCapability(),
-        ),
-      }));
+      applyFileOffered(event.offer);
       break;
-    case "file_accepted":
-      applyFileAccepted(event.transfer_id);
+    case "transfer_accepted":
+      applyTransferAccepted(event.transfer_id, event.upload_url);
       break;
     case "file_declined":
       useAppStore.setState((state) => ({
@@ -533,12 +501,19 @@ function handleServerEvent(raw: string): void {
           ),
         };
       });
-      closeReceiveFile(event.transfer_id);
+      cancelUpload(event.transfer_id);
       break;
-    case "file_chunk_ack":
-      applyFileChunkAck(event.ack);
+    case "transfer_progress":
+      useAppStore.setState((state) => ({
+        transfers: markTransferProgress(state.transfers, event.progress),
+      }));
       break;
-    case "file_completed":
+    case "transfer_ready":
+      useAppStore.setState((state) => ({
+        transfers: markTransferReady(state.transfers, event.transfer_id, event.download_url),
+      }));
+      break;
+    case "transfer_done":
       useAppStore.setState((state) => {
         const nextLocalFiles = { ...state.localFiles };
         delete nextLocalFiles[event.transfer_id];
@@ -548,10 +523,16 @@ function handleServerEvent(raw: string): void {
             state.transfers,
             event.transfer_id,
             "completed",
-            "Complete",
+            "Download started",
           ),
         };
       });
+      break;
+    case "transfer_failed":
+      useAppStore.setState((state) => ({
+        transfers: markTransferStatus(state.transfers, event.transfer_id, "failed", event.reason),
+      }));
+      cancelUpload(event.transfer_id);
       break;
     case "error":
       useAppStore.setState((state) => ({
@@ -591,51 +572,73 @@ function applyTextMessage(message: TextMessage): void {
   });
 }
 
-function applyFileAccepted(transferId: string): void {
+function applyFileOffered(offer: FileOffer): void {
   const state = useAppStore.getState();
-  const file = state.localFiles[transferId];
-
-  if (file) {
-    useAppStore.setState((current) => ({
-      transfers: markTransferModeAndStatus(
-        current.transfers,
-        transferId,
-        "relay",
-        "transferring",
-        "Using relay",
-      ),
-    }));
-    sendNextFileChunk(transferId, file);
+  if (offer.from === state.deviceId && offer.client_offer_id) {
+    const clientOfferId = offer.client_offer_id;
+    bindSelectedFile(clientOfferId, offer.transfer_id);
+    useAppStore.setState((current) => {
+      const nextLocalFiles = { ...current.localFiles };
+      const local = nextLocalFiles[clientOfferId];
+      delete nextLocalFiles[clientOfferId];
+      if (local) {
+        nextLocalFiles[offer.transfer_id] = local;
+      }
+      return {
+        localFiles: nextLocalFiles,
+        transfers: bindOutgoingTransfer(current.transfers, clientOfferId, offer),
+      };
+    });
     return;
   }
 
   useAppStore.setState((current) => ({
-    transfers: markTransferStatus(current.transfers, transferId, "transferring", "Transferring"),
+    transfers: addIncomingTransfer(
+      current.transfers,
+      offer,
+      peerDisplayName(current, offer.from),
+      receiveCapability(),
+    ),
   }));
 }
 
-
-function applyFileChunkAck(ack: {
-  transfer_id: string;
-  sequence: number;
-  offset: number;
-  byte_length: number;
-  final: boolean;
-}): void {
+function applyTransferAccepted(transferId: string, uploadUrl: string): void {
   const state = useAppStore.getState();
-  const localFile = state.localFiles[ack.transfer_id];
-  const updatedFile = localFile ? updateLocalFileAfterAck(localFile, ack) : undefined;
+  if (!state.localFiles[transferId]) {
+    useAppStore.setState((current) => ({
+      transfers: markTransferStatus(current.transfers, transferId, "transferring", "Waiting for upload"),
+    }));
+    return;
+  }
 
   useAppStore.setState((current) => ({
-    transfers: markTransferProgress(current.transfers, ack),
-    localFiles: updatedFile
-      ? { ...current.localFiles, [ack.transfer_id]: updatedFile }
-      : current.localFiles,
+    transfers: markTransferStatus(current.transfers, transferId, "transferring", "Uploading"),
   }));
-
-  if (updatedFile && !ack.final) {
-    sendNextFileChunk(ack.transfer_id, updatedFile);
-  }
+  uploadSelectedFile(
+    transferId,
+    uploadUrl,
+    (bytes, total) => {
+      useAppStore.setState((current) => ({
+        transfers: markTransferProgress(current.transfers, {
+          transfer_id: transferId,
+          phase: "uploading",
+          bytes,
+          total,
+        }),
+      }));
+    },
+    () => {
+      useAppStore.setState((current) => ({
+        transfers: markTransferStatus(current.transfers, transferId, "transferring", "Processing upload"),
+      }));
+    },
+    (reason) => {
+      useAppStore.setState((current) => ({
+        transfers: markTransferStatus(current.transfers, transferId, "failed", reason),
+      }));
+      send(core.encode_file_cancel(transferId), sendFailed);
+    },
+  );
 }
 
 async function refreshDeviceProfile(): Promise<void> {
@@ -678,26 +681,6 @@ function sendCurrentPeerMetadata(): void {
   }
 }
 
-function fileChunkWritten(chunk: WrittenChunk): void {
-  const ackPayload = core.encode_file_chunk_ack(
-    chunk.transfer_id,
-    chunk.sequence,
-    chunk.offset,
-    chunk.byte_length,
-    chunk.final,
-  );
-  useAppStore.setState((state) => ({
-    transfers: markTransferProgress(state.transfers, {
-      transfer_id: chunk.transfer_id,
-      sequence: chunk.sequence,
-      offset: chunk.offset,
-      byte_length: chunk.byte_length,
-      final: chunk.final,
-    }),
-  }));
-  send(ackPayload, sendFailed);
-}
-
 function fileReceiveFailed(transferId: string, reason: string): void {
   useAppStore.setState((state) => ({
     transfers: transferId
@@ -708,27 +691,6 @@ function fileReceiveFailed(transferId: string, reason: string): void {
   if (transferId) {
     send(core.encode_file_cancel(transferId), sendFailed);
   }
-}
-
-function sendNextFileChunk(transferId: string, file: LocalFile): void {
-  void sendFileChunk(
-    file.file_id,
-    transferId,
-    file.next_sequence,
-    file.next_offset,
-    chunkSize,
-    () => {
-      useAppStore.setState((state) => ({
-        transfers: markTransferStatus(
-          state.transfers,
-          transferId,
-          "failed",
-          "File chunk could not be sent.",
-        ),
-      }));
-      send(core.encode_file_cancel(transferId), sendFailed);
-    },
-  );
 }
 
 function sendMessageRequest(state: AppState):
