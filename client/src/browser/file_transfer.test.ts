@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import {
   bindSelectedFile,
   cancelUpload,
+  discardSelectedFile,
   downloadFile,
   receiveCapability,
   selectFile,
@@ -121,6 +122,21 @@ describe("browser HTTP file transfer", () => {
 
     request?.emit("load");
     expect(complete).toBe(true);
+  });
+
+  test("discards selected files that will not be offered", async () => {
+    const file = new File(["demo"], "demo.bin", { type: "application/octet-stream" });
+    Object.defineProperty(window, "showOpenFilePicker", {
+      configurable: true,
+      value: vi.fn(async () => [{ getFile: vi.fn(async () => file) }]),
+    });
+    const selection = await new Promise<FileSelection>((resolve, reject) => {
+      selectFile(resolve, () => reject(new Error("selection failed")));
+    });
+
+    discardSelectedFile(selection.client_offer_id);
+
+    expect(bindSelectedFile(selection.client_offer_id, "transfer_1")).toBe(false);
   });
 
   test("cancels an active upload", async () => {

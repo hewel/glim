@@ -3,6 +3,7 @@ export { delay, formatTime } from "./timer";
 export {
   bindSelectedFile,
   cancelUpload,
+  discardSelectedFile,
   downloadFile,
   receiveCapability,
   selectFile,

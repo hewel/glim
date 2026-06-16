@@ -84,6 +84,7 @@ pub fn server_error_notice(
     "invalid_recipient" -> message
     "not_joined" -> message
     "invalid_event" -> message
+    "file_too_large" -> message
     "history_load_failed" -> message
     _ -> current
   }

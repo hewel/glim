@@ -1,4 +1,5 @@
 import gleam/dynamic/decode
+import gleam/int
 import gleam/json
 import gleam/list
 import gleam/option
@@ -25,6 +26,7 @@ pub type ClientEvent {
 pub type DecodeError {
   InvalidJson
   InvalidPayload
+  FileTooLarge(max: Int)
   UnknownEvent(event_type: String)
 }
 
@@ -55,6 +57,25 @@ pub fn decode_client_event(input: String) -> Result(ClientEvent, DecodeError) {
   |> result.try(fn(event_type) {
     decode_known_client_event(input, classify_client_event_type(event_type))
   })
+}
+
+pub fn decode_error_code(error: DecodeError) -> String {
+  case error {
+    InvalidJson -> "invalid_event"
+    InvalidPayload -> "invalid_event"
+    FileTooLarge(_) -> "file_too_large"
+    UnknownEvent(_) -> "invalid_event"
+  }
+}
+
+pub fn decode_error_message(error: DecodeError) -> String {
+  case error {
+    InvalidJson -> "The event payload is invalid."
+    InvalidPayload -> "The event payload is invalid."
+    FileTooLarge(max) ->
+      "File is too large. Maximum size is " <> int.to_string(max) <> " bytes."
+    UnknownEvent(_) -> "The event payload is invalid."
+  }
 }
 
 fn decode_known_client_event(
@@ -304,9 +325,7 @@ fn decode_file_offer(input: String) -> Result(ClientEvent, DecodeError) {
   use valid_name <- result.try(
     validate_payload(validation.validate_file_name(name)),
   )
-  use valid_size <- result.try(
-    validate_payload(validation.validate_file_size(size)),
-  )
+  use valid_size <- result.try(validate_file_size(size))
   use valid_mime_type <- result.try(
     validate_payload(validation.validate_mime_type(mime_type)),
   )
@@ -318,6 +337,14 @@ fn decode_file_offer(input: String) -> Result(ClientEvent, DecodeError) {
     size: valid_size,
     mime_type: valid_mime_type,
   ))
+}
+
+fn validate_file_size(size: Int) -> Result(Int, DecodeError) {
+  case validation.validate_file_size(size) {
+    Ok(valid_size) -> Ok(valid_size)
+    Error(validation.FileSizeTooLarge(max)) -> Error(FileTooLarge(max: max))
+    Error(_) -> Error(InvalidPayload)
+  }
 }
 
 fn decode_file_transfer_id(

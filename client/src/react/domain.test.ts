@@ -5,8 +5,10 @@ import {
   addTextMessage,
   clearPendingDraft,
   forgetPeer,
+  isRelayFileSizeAllowed,
   markConnectionLost,
   markTransferProgress,
+  maxRelayFileSizeBytes,
   otherPeers,
   transferCanContinue,
 } from "./domain";
@@ -196,5 +198,10 @@ describe("React domain helpers", () => {
       { ...relayTransfer, transfer_id: "transfer_2", status: "ready" },
       { ...relayTransfer, transfer_id: "transfer_3", status: "completed" },
     ])).toBe(2);
+  });
+
+  test("uses the relay file size limit before sending offers", () => {
+    expect(isRelayFileSizeAllowed(maxRelayFileSizeBytes)).toBe(true);
+    expect(isRelayFileSizeAllowed(maxRelayFileSizeBytes + 1)).toBe(false);
   });
 });

@@ -47,6 +47,10 @@ export function bindSelectedFile(clientOfferId: string, transferId: string): boo
   return true;
 }
 
+export function discardSelectedFile(clientOfferId: string): void {
+  selectedFiles.delete(clientOfferId);
+}
+
 export function uploadSelectedFile(
   transferId: string,
   uploadUrl: string,

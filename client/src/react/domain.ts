@@ -11,6 +11,8 @@ import type {
   TransferStatus,
 } from "./types";
 
+export const maxRelayFileSizeBytes = 268_435_456;
+
 export function upsertPeer(peers: Peer[], peer: Peer): Peer[] {
   return peers.some((existing) => existing.id === peer.id)
     ? peers.map((existing) => (existing.id === peer.id ? peer : existing))
@@ -259,6 +261,10 @@ export function localFile(selection: FileSelection): LocalFile {
   return {
     client_offer_id: selection.client_offer_id,
   };
+}
+
+export function isRelayFileSizeAllowed(size: number): boolean {
+  return size <= maxRelayFileSizeBytes;
 }
 
 export function isPeerOnline(peers: Peer[], peerId: string): boolean {

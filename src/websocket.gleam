@@ -57,8 +57,8 @@ pub fn handle_message(
           handle_file_decline(state, conn, transfer_id)
         Ok(protocol.FileCancel(transfer_id:)) ->
           handle_file_cancel(state, conn, transfer_id)
-        Error(_) -> {
-          send_invalid_event(conn)
+        Error(error) -> {
+          send_decode_error(conn, error)
           mist.continue(state)
         }
       }
@@ -308,6 +308,21 @@ fn send_invalid_event(conn: mist.WebsocketConnection) -> Nil {
     mist.send_text_frame(
       conn,
       protocol.encode_error("invalid_event", "The event payload is invalid."),
+    )
+  Nil
+}
+
+fn send_decode_error(
+  conn: mist.WebsocketConnection,
+  error: protocol.DecodeError,
+) -> Nil {
+  let _ =
+    mist.send_text_frame(
+      conn,
+      protocol.encode_error(
+        protocol.decode_error_code(error),
+        protocol.decode_error_message(error),
+      ),
     )
   Nil
 }

@@ -1,8 +1,10 @@
+import gleam/int
 import gleam/option
 import gleam/string
 import gleeunit
 import protocol
 import shared/protocol as shared_protocol
+import validation
 
 pub fn main() -> Nil {
   gleeunit.main()
@@ -76,6 +78,31 @@ pub fn decode_valid_file_offer_test() {
     protocol.decode_client_event(
       "{\"type\":\"file.offer\",\"to\":\"bob\",\"client_offer_id\":\"offer_1\",\"name\":\"clip.mov\",\"size\":1234,\"mime_type\":\"video/quicktime\"}",
     )
+}
+
+pub fn decode_firefox_file_offer_with_session_device_ids_test() {
+  let assert Ok(protocol.FileOffer(
+    to: "c80b2189-7584-4780-9018-31858775b492:b72e2603-ef4b-4aed-b4d5-f261c58f2630",
+    client_offer_id: "offer_607c9552-d530-49f9-819c-31ca36fcd53a",
+    name: "Noto_Sans_SC.zip",
+    size: 112_760_167,
+    mime_type: "application/octet-stream",
+  )) =
+    protocol.decode_client_event(
+      "{\"type\":\"file.offer\",\"to\":\"c80b2189-7584-4780-9018-31858775b492:b72e2603-ef4b-4aed-b4d5-f261c58f2630\",\"client_offer_id\":\"offer_607c9552-d530-49f9-819c-31ca36fcd53a\",\"name\":\"Noto_Sans_SC.zip\",\"size\":112760167,\"mime_type\":\"application/octet-stream\"}",
+    )
+}
+
+pub fn decode_file_offer_reports_too_large_test() {
+  let oversized = validation.max_file_size + 1
+  let json =
+    "{\"type\":\"file.offer\",\"to\":\"bob\",\"client_offer_id\":\"offer_1\",\"name\":\"archive.zip\",\"size\":"
+    <> int.to_string(oversized)
+    <> ",\"mime_type\":\"application/octet-stream\"}"
+
+  let assert Error(protocol.FileTooLarge(max: max)) =
+    protocol.decode_client_event(json)
+  let assert True = max == validation.max_file_size
 }
 
 pub fn decode_file_offer_rejects_negative_size_test() {

@@ -264,6 +264,11 @@ pub fn core_decodes_transfer_accepted_for_browser_test() {
   let assert True = string.contains(json, "\"upload_url\"")
 }
 
+pub fn core_shows_file_too_large_notice_test() {
+  let assert "File is too large." =
+    core.server_error_notice("file_too_large", "File is too large.", "")
+}
+
 pub fn transfer_connection_loss_marks_active_transfers_failed_test() {
   let selection =
     transfer.FileSelection(

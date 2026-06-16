@@ -3,6 +3,7 @@ import {
   bindSelectedFile,
   cancelUpload,
   connect,
+  discardSelectedFile,
   downloadFile,
   loadDetectedProfile,
   loadIdentity,
@@ -25,8 +26,10 @@ import {
   conversationPeerId,
   forgetPeer,
   interruptedTransferIds,
+  isRelayFileSizeAllowed,
   isPeerOnline,
   localFile,
+  maxRelayFileSizeBytes,
   markConnectionLost,
   markTransferProgress,
   markTransferReady,
@@ -38,6 +41,7 @@ import {
   setDraft,
   upsertPeer,
 } from "./domain";
+import { formatBytes } from "./format";
 import type {
   ConnectionStatus,
   DeviceProfile,
@@ -245,6 +249,15 @@ export const useAppStore = create<AppState>()((set, get) => ({
     const peerId = state.pendingFilePeerId;
     if (!peerId) {
       set({ chatNotice: "Select an online peer before sharing a file." });
+      return;
+    }
+
+    if (!isRelayFileSizeAllowed(selection.size)) {
+      discardSelectedFile(selection.client_offer_id);
+      set({
+        pendingFilePeerId: null,
+        chatNotice: `Files must be ${formatBytes(maxRelayFileSizeBytes)} or smaller.`,
+      });
       return;
     }
 
