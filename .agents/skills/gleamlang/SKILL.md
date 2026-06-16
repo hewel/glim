@@ -28,7 +28,10 @@ description: Use when you needs to write, edit, review, debug, test, or explain 
 ## Control Flow
 
 - Do not build nested `case` pyramids for sequential fallible steps. Prefer flat `Result` control flow with `use value <- result.try(...)` when several extracted `Ok` values are needed, or a pipeline of `result.try`, `result.map`, and `result.map_error` when each step transforms the previous value.
+- When flattening a nested `case`, prefer an inline `let result = { use value <- result.try(...) ... }` block or direct `Result` pipeline inside the existing function before extracting new helper functions. Extract helpers only when they carry a reusable domain concept or materially improve readability beyond the inline `use` flow.
 - Map lower-level errors at the boundary of each fallible step with `result.map_error`, so callers receive the module's domain error type rather than raw parser, decoder, transport, or FFI errors.
+- Do not introduce custom error variants at every step by default. Prefer letting the pipeline carry a shared error type directly. At HTTP route boundaries, carrying the final response as the `Error` value can be simpler than creating route-local error wrappers.
+- Use `result.map_error` only where the failure changes behavior, such as cleanup, notification, logging, status code, or domain meaning. Collapse failures that produce the same behavior and response.
 - Keep `case` expressions for real branching: exhaustive custom-type handling, multi-shape pattern matching, or logic that genuinely differs per variant. Avoid `case` when it only unwraps `Ok`, forwards `Error`, and continues to the next fallible operation.
 
 ## Design Guidance

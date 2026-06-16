@@ -62,74 +62,70 @@ fn upload_transfer(
   room_subject: process.Subject(room.Message),
   transfer_id: String,
 ) -> response.Response(mist.ResponseData) {
-  case query_token(req) {
-    Error(_) -> text_response(403, "Invalid transfer token.")
-    Ok(token) -> {
-      case begin_upload(room_subject, transfer_id, token) {
-        Error(error) -> http_transfer_error(error)
-        Ok(room.UploadLease(size:, ..)) -> {
-          let part_path = file_store.transfer_part_path(spool_dir, transfer_id)
-          let _ = file_store.ensure_spool_dir(spool_dir)
-          let _ = file_store.remove_transfer_files(spool_dir, transfer_id)
+  let upload = {
+    use token <- result.try(
+      query_token(req)
+      |> result.map_error(fn(_) {
+        text_response(403, "Invalid transfer token.")
+      }),
+    )
+    use lease <- result.try(
+      begin_upload(room_subject, transfer_id, token)
+      |> result.map_error(http_transfer_error),
+    )
 
-          case mist.stream(req) {
-            Error(_) -> {
-              fail_upload(room_subject, transfer_id, token, "upload_failed")
-              text_response(400, "Upload body could not be read.")
-            }
-            Ok(consumer) -> {
-              let upload =
-                file_store.stream_upload(
-                  consumer,
-                  to: part_path,
-                  max_bytes: size,
-                  on_progress: fn(bytes) {
-                    upload_progress(room_subject, transfer_id, token, bytes)
-                  },
-                )
+    let part_path = file_store.transfer_part_path(spool_dir, transfer_id)
+    let _ = file_store.ensure_spool_dir(spool_dir)
+    let _ = file_store.remove_transfer_files(spool_dir, transfer_id)
 
-              case upload {
-                Error(error) -> {
-                  file_store.remove_transfer_files(spool_dir, transfer_id)
-                  fail_upload(
-                    room_subject,
-                    transfer_id,
-                    token,
-                    upload_error_reason(error),
-                  )
-                  text_response(400, "Upload failed.")
-                }
-                Ok(bytes) ->
-                  finish_upload(room_subject, transfer_id, token, bytes)
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-}
+    use consumer <- result.try(
+      mist.stream(req)
+      |> result.map_error(fn(_) {
+        fail_upload(room_subject, transfer_id, token, "upload_failed")
+        text_response(400, "Upload body could not be read.")
+      }),
+    )
 
-fn finish_upload(
-  room_subject: process.Subject(room.Message),
-  transfer_id: String,
-  token: String,
-  bytes: Int,
-) -> response.Response(mist.ResponseData) {
-  case file_store.promote_upload(spool_dir, transfer_id) {
-    Error(_) -> {
+    use bytes <- result.try(
+      file_store.stream_upload(
+        consumer,
+        to: part_path,
+        max_bytes: lease.size,
+        on_progress: fn(bytes) {
+          upload_progress(room_subject, transfer_id, token, bytes)
+        },
+      )
+      |> result.map_error(fn(error) {
+        file_store.remove_transfer_files(spool_dir, transfer_id)
+        fail_upload(
+          room_subject,
+          transfer_id,
+          token,
+          upload_error_reason(error),
+        )
+        text_response(400, "Upload failed.")
+      }),
+    )
+
+    use Nil <- result.try(
+      file_store.promote_upload(spool_dir, transfer_id)
+      |> result.map_error(fn(_) {
+        file_store.remove_transfer_files(spool_dir, transfer_id)
+        fail_upload(room_subject, transfer_id, token, "upload_failed")
+        text_response(500, "Upload failed.")
+      }),
+    )
+
+    complete_upload(room_subject, transfer_id, token, bytes)
+    |> result.map_error(fn(error) {
       file_store.remove_transfer_files(spool_dir, transfer_id)
-      fail_upload(room_subject, transfer_id, token, "upload_failed")
-      text_response(500, "Upload failed.")
-    }
-    Ok(Nil) ->
-      case complete_upload(room_subject, transfer_id, token, bytes) {
-        Ok(Nil) -> text_response(200, "Upload complete.")
-        Error(error) -> {
-          file_store.remove_transfer_files(spool_dir, transfer_id)
-          http_transfer_error(error)
-        }
-      }
+      http_transfer_error(error)
+    })
+  }
+
+  case upload {
+    Ok(Nil) -> text_response(200, "Upload complete.")
+    Error(response) -> response
   }
 }
 
@@ -138,28 +134,40 @@ fn download_transfer(
   room_subject: process.Subject(room.Message),
   transfer_id: String,
 ) -> response.Response(mist.ResponseData) {
-  case query_token(req) {
-    Error(_) -> text_response(403, "Invalid transfer token.")
-    Ok(token) ->
-      case begin_download(room_subject, transfer_id, token) {
-        Error(error) -> http_transfer_error(error)
-        Ok(room.DownloadLease(name:, ..)) -> {
-          let blob_path = file_store.transfer_blob_path(spool_dir, transfer_id)
-          case mist.send_file(blob_path, offset: 0, limit: option.None) {
-            Ok(file_data) -> {
-              process.send(room_subject, room.CompleteDownload(transfer_id))
-              response.new(200)
-              |> response.set_header("content-type", "application/octet-stream")
-              |> response.set_header(
-                "content-disposition",
-                "attachment; filename=\"" <> name <> "\"",
-              )
-              |> response.set_body(file_data)
-            }
-            Error(_) -> text_response(404, "File is no longer available.")
-          }
-        }
-      }
+  let download = {
+    use token <- result.try(
+      query_token(req)
+      |> result.map_error(fn(_) {
+        text_response(403, "Invalid transfer token.")
+      }),
+    )
+    use lease <- result.try(
+      begin_download(room_subject, transfer_id, token)
+      |> result.map_error(http_transfer_error),
+    )
+
+    let blob_path = file_store.transfer_blob_path(spool_dir, transfer_id)
+    use file_data <- result.try(
+      mist.send_file(blob_path, offset: 0, limit: option.None)
+      |> result.map_error(fn(_) {
+        text_response(404, "File is no longer available.")
+      }),
+    )
+
+    process.send(room_subject, room.CompleteDownload(transfer_id))
+    response.new(200)
+    |> response.set_header("content-type", "application/octet-stream")
+    |> response.set_header(
+      "content-disposition",
+      "attachment; filename=\"" <> lease.name <> "\"",
+    )
+    |> response.set_body(file_data)
+    |> Ok
+  }
+
+  case download {
+    Ok(response) -> response
+    Error(response) -> response
   }
 }
 
