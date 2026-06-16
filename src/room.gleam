@@ -693,28 +693,28 @@ fn begin_upload(
   transfer_id: String,
   token: String,
 ) -> actor.Next(State, Message) {
-  case upload_tokens(state, transfer_id, token) {
-    Ok(#(transfer, tokens)) -> {
-      process.send(
-        reply,
-        Ok(UploadLease(transfer_id: transfer_id, size: transfer.offer.size)),
+  let result = {
+    use #(transfer, tokens) <- result.try(upload_tokens(
+      state,
+      transfer_id,
+      token,
+    ))
+
+    let lease = UploadLease(transfer_id: transfer_id, size: transfer.offer.size)
+    let transfers =
+      dict.insert(
+        into: state.transfers,
+        for: transfer_id,
+        insert: Transfer(
+          ..transfer,
+          status: Uploading(tokens: tokens, uploaded_bytes: 0),
+        ),
       )
-      let transfers =
-        dict.insert(
-          into: state.transfers,
-          for: transfer_id,
-          insert: Transfer(
-            ..transfer,
-            status: Uploading(tokens: tokens, uploaded_bytes: 0),
-          ),
-        )
-      actor.continue(State(..state, transfers: transfers))
-    }
-    Error(error) -> {
-      process.send(reply, Error(error))
-      actor.continue(state)
-    }
+
+    Ok(#(lease, State(..state, transfers: transfers)))
   }
+
+  reply_with_state(state, reply, result)
 }
 
 fn upload_progress(
@@ -724,35 +724,64 @@ fn upload_progress(
   token: String,
   bytes: Int,
 ) -> actor.Next(State, Message) {
-  case upload_tokens(state, transfer_id, token) {
-    Ok(#(transfer, tokens)) -> {
-      let transfers =
-        dict.insert(
-          into: state.transfers,
-          for: transfer_id,
-          insert: Transfer(
-            ..transfer,
-            status: Uploading(tokens: tokens, uploaded_bytes: bytes),
-          ),
-        )
-      notify_transfer_participants(
-        state,
-        transfer.offer,
-        SendTransferProgress(
-          transfer_id: transfer_id,
-          phase: "uploading",
-          bytes: bytes,
-          total: transfer.offer.size,
+  let result = {
+    use #(transfer, tokens) <- result.try(upload_tokens(
+      state,
+      transfer_id,
+      token,
+    ))
+
+    notify_transfer_participants(
+      state,
+      transfer.offer,
+      SendTransferProgress(
+        transfer_id: transfer_id,
+        phase: "uploading",
+        bytes: bytes,
+        total: transfer.offer.size,
+      ),
+    )
+
+    let transfers =
+      dict.insert(
+        into: state.transfers,
+        for: transfer_id,
+        insert: Transfer(
+          ..transfer,
+          status: Uploading(tokens: tokens, uploaded_bytes: bytes),
         ),
       )
-      process.send(reply, Ok(Nil))
-      actor.continue(State(..state, transfers: transfers))
+
+    Ok(#(Nil, State(..state, transfers: transfers)))
+  }
+
+  reply_with_state(state, reply, result)
+}
+
+fn reply_with_state(
+  state: State,
+  reply: process.Subject(Result(value, HttpTransferError)),
+  result: Result(#(value, State), HttpTransferError),
+) -> actor.Next(State, Message) {
+  case result {
+    Ok(#(value, state)) -> {
+      process.send(reply, Ok(value))
+      actor.continue(state)
     }
     Error(error) -> {
       process.send(reply, Error(error))
       actor.continue(state)
     }
   }
+}
+
+fn reply_and_continue(
+  state: State,
+  reply: process.Subject(Result(value, HttpTransferError)),
+  result: Result(value, HttpTransferError),
+) -> actor.Next(State, Message) {
+  process.send(reply, result)
+  actor.continue(state)
 }
 
 fn complete_upload(
@@ -811,23 +840,17 @@ fn begin_download(
   transfer_id: String,
   token: String,
 ) -> actor.Next(State, Message) {
-  case ready_transfer(state, transfer_id, token) {
-    Ok(transfer) -> {
-      process.send(
-        reply,
-        Ok(DownloadLease(
-          transfer_id: transfer_id,
-          name: transfer.offer.name,
-          size: transfer.offer.size,
-        )),
+  let result =
+    ready_transfer(state, transfer_id, token)
+    |> result.map(fn(transfer) {
+      DownloadLease(
+        transfer_id: transfer_id,
+        name: transfer.offer.name,
+        size: transfer.offer.size,
       )
-      actor.continue(state)
-    }
-    Error(error) -> {
-      process.send(reply, Error(error))
-      actor.continue(state)
-    }
-  }
+    })
+
+  reply_and_continue(state, reply, result)
 }
 
 fn fail_upload(
@@ -967,11 +990,10 @@ fn upload_tokens(
   use transfer <- result.try(http_transfer(state, transfer_id))
 
   case transfer.status {
-    Accepted(tokens) | Uploading(tokens:, uploaded_bytes: _) ->
-      case tokens.upload == token {
-        True -> Ok(#(transfer, tokens))
-        False -> Error(HttpTransferInvalidToken)
-      }
+    Accepted(tokens) | Uploading(tokens:, uploaded_bytes: _) -> {
+      use Nil <- result.try(ensure_transfer_token(tokens.upload, token))
+      Ok(#(transfer, tokens))
+    }
     Pending -> Error(HttpTransferInvalidState)
     Ready(_) -> Error(HttpTransferInvalidState)
   }
@@ -985,14 +1007,23 @@ fn ready_transfer(
   use transfer <- result.try(http_transfer(state, transfer_id))
 
   case transfer.status {
-    Ready(tokens) ->
-      case tokens.download == token {
-        True -> Ok(transfer)
-        False -> Error(HttpTransferInvalidToken)
-      }
+    Ready(tokens) -> {
+      use Nil <- result.try(ensure_transfer_token(tokens.download, token))
+      Ok(transfer)
+    }
     Pending -> Error(HttpTransferInvalidState)
     Accepted(_) -> Error(HttpTransferInvalidState)
     Uploading(_, _) -> Error(HttpTransferInvalidState)
+  }
+}
+
+fn ensure_transfer_token(
+  expected: String,
+  actual: String,
+) -> Result(Nil, HttpTransferError) {
+  case expected == actual {
+    True -> Ok(Nil)
+    False -> Error(HttpTransferInvalidToken)
   }
 }
 
@@ -1012,26 +1043,19 @@ fn notify_ready(
   transfer_id: String,
   download_token: String,
 ) -> Nil {
-  case dict.get(state.peers, offer.from) {
-    Ok(sender) ->
-      process.send(
-        sender.client,
-        SendTransferReady(transfer_id: transfer_id, download_url: option.None),
-      )
-    Error(_) -> Nil
-  }
-
-  case dict.get(state.peers, offer.to) {
-    Ok(receiver) ->
-      process.send(
-        receiver.client,
-        SendTransferReady(
-          transfer_id: transfer_id,
-          download_url: option.Some(download_url(transfer_id, download_token)),
-        ),
-      )
-    Error(_) -> Nil
-  }
+  send_to_peer(
+    state.peers,
+    offer.from,
+    SendTransferReady(transfer_id: transfer_id, download_url: option.None),
+  )
+  send_to_peer(
+    state.peers,
+    offer.to,
+    SendTransferReady(
+      transfer_id: transfer_id,
+      download_url: option.Some(download_url(transfer_id, download_token)),
+    ),
+  )
 }
 
 fn upload_url(transfer_id: String, token: String) -> String {
@@ -1078,13 +1102,17 @@ fn notify_transfer_participants(
   offer: shared_protocol.FileOffer,
   message: ClientMessage,
 ) -> Nil {
-  case dict.get(state.peers, offer.from) {
-    Ok(sender) -> process.send(sender.client, message)
-    Error(_) -> Nil
-  }
+  send_to_peer(state.peers, offer.from, message)
+  send_to_peer(state.peers, offer.to, message)
+}
 
-  case dict.get(state.peers, offer.to) {
-    Ok(receiver) -> process.send(receiver.client, message)
+fn send_to_peer(
+  peers: dict.Dict(String, PeerSession),
+  device_id: String,
+  message: ClientMessage,
+) -> Nil {
+  case dict.get(peers, device_id) {
+    Ok(session) -> process.send(session.client, message)
     Error(_) -> Nil
   }
 }
@@ -1123,14 +1151,7 @@ fn broadcast_joined_to_others(
   device_id: String,
   peer: shared_protocol.Peer,
 ) -> Nil {
-  peers
-  |> dict.values
-  |> list.each(fn(session) {
-    case session.peer.id == device_id {
-      True -> Nil
-      False -> process.send(session.client, SendPeerJoined(peer))
-    }
-  })
+  broadcast_to_others(peers, device_id, SendPeerJoined(peer))
 }
 
 fn broadcast_updated_to_others(
@@ -1138,12 +1159,20 @@ fn broadcast_updated_to_others(
   device_id: String,
   peer: shared_protocol.Peer,
 ) -> Nil {
+  broadcast_to_others(peers, device_id, SendPeerUpdated(peer))
+}
+
+fn broadcast_to_others(
+  peers: dict.Dict(String, PeerSession),
+  device_id: String,
+  message: ClientMessage,
+) -> Nil {
   peers
   |> dict.values
   |> list.each(fn(session) {
     case session.peer.id == device_id {
       True -> Nil
-      False -> process.send(session.client, SendPeerUpdated(peer))
+      False -> process.send(session.client, message)
     }
   })
 }
