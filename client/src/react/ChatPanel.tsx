@@ -42,7 +42,7 @@ export function ChatPanel() {
 
   if (!selectedPeerId) {
     return (
-      <div className="flex h-full min-h-[calc(100vh-5rem)] items-center justify-center bg-surface">
+      <div className="flex h-full items-center justify-center bg-surface">
         <div className="text-center">
           <h2 className="font-headline-md">Select a peer</h2>
           <p className="mt-2 font-body-md text-on-surface-variant">
@@ -66,8 +66,8 @@ export function ChatPanel() {
   const threadTransfers = transfers.filter((transfer) => transfer.peer_id === selectedPeerId);
 
   return (
-    <div className="flex h-full min-h-[calc(100vh-5rem)] flex-col bg-surface">
-      <header className="flex h-[70px] items-center justify-between border-outline-variant border-b bg-surface-container-low px-5">
+    <div className="flex h-full max-h-[calc(100vh-5rem)] flex-col bg-surface">
+      <header className="flex min-h-17.5 items-center justify-between border-outline-variant border-b bg-surface-container-low px-5">
         <div className="flex min-w-0 items-center gap-3">
           <button
             aria-label="Back to peers"
@@ -99,7 +99,7 @@ export function ChatPanel() {
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-5 py-8 custom-scrollbar lg:px-10">
-        <div className="mx-auto max-w-4xl space-y-7">
+        <div className="w-full">
           <div className="flex items-center gap-5 font-label-md text-outline">
             <div className="h-px flex-1 bg-outline-variant" />
             Today
@@ -183,7 +183,7 @@ function MessageBubble({ message, deviceId }: { message: TextMessage; deviceId: 
 
   return (
     <div className={`flex items-end ${own ? "justify-end" : "justify-start"}`}>
-      <div className={own ? "text-right" : "text-left"}>
+      <div>
         <div
           className={[
             "max-w-2xl rounded-lg border px-5 py-4 font-body-lg",

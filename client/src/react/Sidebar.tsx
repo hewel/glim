@@ -19,7 +19,7 @@ export function Sidebar() {
   const setLogOpen = useAppStore((state) => state.setLogOpen);
 
   return (
-    <div className="flex h-full min-h-[calc(100vh-5rem)] flex-col p-5">
+    <div className="flex h-full flex-col p-5">
       <section className="mb-8 flex items-start gap-4">
         <div className="grid size-14 place-items-center rounded-full bg-primary text-on-primary">
           <IconShare size={28} />

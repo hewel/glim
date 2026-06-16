@@ -51,7 +51,7 @@ export function App() {
           </div>
         </div>
       </header>
-      <main className="grid min-h-[calc(100vh-5rem)] grid-cols-1 lg:grid-cols-[350px_minmax(0,1fr)_400px]">
+      <main className="grid max-h-[calc(100vh-5rem)] grid-cols-1 lg:grid-cols-[350px_minmax(0,1fr)_400px]">
         <aside
           className={[
             "border-outline-variant border-r bg-surface-container-low",
