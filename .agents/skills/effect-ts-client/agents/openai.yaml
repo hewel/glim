@@ -1,0 +1,4 @@
+interface:
+  display_name: "Effect TS Client"
+  short_description: "Code Glim client TypeScript with Effect and Gleam-like typed-error rules"
+  default_prompt: "Use $effect-ts-client to implement or review Glim client TypeScript with Effect and Gleam-like typed error rules."
