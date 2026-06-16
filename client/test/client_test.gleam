@@ -249,203 +249,21 @@ pub fn reconnect_retry_delay_caps_test() {
   let assert 30_000 = reconnect.retry_delay_ms(20)
 }
 
-pub fn core_encodes_rtc_signal_without_source_peer_test() {
-  let json =
-    core.encode_rtc_signal(
-      "bob",
-      "transfer_1",
-      "rtc_1",
-      "offer",
-      "{\"type\":\"offer\",\"sdp\":\"opaque\"}",
-    )
-
-  let assert True = string.contains(json, "\"type\":\"rtc.signal\"")
-  let assert True = string.contains(json, "\"to\":\"bob\"")
-  let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
-  let assert True = string.contains(json, "\"correlation_id\":\"rtc_1\"")
-  let assert True = string.contains(json, "\"description\":\"offer\"")
-  let assert False = string.contains(json, "\"from\"")
-}
-
-pub fn core_encodes_file_accept_with_receive_mode_test() {
-  let json = core.encode_file_accept("transfer_1", "relay")
+pub fn core_encodes_file_accept_test() {
+  let json = core.encode_file_accept("transfer_1")
 
   let assert True = string.contains(json, "\"type\":\"file.accept\"")
   let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
-  let assert True = string.contains(json, "\"receive_mode\":\"relay\"")
 }
 
-pub fn core_decodes_file_accepted_receive_mode_for_browser_test() {
+pub fn core_decodes_file_accepted_for_browser_test() {
   let json =
     core.server_event_json(
-      "{\"type\":\"file.accepted\",\"transfer_id\":\"transfer_1\",\"receive_mode\":\"relay\"}",
+      "{\"type\":\"file.accepted\",\"transfer_id\":\"transfer_1\"}",
     )
 
   let assert True = string.contains(json, "\"kind\":\"file_accepted\"")
   let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
-  let assert True = string.contains(json, "\"receive_mode\":\"relay\"")
-}
-
-pub fn core_decodes_routed_rtc_signal_for_browser_test() {
-  let json =
-    core.server_event_json(
-      "{\"type\":\"rtc.signal\",\"signal\":{\"transfer_id\":\"transfer_1\",\"correlation_id\":\"rtc_1\",\"from\":\"alice\",\"to\":\"bob\",\"description\":\"offer\",\"payload\":\"{\\\"type\\\":\\\"offer\\\",\\\"sdp\\\":\\\"opaque\\\"}\"}}",
-    )
-
-  let assert True = string.contains(json, "\"kind\":\"rtc_signal\"")
-  let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
-  let assert True = string.contains(json, "\"correlation_id\":\"rtc_1\"")
-  let assert True = string.contains(json, "\"from\":\"alice\"")
-  let assert True = string.contains(json, "\"to\":\"bob\"")
-  let assert True = string.contains(json, "\"description\":\"offer\"")
-  let assert True = string.contains(json, "opaque")
-}
-
-pub fn core_rejects_rtc_transfer_offer_manifest_mismatch_test() {
-  let assert Ok(manifest) =
-    shared_protocol.validate_manifest(
-      shared_protocol.Manifest(
-        version: 1,
-        manifest_id: "",
-        piece_size: 4,
-        files: [
-          shared_protocol.ManifestFile(
-            file_id: "file_1",
-            name: "other.mov",
-            size: 4,
-            mime_type: "video/quicktime",
-            pieces: [
-              shared_protocol.ManifestPiece(
-                index: 0,
-                size: 4,
-                sha256: hash("a"),
-              ),
-            ],
-          ),
-        ],
-      ),
-    )
-  let control_json =
-    shared_protocol.TransferOffer(
-      room_transfer_id: "transfer_1",
-      manifest: manifest,
-    )
-    |> shared_protocol.encode_rtc_control_message
-
-  let json =
-    core.rtc_control_event_json(
-      control_json,
-      "transfer_1",
-      "clip.mov",
-      4,
-      "video/quicktime",
-    )
-
-  let assert True =
-    string.contains(json, "\"kind\":\"transfer_manifest_rejected\"")
-  let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
-  let assert True =
-    string.contains(
-      json,
-      "\"reason\":\"Manifest does not match the accepted file offer.\"",
-    )
-}
-
-pub fn core_accepts_rtc_transfer_offer_with_first_file_for_piece_request_test() {
-  let assert Ok(manifest) =
-    shared_protocol.validate_manifest(
-      shared_protocol.Manifest(
-        version: 1,
-        manifest_id: "",
-        piece_size: 4,
-        files: [
-          shared_protocol.ManifestFile(
-            file_id: "file_1",
-            name: "clip.mov",
-            size: 8,
-            mime_type: "video/quicktime",
-            pieces: [
-              shared_protocol.ManifestPiece(
-                index: 0,
-                size: 4,
-                sha256: hash("a"),
-              ),
-              shared_protocol.ManifestPiece(
-                index: 1,
-                size: 4,
-                sha256: hash("b"),
-              ),
-            ],
-          ),
-        ],
-      ),
-    )
-  let control_json =
-    shared_protocol.TransferOffer(
-      room_transfer_id: "transfer_1",
-      manifest: manifest,
-    )
-    |> shared_protocol.encode_rtc_control_message
-
-  let json =
-    core.rtc_control_event_json(
-      control_json,
-      "transfer_1",
-      "clip.mov",
-      8,
-      "video/quicktime",
-    )
-
-  let assert True =
-    string.contains(json, "\"kind\":\"transfer_manifest_accepted\"")
-  let assert True =
-    string.contains(json, "\"manifest_id\":\"" <> manifest.manifest_id)
-  let assert True = string.contains(json, "\"file_id\":\"file_1\"")
-  let assert True = string.contains(json, "\"piece_size\":4")
-  let assert True = string.contains(json, "\"piece_sha256\":\"" <> hash("a"))
-  let assert True = string.contains(json, "\"pieces\"")
-  let assert True = string.contains(json, "\"piece_index\":1")
-  let assert True = string.contains(json, "\"piece_sha256\":\"" <> hash("b"))
-}
-
-pub fn core_encodes_transfer_offer_control_from_piece_hashes_test() {
-  let control_json =
-    core.encode_transfer_offer_control(
-      "transfer_1",
-      "file_1",
-      "clip.txt",
-      3,
-      "text/plain",
-      2,
-      [hash("a"), hash("b")],
-    )
-
-  let assert Ok(shared_protocol.TransferOffer(room_transfer_id:, manifest:)) =
-    shared_protocol.decode_rtc_control_message(control_json)
-  let assert "transfer_1" = room_transfer_id
-  let assert [
-    shared_protocol.ManifestFile(
-      file_id: "file_1",
-      name: "clip.txt",
-      size: 3,
-      mime_type: "text/plain",
-      pieces: [
-        shared_protocol.ManifestPiece(index: 0, size: 2, sha256: _),
-        shared_protocol.ManifestPiece(index: 1, size: 1, sha256: _),
-      ],
-    ),
-  ] = manifest.files
-}
-
-pub fn core_encodes_piece_request_control_test() {
-  let control_json =
-    core.encode_piece_request_control("manifest_1", "file_1", 0)
-
-  let assert Ok(shared_protocol.PieceRequest(
-    manifest_id: "manifest_1",
-    file_id: "file_1",
-    piece_index: 0,
-  )) = shared_protocol.decode_rtc_control_message(control_json)
 }
 
 pub fn transfer_connection_loss_marks_active_transfers_failed_test() {
@@ -504,8 +322,4 @@ fn peer(id: String, display_name: String) -> shared_protocol.Peer {
     browser: "unknown",
     model: option.None,
   )
-}
-
-fn hash(prefix: String) -> String {
-  prefix <> "000000000000000000000000000000000000000000000000000000000000000"
 }

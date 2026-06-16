@@ -6,12 +6,9 @@ import type {
   VoidCallback,
   WrittenChunkCallback,
 } from "./types";
-import { readOpfsTransferBlob, removeOpfsTransfer } from "./opfs_store";
-import { rememberSelectedFileHandle } from "./sender_file_handles";
 import {
   decodeIncomingChunk,
   encodeOutgoingChunk,
-  hashRegisteredFile,
   registerFile,
 } from "./worker_client";
 
@@ -63,26 +60,16 @@ async function handleOpenFileSelection(
       return;
     }
 
-    await completeFileSelection(await handle.getFile(), onSelected, onError, handle);
-  } catch (_error) {
+    await completeFileSelection(await handle.getFile(), onSelected, onError);
+  } catch {
     onError();
   }
 }
 
-export function streamSaveSupported(): boolean {
-  return typeof navigator.storage?.getDirectory === "function";
-}
-
 export function receiveCapability(): ReceiveCapability {
-  if (streamSaveSupported() && rtcSupported()) {
-    return "p2p";
-  }
-
-  if (relayStreamSupported()) {
-    return "relay";
-  }
-
-  return "unsupported";
+  return typeof savePickerWindow().showSaveFilePicker === "function"
+    ? "relay"
+    : "unsupported";
 }
 
 export async function startReceiveFile(
@@ -92,18 +79,13 @@ export async function startReceiveFile(
   onError: (reason: string) => void,
   onUnsupported: VoidCallback,
 ): Promise<void> {
-  if (typeof navigator.storage?.getDirectory === "function") {
-    onReady();
+  const picker = savePickerWindow().showSaveFilePicker;
+  if (!picker) {
+    onUnsupported();
     return;
   }
 
   try {
-    const picker = savePickerWindow().showSaveFilePicker;
-    if (!picker) {
-      onUnsupported();
-      return;
-    }
-
     const handle = await picker({ suggestedName: name || "download" });
     const writer = await handle.createWritable();
     receiveWriters.set(transferId, writer);
@@ -115,74 +97,6 @@ export async function startReceiveFile(
   }
 }
 
-function rtcSupported(): boolean {
-  return typeof RTCPeerConnection === "function";
-}
-
-function relayStreamSupported(): boolean {
-  return typeof savePickerWindow().showSaveFilePicker === "function";
-}
-
-export type ExportMethod = "save_picker" | "blob";
-
-export async function exportReceivedFile(
-  transferId: string,
-  name: string,
-  mimeType: string,
-  onExported: (method: ExportMethod) => void,
-  onError: (reason: string) => void,
-): Promise<void> {
-  try {
-    const blob = await readOpfsTransferBlob(transferId, mimeType);
-    const method = await exportBlob(name, blob);
-    if (method === "save_picker") {
-      await removeOpfsTransfer(transferId);
-    }
-    onExported(method);
-  } catch (error) {
-    onError(error instanceof DOMException && error.name === "AbortError"
-      ? "Save cancelled."
-      : "File could not be exported.");
-  }
-}
-
-export async function exportBlob(name: string, blob: Blob): Promise<ExportMethod> {
-  const picker = savePickerWindow().showSaveFilePicker;
-  if (picker) {
-    const handle = await picker({ suggestedName: name || "download" });
-    const writer = await handle.createWritable();
-    await writeBlobToStream(blob, writer);
-    return "save_picker";
-  }
-
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = name || "download";
-  anchor.rel = "noopener";
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-  return "blob";
-}
-
-async function writeBlobToStream(blob: Blob, writer: WritableFileStream): Promise<void> {
-  const reader = blob.stream().getReader();
-  try {
-    while (true) {
-      const next = await reader.read();
-      if (next.done) {
-        break;
-      }
-      await writer.write(next.value);
-    }
-  } finally {
-    reader.releaseLock();
-    await writer.close();
-  }
-}
-
 export async function prepareOutgoingFrame(
   fileId: string,
   transferId: string,
@@ -191,13 +105,6 @@ export async function prepareOutgoingFrame(
   chunkSize: number,
 ): Promise<ArrayBuffer> {
   return encodeOutgoingChunk(fileId, transferId, sequence, offset, chunkSize);
-}
-
-export async function hashOutgoingFile(
-  fileId: string,
-  pieceSize: number,
-): Promise<string[]> {
-  return hashRegisteredFile(fileId, pieceSize);
 }
 
 export async function writeIncomingFrame(
@@ -227,7 +134,7 @@ export async function writeIncomingFrame(
       byte_length: chunk.byte_length,
       final: chunk.final,
     });
-  } catch (_error) {
+  } catch {
     onReceiveError("", "File chunk could not be written.");
   }
 }
@@ -263,7 +170,6 @@ async function completeFileSelection(
   file: File,
   onSelected: FileSelectionCallback,
   onError: VoidCallback,
-  handle?: FileSystemFileHandle,
 ): Promise<void> {
   const selection: FileSelection = {
     transfer_id: randomId("transfer"),
@@ -275,11 +181,8 @@ async function completeFileSelection(
 
   try {
     await registerFile(selection.file_id, file);
-    if (handle) {
-      rememberSelectedFileHandle(selection.file_id, handle);
-    }
     onSelected(selection);
-  } catch (_error) {
+  } catch {
     onError();
   }
 }

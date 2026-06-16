@@ -31,7 +31,7 @@ describe("transfer frame codec", () => {
     expect(() => decodeChunkFrame(new Uint8Array([1, 2]).buffer)).toThrow();
   });
 
-  test("keeps encoded P2P frames under Chrome's 256 KiB DataChannel message limit", () => {
+  test("keeps encoded relay frames under the 256 KiB frame budget", () => {
     const bytes = new Uint8Array(chunkSize).buffer;
     const frame = encodeChunkFrame(
       {

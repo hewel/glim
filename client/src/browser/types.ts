@@ -23,7 +23,7 @@ export interface WrittenChunk {
   final: boolean;
 }
 
-export type ReceiveCapability = "p2p" | "relay" | "unsupported";
+export type ReceiveCapability = "relay" | "unsupported";
 
 export type VoidCallback = () => void;
 export type StringCallback = (value: string) => void;

@@ -37,8 +37,6 @@ export function ChatPanel() {
   const acceptFile = useAppStore((state) => state.acceptFile);
   const declineFile = useAppStore((state) => state.declineFile);
   const cancelFile = useAppStore((state) => state.cancelFile);
-  const exportFile = useAppStore((state) => state.exportFile);
-  const reselectFile = useAppStore((state) => state.reselectFileForTransfer);
   const [detailsOpen, setDetailsOpen] = useState(false);
 
   if (!selectedPeerId) {
@@ -115,8 +113,6 @@ export function ChatPanel() {
               onAccept={() => acceptFile(transfer.transfer_id)}
               onCancel={() => cancelFile(transfer.transfer_id)}
               onDecline={() => declineFile(transfer.transfer_id)}
-              onExport={() => exportFile(transfer.transfer_id)}
-              onReselect={() => reselectFile(transfer.transfer_id)}
               transfer={transfer}
             />
           ))}
@@ -209,15 +205,11 @@ function TransferCard({
   onAccept,
   onDecline,
   onCancel,
-  onExport,
-  onReselect,
 }: {
   transfer: TransferItem;
   onAccept: () => void;
   onDecline: () => void;
   onCancel: () => void;
-  onExport: () => void;
-  onReselect: () => void;
 }) {
   const percent = progressPercent(transfer.transferred, transfer.size);
   const isSending = transfer.direction === "sending";
@@ -279,31 +271,12 @@ function TransferCard({
       <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-outline-variant/40">
         <div className={`h-full rounded-full transition-all duration-300 ${progressBg}`} style={{ width: `${percent}%` }} />
       </div>
-      {transfer.piece_summary ? (
-        <div className="mt-3 flex flex-wrap gap-2 font-code-sm text-xs">
-          <span className="rounded-sm bg-primary-fixed px-2 py-1 text-primary">
-            Active {transfer.piece_summary.active}
-          </span>
-          <span className="rounded-sm bg-emerald-50 px-2 py-1 text-emerald-700">
-            Verified {transfer.piece_summary.verified} / {transfer.piece_summary.total}
-          </span>
-          <span className="rounded-sm bg-rose-50 px-2 py-1 text-rose-700">
-            Failed {transfer.piece_summary.failed}
-          </span>
-        </div>
-      ) : null}
       <div className="mt-4 flex flex-wrap gap-2">
         {transfer.direction === "receiving" && transfer.status === "offered" ? (
           <>
             <ActionButton label="Accept" onClick={onAccept} />
             <ActionButton label="Decline" quiet onClick={onDecline} />
           </>
-        ) : null}
-        {transfer.direction === "receiving" && transfer.status === "export_ready" ? (
-          <ActionButton label="Save" onClick={onExport} />
-        ) : null}
-        {transfer.direction === "sending" && transfer.status === "resumable" ? (
-          <ActionButton label="Reselect file" onClick={onReselect} />
         ) : null}
         {isActiveTransferStatus(transfer.status) ? (
           <ActionButton label="Cancel" quiet onClick={onCancel} />

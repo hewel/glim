@@ -1,4 +1,7 @@
 import { expect, test } from "@playwright/test";
+import type { Page } from "@playwright/test";
+
+type SavedBytesWindow = Window & { __glimSavedBytes?: number };
 
 test("boots the Vite client and connects through the backend WebSocket", async ({ page }) => {
   await page.goto("/");
@@ -9,7 +12,7 @@ test("boots the Vite client and connects through the backend WebSocket", async (
   );
 });
 
-test("transfers a single file over P2P and reaches export completion", async ({ browser }) => {
+test("transfers a single file over the WebSocket relay", async ({ browser }) => {
   const aliceContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const bobContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
   const alice = await aliceContext.newPage();
@@ -32,25 +35,23 @@ test("transfers a single file over P2P and reaches export completion", async ({ 
   await alice.getByLabel("Attach file").click();
   const chooser = await chooserPromise;
   await chooser.setFiles({
-    name: "p2p-transfer.bin",
+    name: "relay-transfer.bin",
     mimeType: "application/octet-stream",
-    buffer: Buffer.from("hello p2p"),
+    buffer: Buffer.from("hello relay"),
   });
 
-  const bobTransfer = bob.getByLabel("Transfer p2p-transfer.bin");
+  const bobTransfer = bob.getByLabel("Transfer relay-transfer.bin");
   await expect(bobTransfer).toBeVisible({ timeout: 10_000 });
   await bobTransfer.getByRole("button", { name: "Accept" }).click();
 
-  await expect(bobTransfer.getByText("Export ready")).toBeVisible({ timeout: 30_000 });
-  await expect.poll(() => resumeSnapshot(bob), { timeout: 10_000 }).toEqual({
-    completedPieces: 1,
-    partBytes: 9,
-  });
+  await expect(bobTransfer.getByText("Completed")).toBeVisible({ timeout: 30_000 });
+  await expect(bobTransfer.getByText("11 B / 11 B · Complete", { exact: true })).toBeVisible({ timeout: 30_000 });
 
-  await bobTransfer.getByRole("button", { name: "Save" }).click();
+  const aliceTransfer = alice.getByLabel("Transfer relay-transfer.bin");
+  await expect(aliceTransfer.getByText("Completed")).toBeVisible({ timeout: 30_000 });
 
-  await expect(bobTransfer.getByText("Completed")).toBeVisible({ timeout: 10_000 });
-  await expect(bobTransfer.getByText("Saved")).toBeVisible({ timeout: 10_000 });
+  await expect.poll(() => bob.evaluate(() => (window as SavedBytesWindow).__glimSavedBytes))
+    .toBe(11);
 
   await aliceContext.close();
   await bobContext.close();
@@ -79,56 +80,7 @@ test("shows another tab from the same browser profile as a peer", async ({ brows
   await context.close();
 });
 
-test("preserves verified OPFS data after receiver reload", async ({ browser }) => {
-  const aliceContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  const bobContext = await browser.newContext({ viewport: { width: 1440, height: 900 } });
-  const alice = await aliceContext.newPage();
-  const bob = await bobContext.newPage();
-
-  await seedIdentity(alice, "alice-reload-device", "Alice Reload Laptop");
-  await seedIdentity(bob, "bob-reload-device", "Bob Reload Laptop");
-  await mockSavePicker(bob);
-
-  await alice.goto("/");
-  await bob.goto("/");
-
-  await expect(alice.getByText("Bob Reload Laptop")).toBeVisible({ timeout: 10_000 });
-  await expect(bob.getByText("Alice Reload Laptop")).toBeVisible({ timeout: 10_000 });
-
-  await alice.getByText("Bob Reload Laptop").click();
-  await bob.getByText("Alice Reload Laptop").click();
-
-  const chooserPromise = alice.waitForEvent("filechooser");
-  await alice.getByLabel("Attach file").click();
-  const chooser = await chooserPromise;
-  await chooser.setFiles({
-    name: "reload-transfer.bin",
-    mimeType: "application/octet-stream",
-    buffer: Buffer.from("hello p2p"),
-  });
-
-  const bobTransfer = bob.getByLabel("Transfer reload-transfer.bin");
-  await expect(bobTransfer).toBeVisible({ timeout: 10_000 });
-  await bobTransfer.getByRole("button", { name: "Accept" }).click();
-
-  await expect(bobTransfer.getByText("Export ready")).toBeVisible({ timeout: 30_000 });
-  await expect.poll(() => resumeSnapshot(bob), { timeout: 10_000 }).toEqual({
-    completedPieces: 1,
-    partBytes: 9,
-  });
-
-  await bob.reload();
-
-  await expect.poll(() => resumeSnapshot(bob), { timeout: 10_000 }).toEqual({
-    completedPieces: 1,
-    partBytes: 9,
-  });
-
-  await aliceContext.close();
-  await bobContext.close();
-});
-
-async function seedIdentity(page: import("@playwright/test").Page, deviceId: string, name: string) {
+async function seedIdentity(page: Page, deviceId: string, name: string) {
   await page.addInitScript(
     ({ deviceId, name }) => {
       Object.defineProperty(window, "showOpenFilePicker", {
@@ -142,52 +94,20 @@ async function seedIdentity(page: import("@playwright/test").Page, deviceId: str
   );
 }
 
-async function mockSavePicker(page: import("@playwright/test").Page) {
+async function mockSavePicker(page: Page) {
   await page.addInitScript(() => {
+    (window as SavedBytesWindow).__glimSavedBytes = 0;
     Object.defineProperty(window, "showSaveFilePicker", {
       configurable: true,
       value: async () => ({
         createWritable: async () => ({
-          write: async () => undefined,
+          write: async (chunk: Uint8Array) => {
+            (window as SavedBytesWindow).__glimSavedBytes =
+              ((window as SavedBytesWindow).__glimSavedBytes ?? 0) + chunk.byteLength;
+          },
           close: async () => undefined,
         }),
       }),
     });
-  });
-}
-
-async function resumeSnapshot(page: import("@playwright/test").Page): Promise<{
-  completedPieces: number;
-  partBytes: number;
-}> {
-  return page.evaluate(async () => {
-    const root = await navigator.storage.getDirectory();
-    const transfers = await root.getDirectoryHandle("transfers");
-    const transferEntries = (transfers as unknown as {
-      entries(): AsyncIterable<[string, FileSystemDirectoryHandle]>;
-    }).entries();
-
-    for await (const [, transfer] of transferEntries) {
-      const resumeFile = await transfer.getFileHandle("resume.json");
-      const resume = JSON.parse(await resumeFile.getFile().then((blob) => blob.text())) as {
-        transfer_id: string;
-        files: Record<string, { completedPieces: number[] }>;
-      };
-      const firstFile = Object.values(resume.files)[0];
-      const files = await transfer.getDirectoryHandle("files");
-      const part = await files.getFileHandle(`${resume.transfer_id}.part`);
-      const partBytes = await part.getFile().then((blob) => blob.size);
-      if (firstFile && partBytes > 0) {
-        return {
-          completedPieces: firstFile.completedPieces.length,
-          partBytes,
-        };
-      }
-    }
-
-    return {
-      completedPieces: 0,
-      partBytes: 0,
-    };
   });
 }

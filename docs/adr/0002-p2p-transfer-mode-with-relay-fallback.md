@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted
+Superseded
+Superseded by the relay-only transfer implementation that removed WebRTC signaling and P2P DataChannels.
 
 ## Context
 

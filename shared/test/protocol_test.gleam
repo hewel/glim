@@ -142,21 +142,17 @@ pub fn decode_file_offered_test() {
     )
 }
 
-pub fn encode_file_accept_includes_receive_mode_test() {
-  let json = protocol.encode_file_accept("transfer_1", "relay")
+pub fn encode_file_accept_test() {
+  let json = protocol.encode_file_accept("transfer_1")
 
   let assert True = string.contains(json, "\"type\":\"file.accept\"")
   let assert True = string.contains(json, "\"transfer_id\":\"transfer_1\"")
-  let assert True = string.contains(json, "\"receive_mode\":\"relay\"")
 }
 
-pub fn decode_file_accepted_receive_mode_test() {
-  let assert Ok(protocol.FileAccepted(
-    transfer_id: "transfer_1",
-    receive_mode: "relay",
-  )) =
+pub fn decode_file_accepted_test() {
+  let assert Ok(protocol.FileAccepted(transfer_id: "transfer_1")) =
     protocol.decode_server_event(
-      "{\"type\":\"file.accepted\",\"transfer_id\":\"transfer_1\",\"receive_mode\":\"relay\"}",
+      "{\"type\":\"file.accepted\",\"transfer_id\":\"transfer_1\"}",
     )
 }
 
@@ -171,117 +167,6 @@ pub fn decode_file_chunk_ack_test() {
     protocol.decode_server_event(
       "{\"type\":\"file.chunk_ack\",\"ack\":{\"transfer_id\":\"transfer_1\",\"sequence\":2,\"offset\":512,\"byte_length\":256,\"final\":false}}",
     )
-}
-
-pub fn decode_rtc_signal_test() {
-  let assert Ok(protocol.RtcSignalReceived(protocol.RtcSignal(
-    transfer_id: "transfer_1",
-    correlation_id: "rtc_1",
-    from: "alice",
-    to: "bob",
-    description: "offer",
-    payload: "{\"type\":\"offer\",\"sdp\":\"opaque\"}",
-  ))) =
-    protocol.decode_server_event(
-      "{\"type\":\"rtc.signal\",\"signal\":{\"transfer_id\":\"transfer_1\",\"correlation_id\":\"rtc_1\",\"from\":\"alice\",\"to\":\"bob\",\"description\":\"offer\",\"payload\":\"{\\\"type\\\":\\\"offer\\\",\\\"sdp\\\":\\\"opaque\\\"}\"}}",
-    )
-}
-
-pub fn manifest_validation_derives_identity_from_file_pieces_test() {
-  let manifest =
-    protocol.Manifest(version: 1, manifest_id: "", piece_size: 4, files: [
-      protocol.ManifestFile(
-        file_id: "file_1",
-        name: "clip.mov",
-        size: 8,
-        mime_type: "video/quicktime",
-        pieces: [
-          protocol.ManifestPiece(index: 0, size: 4, sha256: hash("a")),
-          protocol.ManifestPiece(index: 1, size: 4, sha256: hash("b")),
-        ],
-      ),
-    ])
-
-  let assert Ok(validated) = protocol.validate_manifest(manifest)
-  let expected_id = protocol.derive_manifest_id(validated)
-
-  let assert True = expected_id == validated.manifest_id
-  let assert True = string.starts_with(expected_id, "manifest_")
-  let assert [protocol.ManifestFile(pieces: [_, _], ..)] = validated.files
-}
-
-pub fn manifest_validation_rejects_invalid_piece_metadata_test() {
-  let manifest =
-    protocol.Manifest(version: 1, manifest_id: "", piece_size: 4, files: [
-      protocol.ManifestFile(
-        file_id: "file_1",
-        name: "clip.mov",
-        size: 8,
-        mime_type: "video/quicktime",
-        pieces: [
-          protocol.ManifestPiece(index: 0, size: 4, sha256: hash("a")),
-          protocol.ManifestPiece(index: 2, size: 4, sha256: hash("b")),
-        ],
-      ),
-    ])
-
-  let assert Error(protocol.InvalidManifestPieceIndex(
-    file_id: "file_1",
-    index: 2,
-  )) = protocol.validate_manifest(manifest)
-}
-
-pub fn rtc_control_transfer_offer_round_trips_manifest_test() {
-  let manifest = valid_manifest()
-  let assert Ok(validated) = protocol.validate_manifest(manifest)
-
-  let message =
-    protocol.TransferOffer(room_transfer_id: "transfer_1", manifest: validated)
-
-  let encoded = protocol.encode_rtc_control_message(message)
-
-  let assert True = string.contains(encoded, "\"type\":\"transfer.offer\"")
-
-  let assert Ok(decoded) = protocol.decode_rtc_control_message(encoded)
-
-  let assert True = message == decoded
-}
-
-pub fn rtc_control_piece_request_round_trips_request_test() {
-  let message =
-    protocol.PieceRequest(
-      manifest_id: "manifest_123",
-      file_id: "file_1",
-      piece_index: 3,
-    )
-
-  let encoded = protocol.encode_rtc_control_message(message)
-
-  let assert True = string.contains(encoded, "\"type\":\"piece.request\"")
-
-  let assert Ok(decoded) = protocol.decode_rtc_control_message(encoded)
-
-  let assert True = message == decoded
-}
-
-pub fn rtc_control_transfer_offer_rejects_manifest_identity_mismatch_test() {
-  let manifest = valid_manifest()
-  let assert Ok(validated) = protocol.validate_manifest(manifest)
-  let stale_manifest =
-    protocol.Manifest(..validated, manifest_id: "manifest_stale")
-  let message =
-    protocol.TransferOffer(
-      room_transfer_id: "transfer_1",
-      manifest: stale_manifest,
-    )
-
-  let assert Error(protocol.InvalidRtcControlManifest(protocol.ManifestIdentityMismatch(
-    actual: "manifest_stale",
-    ..,
-  ))) =
-    message
-    |> protocol.encode_rtc_control_message
-    |> protocol.decode_rtc_control_message
 }
 
 pub fn decode_malformed_text_message_test() {
@@ -300,25 +185,6 @@ pub fn decode_malformed_message_history_test() {
 
 pub fn decode_malformed_json_test() {
   let assert Error(Nil) = protocol.decode_server_event("{bad json")
-}
-
-fn hash(prefix: String) -> String {
-  prefix <> "000000000000000000000000000000000000000000000000000000000000000"
-}
-
-fn valid_manifest() -> protocol.Manifest {
-  protocol.Manifest(version: 1, manifest_id: "", piece_size: 4, files: [
-    protocol.ManifestFile(
-      file_id: "file_1",
-      name: "clip.mov",
-      size: 8,
-      mime_type: "video/quicktime",
-      pieces: [
-        protocol.ManifestPiece(index: 0, size: 4, sha256: hash("a")),
-        protocol.ManifestPiece(index: 1, size: 4, sha256: hash("b")),
-      ],
-    ),
-  ])
 }
 
 fn peer(

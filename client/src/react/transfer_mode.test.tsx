@@ -29,7 +29,7 @@ const relayTransfer: TransferItem = {
   mode: "relay",
 };
 
-describe("transfer mode labels", () => {
+describe("relay transfer UI", () => {
   beforeEach(() => {
     useAppStore.setState({
       deviceId: "self",
@@ -41,7 +41,6 @@ describe("transfer mode labels", () => {
       messageDrafts: {},
       unreadByPeer: {},
       chatNotice: null,
-      reselectFileForTransfer: useAppStore.getInitialState().reselectFileForTransfer,
     });
   });
 
@@ -59,51 +58,7 @@ describe("transfer mode labels", () => {
     });
   });
 
-  test("shows relay mode in the transfer workspace card", () => {
-    render(<TransferQueue />);
-
-    const transferCard = screen.getByText("demo.bin").closest("article");
-    expect(transferCard).not.toBeNull();
-    expect(within(transferCard as HTMLElement).getByText("Relay")).toBeVisible();
-  });
-
-  test("shows relay mode in the chat transfer card", () => {
-    render(<ChatPanel />);
-
-    const transferCard = screen.getByText("demo.bin").closest("div");
-    expect(transferCard).not.toBeNull();
-    expect(screen.getByText("Relay")).toBeVisible();
-  });
-
-  test("keeps essential transfer state visible in the compact chat card", () => {
-    useAppStore.setState({
-      transfers: [
-        {
-          ...relayTransfer,
-          transfer_id: "p2p_setup",
-          mode: "p2p",
-          status: "p2p_setup",
-          transferred: 512,
-          notice: "Opening peer channel",
-          piece_summary: { active: 2, verified: 3, failed: 1, total: 8 },
-        },
-      ],
-    });
-
-    render(<ChatPanel />);
-
-    const card = within(screen.getByRole("group", { name: "Transfer demo.bin" }));
-
-    expect(card.getByText("P2P")).toBeVisible();
-    expect(card.getByText("P2P setup")).toBeVisible();
-    expect(card.getByText(/512 B \/ 1.0 KB/)).toBeVisible();
-    expect(card.getByText("Active 2")).toBeVisible();
-    expect(card.getByText("Verified 3 / 8")).toBeVisible();
-    expect(card.getByText("Failed 1")).toBeVisible();
-    expect(card.getByRole("button", { name: "Cancel" })).toBeVisible();
-  });
-
-  test("shows transfer cockpit details for an active transfer", () => {
+  test("shows relay mode in the transfer queue card", () => {
     render(<TransferQueue />);
 
     const transferCard = screen.getByText("demo.bin").closest("article");
@@ -111,202 +66,82 @@ describe("transfer mode labels", () => {
     const card = within(transferCard as HTMLElement);
 
     expect(card.getByText("Relay")).toBeVisible();
-    expect(card.getByText(/Ada Laptop/)).toBeVisible();
     expect(card.getAllByText("Transferring")[0]).toBeVisible();
     expect(card.getByText("256 B / 1.0 KB")).toBeVisible();
     expect(card.getByRole("button", { name: "Cancel transfer" })).toBeVisible();
   });
 
-  test("shows transfer cockpit empty state", () => {
+  test("shows relay mode in the chat transfer card", () => {
+    render(<ChatPanel />);
+
+    const card = within(screen.getByRole("group", { name: "Transfer demo.bin" }));
+
+    expect(card.getByText("Relay")).toBeVisible();
+    expect(card.getByText("Transferring")).toBeVisible();
+    expect(card.getByText(/256 B \/ 1.0 KB/)).toBeVisible();
+    expect(card.getByRole("button", { name: "Cancel" })).toBeVisible();
+  });
+
+  test("shows accept and decline for offered receiving transfers", () => {
+    useAppStore.setState({
+      transfers: [
+        {
+          ...relayTransfer,
+          direction: "receiving",
+          status: "offered",
+          transferred: 0,
+          notice: "Waiting for your response",
+        },
+      ],
+    });
+
+    render(<ChatPanel />);
+
+    const card = within(screen.getByRole("group", { name: "Transfer demo.bin" }));
+    expect(card.getByRole("button", { name: "Accept" })).toBeVisible();
+    expect(card.getByRole("button", { name: "Decline" })).toBeVisible();
+    expect(card.getByRole("button", { name: "Cancel" })).toBeVisible();
+  });
+
+  test("shows failed transfer notices", () => {
+    useAppStore.setState({
+      transfers: [
+        {
+          ...relayTransfer,
+          status: "failed",
+          notice: "Connection lost.",
+        },
+      ],
+    });
+
+    render(<TransferQueue />);
+
+    const transferCard = screen.getByText("demo.bin").closest("article");
+    expect(transferCard).not.toBeNull();
+    const card = within(transferCard as HTMLElement);
+
+    expect(card.getByText("Relay")).toBeVisible();
+    expect(card.getByText("Failed")).toBeVisible();
+    expect(card.getByText("Connection lost.")).toBeVisible();
+  });
+
+  test("runs the cancel flow for active transfers", async () => {
+    const user = userEvent.setup();
+    const cancelFile = vi.fn();
+    useAppStore.setState({ cancelFile });
+
+    render(<TransferQueue />);
+
+    await user.click(screen.getByRole("button", { name: "Cancel transfer" }));
+
+    expect(cancelFile).toHaveBeenCalledWith("transfer_1");
+  });
+
+  test("shows transfer queue empty state", () => {
     useAppStore.setState({ transfers: [] });
 
     render(<TransferQueue />);
 
     expect(screen.getByText("No active transfers.")).toBeVisible();
-  });
-
-  test("shows manifest rejection as a failed transfer", () => {
-    useAppStore.setState({
-      transfers: [
-        {
-          ...relayTransfer,
-          mode: "p2p",
-          status: "failed",
-          notice: "Manifest does not match the accepted file offer.",
-        },
-      ],
-    });
-
-    render(<TransferQueue />);
-
-    const transferCard = screen.getByText("demo.bin").closest("article");
-    expect(transferCard).not.toBeNull();
-    const card = within(transferCard as HTMLElement);
-
-    expect(card.getByText("Failed")).toBeVisible();
-    expect(card.getByText("Manifest does not match the accepted file offer.")).toBeVisible();
-  });
-
-  test("shows P2P setup failure reason", () => {
-    useAppStore.setState({
-      transfers: [
-        {
-          ...relayTransfer,
-          mode: "p2p",
-          status: "failed",
-          notice: "P2P setup failed before transfer progress.",
-        },
-      ],
-    });
-
-    render(<TransferQueue />);
-
-    const transferCard = screen.getByText("demo.bin").closest("article");
-    expect(transferCard).not.toBeNull();
-    const card = within(transferCard as HTMLElement);
-
-    expect(card.getByText("P2P")).toBeVisible();
-    expect(card.getByText("Failed")).toBeVisible();
-    expect(card.getByText("P2P setup failed before transfer progress.")).toBeVisible();
-  });
-
-  test("shows resumable P2P state with verified piece progress", () => {
-    useAppStore.setState({
-      transfers: [
-        {
-          ...relayTransfer,
-          mode: "p2p",
-          status: "resumable",
-          transferred: 512,
-          notice: "P2P channel interrupted. Resume available.",
-          piece_summary: { active: 0, verified: 2, failed: 0, total: 4 },
-        },
-      ],
-    });
-
-    render(<TransferQueue />);
-
-    const transferCard = screen.getByText("demo.bin").closest("article");
-    expect(transferCard).not.toBeNull();
-    const card = within(transferCard as HTMLElement);
-
-    expect(card.getByText("P2P")).toBeVisible();
-    expect(card.getByText("Resumable")).toBeVisible();
-    expect(card.getByText("P2P channel interrupted. Resume available.")).toBeVisible();
-    expect(card.getByText("512 B / 1.0 KB")).toBeVisible();
-    expect(card.getByText("Active 0")).toBeVisible();
-    expect(card.getByText("Verified 2 / 4")).toBeVisible();
-    expect(card.getByText("Failed 0")).toBeVisible();
-  });
-
-  test("shows failed P2P piece state with retained piece progress", () => {
-    useAppStore.setState({
-      transfers: [
-        {
-          ...relayTransfer,
-          mode: "p2p",
-          status: "failed",
-          transferred: 512,
-          notice: "Piece hash mismatch after 3 attempts.",
-          piece_summary: { active: 0, verified: 1, failed: 1, total: 4 },
-        },
-      ],
-    });
-
-    render(<TransferQueue />);
-
-    const transferCard = screen.getByText("demo.bin").closest("article");
-    expect(transferCard).not.toBeNull();
-    const card = within(transferCard as HTMLElement);
-
-    expect(card.getByText("P2P")).toBeVisible();
-    expect(card.getByText("Failed")).toBeVisible();
-    expect(card.getByText("Piece hash mismatch after 3 attempts.")).toBeVisible();
-    expect(card.getByText("Verified 1 / 4")).toBeVisible();
-    expect(card.getByText("Failed 1")).toBeVisible();
-  });
-
-  test("prompts sender to reselect a resumable file", () => {
-    useAppStore.setState({
-      transfers: [
-        {
-          ...relayTransfer,
-          direction: "sending",
-          mode: "p2p",
-          status: "resumable",
-          notice: "Reselect the original file to resume sending.",
-        },
-      ],
-    });
-
-    render(<TransferQueue />);
-
-    const transferCard = screen.getByText("demo.bin").closest("article");
-    expect(transferCard).not.toBeNull();
-    const card = within(transferCard as HTMLElement);
-
-    expect(card.getByText("Resumable")).toBeVisible();
-    expect(card.getByText("Reselect the original file to resume sending.")).toBeVisible();
-    expect(card.getByRole("button", { name: "Reselect file" })).toBeVisible();
-  });
-
-  test("runs the reselect flow from a resumable sender transfer", async () => {
-    const user = userEvent.setup();
-    const reselectFileForTransfer = vi.fn();
-    useAppStore.setState({
-      reselectFileForTransfer,
-      transfers: [
-        {
-          ...relayTransfer,
-          direction: "sending",
-          mode: "p2p",
-          status: "resumable",
-          notice: "Reselect the original file to resume sending.",
-        },
-      ],
-    });
-
-    render(<TransferQueue />);
-
-    await user.click(screen.getByRole("button", { name: "Reselect file" }));
-
-    expect(reselectFileForTransfer).toHaveBeenCalledWith("transfer_1");
-  });
-
-  test("reserves transfer cockpit states for P2P progress", () => {
-    const futureStates: TransferItem[] = [
-      { ...relayTransfer, transfer_id: "hashing", name: "hashing.bin", status: "hashing", notice: "Preparing manifest" },
-      { ...relayTransfer, transfer_id: "setup", name: "setup.bin", mode: "p2p", status: "p2p_setup", notice: "Opening peer channel" },
-      { ...relayTransfer, transfer_id: "connected", name: "connected.bin", mode: "p2p", status: "p2p_connected", notice: "P2P channels connected" },
-      {
-        ...relayTransfer,
-        transfer_id: "active",
-        name: "active.bin",
-        mode: "p2p",
-        piece_summary: { active: 2, verified: 7, failed: 1, total: 12 },
-      },
-      { ...relayTransfer, transfer_id: "interrupted", name: "interrupted.bin", mode: "p2p", status: "interrupted", notice: "Peer disconnected" },
-      { ...relayTransfer, transfer_id: "resumable", name: "resumable.bin", mode: "p2p", status: "resumable", notice: "Resume available" },
-      { ...relayTransfer, transfer_id: "export", name: "export.bin", mode: "p2p", status: "export_ready", notice: "Ready to save" },
-      { ...relayTransfer, transfer_id: "fallback", name: "fallback.bin", status: "failed", notice: "P2P setup failed before transfer progress." },
-      { ...relayTransfer, transfer_id: "complete", name: "complete.bin", status: "completed", notice: "Complete" },
-      { ...relayTransfer, transfer_id: "cancelled", name: "cancelled.bin", status: "cancelled", notice: "Cancelled" },
-    ];
-    useAppStore.setState({ transfers: futureStates });
-
-    render(<TransferQueue />);
-
-    expect(screen.getByText("Hashing")).toBeVisible();
-    expect(screen.getByText("P2P setup")).toBeVisible();
-    expect(screen.getByText("P2P connected")).toBeVisible();
-    expect(screen.getByText("Active 2")).toBeVisible();
-    expect(screen.getByText("Verified 7 / 12")).toBeVisible();
-    expect(screen.getByText("Failed 1")).toBeVisible();
-    expect(screen.getByText("Interrupted")).toBeVisible();
-    expect(screen.getByText("Resumable")).toBeVisible();
-    expect(screen.getByText("Export ready")).toBeVisible();
-    expect(screen.getAllByText("Failed")[0]).toBeVisible();
-    expect(screen.getByText("Completed")).toBeVisible();
-    expect(screen.getAllByText("Cancelled")[0]).toBeVisible();
   });
 });

@@ -18,13 +18,12 @@ pub type ClientMessage {
   SendTextMessage(message: shared_protocol.TextMessage)
   SendMessageHistory(messages: List(shared_protocol.TextMessage))
   SendFileOffered(offer: shared_protocol.FileOffer)
-  SendFileAccepted(transfer_id: String, receive_mode: String)
+  SendFileAccepted(transfer_id: String)
   SendFileDeclined(transfer_id: String)
   SendFileCancelled(transfer_id: String, reason: String)
   SendFileChunk(frame: BitArray)
   SendFileChunkAck(ack: shared_protocol.FileChunkAck)
   SendFileCompleted(transfer_id: String)
-  SendRtcSignal(signal: shared_protocol.RtcSignal)
   SendError(code: String, message: String)
   SessionReplaced
 }
@@ -60,7 +59,6 @@ pub type Message {
   AcceptFile(
     from: String,
     transfer_id: String,
-    receive_mode: String,
     client: process.Subject(ClientMessage),
   )
   DeclineFile(
@@ -82,11 +80,6 @@ pub type Message {
   AcknowledgeFileChunk(
     from: String,
     ack: shared_protocol.FileChunkAck,
-    client: process.Subject(ClientMessage),
-  )
-  RouteRtcSignal(
-    from: String,
-    signal: shared_protocol.RtcSignal,
     client: process.Subject(ClientMessage),
   )
 }
@@ -186,8 +179,8 @@ fn handle_message(
       send_text(state, from, to, body, client)
     OfferFile(from:, to:, transfer_id:, name:, size:, mime_type:, client:) ->
       offer_file(state, from, to, transfer_id, name, size, mime_type, client)
-    AcceptFile(from:, transfer_id:, receive_mode:, client:) ->
-      accept_file(state, from, transfer_id, receive_mode, client)
+    AcceptFile(from:, transfer_id:, client:) ->
+      accept_file(state, from, transfer_id, client)
     DeclineFile(from:, transfer_id:, client:) ->
       decline_file(state, from, transfer_id, client)
     CancelFile(from:, transfer_id:, client:) ->
@@ -196,8 +189,6 @@ fn handle_message(
       forward_file_chunk(state, from, ack, frame, client)
     AcknowledgeFileChunk(from:, ack:, client:) ->
       acknowledge_file_chunk(state, from, ack, client)
-    RouteRtcSignal(from:, signal:, client:) ->
-      route_rtc_signal(state, from, signal, client)
   }
 }
 
@@ -510,7 +501,6 @@ fn accept_file(
   state: State,
   from: String,
   transfer_id: String,
-  receive_mode: String,
   client: process.Subject(ClientMessage),
 ) -> actor.Next(State, Message) {
   case accept_file_route(state, from, transfer_id, client) {
@@ -522,8 +512,8 @@ fn accept_file(
           insert: Transfer(..transfer, status: Active),
         )
 
-      process.send(sender.client, SendFileAccepted(transfer_id, receive_mode))
-      process.send(receiver.client, SendFileAccepted(transfer_id, receive_mode))
+      process.send(sender.client, SendFileAccepted(transfer_id))
+      process.send(receiver.client, SendFileAccepted(transfer_id))
       actor.continue(
         State(
           ..state,
@@ -557,7 +547,7 @@ fn accept_file_route(
   transfer_id: String,
   client: process.Subject(ClientMessage),
 ) -> Result(AcceptFileRoute, SendTextRejection) {
-  use transfer <- result.try(transfer_for_receiver(
+  use file_transfer <- result.try(transfer_for_receiver(
     state,
     from,
     transfer_id,
@@ -566,12 +556,16 @@ fn accept_file_route(
   use Nil <- result.try(ensure_no_active_transfer(state, client))
   use sender <- result.try(find_receiver(
     state.peers,
-    transfer.offer.from,
+    file_transfer.offer.from,
     client,
   ))
   use receiver <- result.try(find_sender(state.peers, from, client))
 
-  Ok(AcceptFileRoute(transfer: transfer, sender: sender, receiver: receiver))
+  Ok(AcceptFileRoute(
+    transfer: file_transfer,
+    sender: sender,
+    receiver: receiver,
+  ))
 }
 
 fn decline_file(
@@ -581,11 +575,11 @@ fn decline_file(
   client: process.Subject(ClientMessage),
 ) -> actor.Next(State, Message) {
   case transfer_for_receiver(state, from, transfer_id, client) {
-    Ok(transfer) -> {
+    Ok(file_transfer) -> {
       let state = remove_transfer(state, transfer_id)
       notify_transfer_participants(
         state,
-        transfer.offer,
+        file_transfer.offer,
         SendFileDeclined(transfer_id),
       )
       actor.continue(state)
@@ -601,11 +595,11 @@ fn cancel_file(
   client: process.Subject(ClientMessage),
 ) -> actor.Next(State, Message) {
   case transfer_for_participant(state, from, transfer_id, client) {
-    Ok(transfer) -> {
+    Ok(file_transfer) -> {
       let state = remove_transfer(state, transfer_id)
       notify_transfer_participants(
         state,
-        transfer.offer,
+        file_transfer.offer,
         SendFileCancelled(transfer_id, "Transfer cancelled."),
       )
       actor.continue(state)
@@ -622,8 +616,8 @@ fn forward_file_chunk(
   client: process.Subject(ClientMessage),
 ) -> actor.Next(State, Message) {
   case active_transfer_for_sender(state, from, ack.transfer_id, client) {
-    Ok(transfer) -> {
-      case dict.get(state.peers, transfer.offer.to) {
+    Ok(file_transfer) -> {
+      case dict.get(state.peers, file_transfer.offer.to) {
         Ok(receiver) -> process.send(receiver.client, SendFileChunk(frame))
         Error(_) -> Nil
       }
@@ -640,8 +634,8 @@ fn acknowledge_file_chunk(
   client: process.Subject(ClientMessage),
 ) -> actor.Next(State, Message) {
   case active_transfer_for_receiver(state, from, ack.transfer_id, client) {
-    Ok(transfer) -> {
-      case dict.get(state.peers, transfer.offer.from) {
+    Ok(file_transfer) -> {
+      case dict.get(state.peers, file_transfer.offer.from) {
         Ok(sender) -> process.send(sender.client, SendFileChunkAck(ack))
         Error(_) -> Nil
       }
@@ -651,28 +645,13 @@ fn acknowledge_file_chunk(
           let state = remove_transfer(state, ack.transfer_id)
           notify_transfer_participants(
             state,
-            transfer.offer,
+            file_transfer.offer,
             SendFileCompleted(ack.transfer_id),
           )
           actor.continue(state)
         }
         False -> actor.continue(state)
       }
-    }
-    Error(rejection) -> reject_send_text(state, rejection)
-  }
-}
-
-fn route_rtc_signal(
-  state: State,
-  from: String,
-  signal: shared_protocol.RtcSignal,
-  client: process.Subject(ClientMessage),
-) -> actor.Next(State, Message) {
-  case rtc_signal_receiver(state, from, signal, client) {
-    Ok(receiver) -> {
-      process.send(receiver.client, SendRtcSignal(signal))
-      actor.continue(state)
     }
     Error(rejection) -> reject_send_text(state, rejection)
   }
@@ -715,11 +694,11 @@ fn transfer_for_receiver(
   transfer_id: String,
   client: process.Subject(ClientMessage),
 ) -> Result(Transfer, SendTextRejection) {
-  use transfer <- result.try(find_transfer(state, transfer_id, client))
+  use file_transfer <- result.try(find_transfer(state, transfer_id, client))
   use receiver <- result.try(find_sender(state.peers, from, client))
 
-  case transfer.offer.to == from && receiver.client == client {
-    True -> Ok(transfer)
+  case file_transfer.offer.to == from && receiver.client == client {
+    True -> Ok(file_transfer)
     False ->
       Error(SendTextRejection(
         client: client,
@@ -735,14 +714,14 @@ fn transfer_for_participant(
   transfer_id: String,
   client: process.Subject(ClientMessage),
 ) -> Result(Transfer, SendTextRejection) {
-  use transfer <- result.try(find_transfer(state, transfer_id, client))
+  use file_transfer <- result.try(find_transfer(state, transfer_id, client))
   use session <- result.try(find_sender(state.peers, from, client))
 
   case
     session.client == client
-    && { transfer.offer.from == from || transfer.offer.to == from }
+    && { file_transfer.offer.from == from || file_transfer.offer.to == from }
   {
-    True -> Ok(transfer)
+    True -> Ok(file_transfer)
     False ->
       Error(SendTextRejection(
         client: client,
@@ -758,11 +737,11 @@ fn active_transfer_for_sender(
   transfer_id: String,
   client: process.Subject(ClientMessage),
 ) -> Result(Transfer, SendTextRejection) {
-  use transfer <- result.try(active_transfer(state, transfer_id, client))
+  use file_transfer <- result.try(active_transfer(state, transfer_id, client))
   use sender <- result.try(find_sender(state.peers, from, client))
 
-  case transfer.offer.from == from && sender.client == client {
-    True -> Ok(transfer)
+  case file_transfer.offer.from == from && sender.client == client {
+    True -> Ok(file_transfer)
     False ->
       Error(SendTextRejection(
         client: client,
@@ -778,84 +757,16 @@ fn active_transfer_for_receiver(
   transfer_id: String,
   client: process.Subject(ClientMessage),
 ) -> Result(Transfer, SendTextRejection) {
-  use transfer <- result.try(active_transfer(state, transfer_id, client))
+  use file_transfer <- result.try(active_transfer(state, transfer_id, client))
   use receiver <- result.try(find_sender(state.peers, from, client))
 
-  case transfer.offer.to == from && receiver.client == client {
-    True -> Ok(transfer)
+  case file_transfer.offer.to == from && receiver.client == client {
+    True -> Ok(file_transfer)
     False ->
       Error(SendTextRejection(
         client: client,
         code: "invalid_transfer_receiver",
         message: "Only the file receiver can acknowledge chunks.",
-      ))
-  }
-}
-
-fn rtc_signal_receiver(
-  state: State,
-  from: String,
-  signal: shared_protocol.RtcSignal,
-  client: process.Subject(ClientMessage),
-) -> Result(PeerSession, SendTextRejection) {
-  use transfer <- result.try(active_transfer(state, signal.transfer_id, client))
-  use sender <- result.try(find_sender(state.peers, from, client))
-  use Nil <- result.try(ensure_signal_from_matches(from, signal, client))
-  use expected_to <- result.try(expected_signal_target(transfer, from, client))
-  use Nil <- result.try(ensure_signal_targets_expected(
-    signal,
-    expected_to,
-    client,
-  ))
-
-  find_receiver(state.peers, signal.to, sender.client)
-}
-
-fn ensure_signal_from_matches(
-  from: String,
-  signal: shared_protocol.RtcSignal,
-  client: process.Subject(ClientMessage),
-) -> Result(Nil, SendTextRejection) {
-  case signal.from == from {
-    True -> Ok(Nil)
-    False ->
-      Error(SendTextRejection(
-        client: client,
-        code: "invalid_transfer_participant",
-        message: "That RTC signal source does not match this device.",
-      ))
-  }
-}
-
-fn expected_signal_target(
-  transfer: Transfer,
-  from: String,
-  client: process.Subject(ClientMessage),
-) -> Result(String, SendTextRejection) {
-  case transfer.offer.from == from, transfer.offer.to == from {
-    True, False -> Ok(transfer.offer.to)
-    False, True -> Ok(transfer.offer.from)
-    _, _ ->
-      Error(SendTextRejection(
-        client: client,
-        code: "invalid_transfer_participant",
-        message: "That RTC signal does not belong to this transfer.",
-      ))
-  }
-}
-
-fn ensure_signal_targets_expected(
-  signal: shared_protocol.RtcSignal,
-  expected_to: String,
-  client: process.Subject(ClientMessage),
-) -> Result(Nil, SendTextRejection) {
-  case signal.to == expected_to {
-    True -> Ok(Nil)
-    False ->
-      Error(SendTextRejection(
-        client: client,
-        code: "invalid_transfer_participant",
-        message: "That RTC signal target does not match this transfer.",
       ))
   }
 }
@@ -922,15 +833,15 @@ fn remove_transfer(state: State, transfer_id: String) -> State {
 fn cancel_transfers_for_device(state: State, device_id: String) -> State {
   state.transfers
   |> dict.values
-  |> list.filter(fn(transfer) {
-    transfer.offer.from == device_id || transfer.offer.to == device_id
+  |> list.filter(fn(file_transfer) {
+    file_transfer.offer.from == device_id || file_transfer.offer.to == device_id
   })
-  |> list.fold(state, fn(state, transfer) {
-    let state = remove_transfer(state, transfer.offer.transfer_id)
+  |> list.fold(state, fn(state, file_transfer) {
+    let state = remove_transfer(state, file_transfer.offer.transfer_id)
     notify_transfer_participants(
       state,
-      transfer.offer,
-      SendFileCancelled(transfer.offer.transfer_id, "Peer disconnected."),
+      file_transfer.offer,
+      SendFileCancelled(file_transfer.offer.transfer_id, "Peer disconnected."),
     )
     state
   })

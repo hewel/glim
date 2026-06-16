@@ -44,30 +44,14 @@ pub fn handle_message(
           handle_text_send(state, conn, to, body)
         Ok(protocol.FileOffer(to:, transfer_id:, name:, size:, mime_type:)) ->
           handle_file_offer(state, conn, to, transfer_id, name, size, mime_type)
-        Ok(protocol.FileAccept(transfer_id:, receive_mode:)) ->
-          handle_file_accept(state, conn, transfer_id, receive_mode)
+        Ok(protocol.FileAccept(transfer_id:)) ->
+          handle_file_accept(state, conn, transfer_id)
         Ok(protocol.FileDecline(transfer_id:)) ->
           handle_file_decline(state, conn, transfer_id)
         Ok(protocol.FileCancel(transfer_id:)) ->
           handle_file_cancel(state, conn, transfer_id)
         Ok(protocol.FileChunkAck(ack:)) ->
           handle_file_chunk_ack(state, conn, ack)
-        Ok(protocol.RtcSignal(
-          to:,
-          transfer_id:,
-          correlation_id:,
-          description:,
-          payload:,
-        )) ->
-          handle_rtc_signal(
-            state,
-            conn,
-            to,
-            transfer_id,
-            correlation_id,
-            description,
-            payload,
-          )
         Error(_) -> {
           send_invalid_event(conn)
           mist.continue(state)
@@ -104,12 +88,9 @@ pub fn handle_message(
       let _ = mist.send_text_frame(conn, protocol.encode_file_offered(offer))
       mist.continue(state)
     }
-    mist.Custom(room.SendFileAccepted(transfer_id, receive_mode)) -> {
+    mist.Custom(room.SendFileAccepted(transfer_id)) -> {
       let _ =
-        mist.send_text_frame(
-          conn,
-          protocol.encode_file_accepted(transfer_id, receive_mode),
-        )
+        mist.send_text_frame(conn, protocol.encode_file_accepted(transfer_id))
       mist.continue(state)
     }
     mist.Custom(room.SendFileDeclined(transfer_id)) -> {
@@ -136,10 +117,6 @@ pub fn handle_message(
     mist.Custom(room.SendFileCompleted(transfer_id)) -> {
       let _ =
         mist.send_text_frame(conn, protocol.encode_file_completed(transfer_id))
-      mist.continue(state)
-    }
-    mist.Custom(room.SendRtcSignal(signal)) -> {
-      let _ = mist.send_text_frame(conn, protocol.encode_rtc_signal(signal))
       mist.continue(state)
     }
     mist.Custom(room.SendError(code:, message:)) -> {
@@ -283,15 +260,9 @@ fn handle_file_accept(
   state: State,
   conn: mist.WebsocketConnection,
   transfer_id: String,
-  receive_mode: String,
 ) -> mist.Next(State, room.ClientMessage) {
   handle_transfer_id(state, conn, transfer_id, fn(from, transfer_id, client) {
-    room.AcceptFile(
-      from: from,
-      transfer_id: transfer_id,
-      receive_mode: receive_mode,
-      client: client,
-    )
+    room.AcceptFile(from: from, transfer_id: transfer_id, client: client)
   })
 }
 
@@ -348,39 +319,6 @@ fn handle_file_chunk_ack(
       process.send(
         state.room,
         room.AcknowledgeFileChunk(from: from, ack: ack, client: state.client),
-      )
-      mist.continue(state)
-    }
-  }
-}
-
-fn handle_rtc_signal(
-  state: State,
-  conn: mist.WebsocketConnection,
-  to: String,
-  transfer_id: String,
-  correlation_id: String,
-  description: String,
-  payload: String,
-) -> mist.Next(State, room.ClientMessage) {
-  case state.device_id {
-    option.None -> {
-      send_not_joined(conn)
-      mist.continue(state)
-    }
-    option.Some(from) -> {
-      let signal =
-        shared_protocol.RtcSignal(
-          transfer_id: transfer_id,
-          correlation_id: correlation_id,
-          from: from,
-          to: to,
-          description: description,
-          payload: payload,
-        )
-      process.send(
-        state.room,
-        room.RouteRtcSignal(from: from, signal: signal, client: state.client),
       )
       mist.continue(state)
     }

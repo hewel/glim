@@ -494,17 +494,12 @@ pub fn file_offer_accept_chunk_ack_and_complete_test() {
 
   process.send(
     room_subject,
-    room.AcceptFile(
-      from: "bob",
-      transfer_id: "transfer_1",
-      receive_mode: "relay",
-      client: bob,
-    ),
+    room.AcceptFile(from: "bob", transfer_id: "transfer_1", client: bob),
   )
 
-  let assert Ok(room.SendFileAccepted("transfer_1", "relay")) =
+  let assert Ok(room.SendFileAccepted("transfer_1")) =
     process.receive(from: alice, within: 1000)
-  let assert Ok(room.SendFileAccepted("transfer_1", "relay")) =
+  let assert Ok(room.SendFileAccepted("transfer_1")) =
     process.receive(from: bob, within: 1000)
 
   let ack =
@@ -540,142 +535,6 @@ pub fn file_offer_accept_chunk_ack_and_complete_test() {
     process.receive(from: bob, within: 1000)
 }
 
-pub fn rtc_signal_routes_between_accepted_transfer_peers_test() {
-  let assert Ok(room_subject) = room.start()
-  let alice = process.new_subject()
-  let bob = process.new_subject()
-
-  join_alice_and_bob(room_subject, alice, bob)
-  offer_and_accept(room_subject, alice, bob, "transfer_1")
-
-  let signal =
-    shared_protocol.RtcSignal(
-      transfer_id: "transfer_1",
-      correlation_id: "rtc_1",
-      from: "alice",
-      to: "bob",
-      description: "offer",
-      payload: "{\"type\":\"offer\",\"sdp\":\"opaque\"}",
-    )
-
-  process.send(
-    room_subject,
-    room.RouteRtcSignal(from: "alice", signal: signal, client: alice),
-  )
-
-  let assert Ok(room.SendRtcSignal(received_signal)) =
-    process.receive(from: bob, within: 1000)
-  let assert True = received_signal == signal
-  let assert Error(_) = process.receive(from: alice, within: 50)
-}
-
-pub fn rtc_signal_to_invalid_transfer_peer_is_rejected_test() {
-  let assert Ok(room_subject) = room.start()
-  let alice = process.new_subject()
-  let bob = process.new_subject()
-  let charlie = process.new_subject()
-
-  join_alice_and_bob(room_subject, alice, bob)
-  join_peer(room_subject, charlie, "charlie", "Charlie")
-  let assert Ok(room.SendPeerJoined(_)) =
-    process.receive(from: alice, within: 1000)
-  let assert Ok(room.SendPeerJoined(_)) =
-    process.receive(from: bob, within: 1000)
-  offer_and_accept(room_subject, alice, bob, "transfer_1")
-
-  let signal =
-    shared_protocol.RtcSignal(
-      transfer_id: "transfer_1",
-      correlation_id: "rtc_1",
-      from: "alice",
-      to: "charlie",
-      description: "candidate",
-      payload: "{\"candidate\":\"opaque\"}",
-    )
-
-  process.send(
-    room_subject,
-    room.RouteRtcSignal(from: "alice", signal: signal, client: alice),
-  )
-
-  let assert Ok(room.SendError(
-    code: "invalid_transfer_participant",
-    message: "That RTC signal target does not match this transfer.",
-  )) = process.receive(from: alice, within: 1000)
-  let assert Error(_) = process.receive(from: charlie, within: 50)
-}
-
-pub fn rtc_signal_after_target_leaves_is_rejected_test() {
-  let assert Ok(room_subject) = room.start()
-  let alice = process.new_subject()
-  let bob = process.new_subject()
-
-  join_alice_and_bob(room_subject, alice, bob)
-  offer_and_accept(room_subject, alice, bob, "transfer_1")
-
-  process.send(room_subject, room.Leave(device_id: "bob", client: bob))
-  let assert Ok(room.SendFileCancelled("transfer_1", "Peer disconnected.")) =
-    process.receive(from: alice, within: 1000)
-  let assert Ok(room.SendPeerLeft("bob")) =
-    process.receive(from: alice, within: 1000)
-
-  let signal =
-    shared_protocol.RtcSignal(
-      transfer_id: "transfer_1",
-      correlation_id: "rtc_1",
-      from: "alice",
-      to: "bob",
-      description: "candidate",
-      payload: "{\"candidate\":\"opaque\"}",
-    )
-
-  process.send(
-    room_subject,
-    room.RouteRtcSignal(from: "alice", signal: signal, client: alice),
-  )
-
-  let assert Ok(room.SendError(
-    code: "transfer_not_found",
-    message: "That file transfer is no longer available.",
-  )) = process.receive(from: alice, within: 1000)
-}
-
-pub fn rtc_signal_from_non_participant_is_rejected_test() {
-  let assert Ok(room_subject) = room.start()
-  let alice = process.new_subject()
-  let bob = process.new_subject()
-  let charlie = process.new_subject()
-
-  join_alice_and_bob(room_subject, alice, bob)
-  join_peer(room_subject, charlie, "charlie", "Charlie")
-  let assert Ok(room.SendPeerJoined(_)) =
-    process.receive(from: alice, within: 1000)
-  let assert Ok(room.SendPeerJoined(_)) =
-    process.receive(from: bob, within: 1000)
-  offer_and_accept(room_subject, alice, bob, "transfer_1")
-
-  let signal =
-    shared_protocol.RtcSignal(
-      transfer_id: "transfer_1",
-      correlation_id: "rtc_1",
-      from: "charlie",
-      to: "bob",
-      description: "candidate",
-      payload: "{\"candidate\":\"opaque\"}",
-    )
-
-  process.send(
-    room_subject,
-    room.RouteRtcSignal(from: "charlie", signal: signal, client: charlie),
-  )
-
-  let assert Ok(room.SendError(
-    code: "invalid_transfer_participant",
-    message: "That RTC signal does not belong to this transfer.",
-  )) = process.receive(from: charlie, within: 1000)
-  let assert Error(_) = process.receive(from: bob, within: 50)
-}
-
 pub fn second_active_file_transfer_is_rejected_test() {
   let assert Ok(room_subject) = room.start()
   let alice = process.new_subject()
@@ -701,12 +560,7 @@ pub fn second_active_file_transfer_is_rejected_test() {
 
   process.send(
     room_subject,
-    room.AcceptFile(
-      from: "bob",
-      transfer_id: "transfer_2",
-      receive_mode: "p2p",
-      client: bob,
-    ),
+    room.AcceptFile(from: "bob", transfer_id: "transfer_2", client: bob),
   )
 
   let assert Ok(room.SendError(
@@ -751,28 +605,6 @@ fn join_alice_and_bob(
   Nil
 }
 
-fn join_peer(
-  room_subject: process.Subject(room.Message),
-  client: process.Subject(room.ClientMessage),
-  device_id: String,
-  display_name: String,
-) -> Nil {
-  process.send(
-    room_subject,
-    room.Join(
-      device_id: device_id,
-      display_name: display_name,
-      device_kind: "unknown",
-      client: client,
-    ),
-  )
-  let assert Ok(room.SendPeerList(_)) =
-    process.receive(from: client, within: 1000)
-  let assert Ok(room.SendMessageHistory(_)) =
-    process.receive(from: client, within: 1000)
-  Nil
-}
-
 fn offer_and_accept(
   room_subject: process.Subject(room.Message),
   alice: process.Subject(room.ClientMessage),
@@ -796,16 +628,11 @@ fn offer_and_accept(
 
   process.send(
     room_subject,
-    room.AcceptFile(
-      from: "bob",
-      transfer_id: transfer_id,
-      receive_mode: "p2p",
-      client: bob,
-    ),
+    room.AcceptFile(from: "bob", transfer_id: transfer_id, client: bob),
   )
-  let assert Ok(room.SendFileAccepted(_, "p2p")) =
+  let assert Ok(room.SendFileAccepted(_)) =
     process.receive(from: alice, within: 1000)
-  let assert Ok(room.SendFileAccepted(_, "p2p")) =
+  let assert Ok(room.SendFileAccepted(_)) =
     process.receive(from: bob, within: 1000)
   Nil
 }
