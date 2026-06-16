@@ -1,7 +1,7 @@
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-const allowedElements = [
+const allowedElements: string[] = [
   "a",
   "blockquote",
   "br",
@@ -14,7 +14,7 @@ const allowedElements = [
   "pre",
   "strong",
   "ul",
-] as const;
+];
 
 export function MarkdownMessage({ body }: { body: string }) {
   return (

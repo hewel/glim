@@ -16,6 +16,7 @@ import {
 import type { FileSelection } from "../browser/types";
 import * as core from "../core.gleam";
 import * as reconnect from "../reconnect.gleam";
+import { Effect } from "effect";
 import {
   addIncomingTransfer,
   addOutgoingTransfer,
@@ -44,6 +45,7 @@ import {
   upsertPeer,
 } from "./domain";
 import { formatBytes } from "./format";
+import { decodeServerEvent, invalidServerEvent } from "./server_event_schema";
 import type {
   ConnectionStatus,
   DeviceProfile,
@@ -441,7 +443,10 @@ function socketReceived(generation: number, raw: string): void {
 }
 
 function handleServerEvent(raw: string): void {
-  const event = JSON.parse(core.server_event_json(raw)) as ServerEvent;
+  const event = Effect.runSync(Effect.match(decodeServerEvent(raw), {
+    onFailure: () => invalidServerEvent("Unable to decode server event"),
+    onSuccess: (value) => value,
+  }));
   useAppStore.setState((state) => ({ log: [...state.log, raw] }));
 
   switch (event.kind) {

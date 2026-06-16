@@ -62,9 +62,7 @@ describe("relay transfer UI", () => {
   test("shows relay mode in the transfer queue card", () => {
     render(<TransferQueue />);
 
-    const transferCard = screen.getByText("demo.bin").closest("article");
-    expect(transferCard).not.toBeNull();
-    const card = within(transferCard as HTMLElement);
+    const card = within(articleContainingText("demo.bin"));
 
     expect(card.getByText("Relay")).toBeVisible();
     expect(card.getAllByText("Transferring")[0]).toBeVisible();
@@ -117,9 +115,7 @@ describe("relay transfer UI", () => {
 
     render(<TransferQueue />);
 
-    const transferCard = screen.getByText("demo.bin").closest("article");
-    expect(transferCard).not.toBeNull();
-    const card = within(transferCard as HTMLElement);
+    const card = within(articleContainingText("demo.bin"));
 
     expect(card.getByText("Relay")).toBeVisible();
     expect(card.getByText("Failed")).toBeVisible();
@@ -146,3 +142,11 @@ describe("relay transfer UI", () => {
     expect(screen.getByText("No active transfers.")).toBeVisible();
   });
 });
+
+function articleContainingText(text: string): HTMLElement {
+  const article = screen.getByText(text).closest("article");
+  if (!article) {
+    throw new Error(`Expected ${text} to be inside an article`);
+  }
+  return article;
+}

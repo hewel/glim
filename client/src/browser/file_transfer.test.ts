@@ -1,16 +1,21 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { Effect } from "effect";
 import {
   bindSelectedFile,
+  bindSelectedFileEffect,
   cancelUpload,
   discardSelectedFile,
   downloadFile,
   receiveCapability,
+  receiveCapabilityEffect,
   selectFile,
+  setUploadRequestFactoryForTest,
+  type UploadRequest,
   uploadSelectedFile,
 } from "./file_transfer";
 import type { FileSelection } from "./types";
 
-class FakeXMLHttpRequest {
+class FakeXMLHttpRequest implements UploadRequest {
   static latest: FakeXMLHttpRequest | null = null;
 
   status = 200;
@@ -54,11 +59,12 @@ class FakeXMLHttpRequest {
 }
 
 describe("browser HTTP file transfer", () => {
-  const originalXhr = globalThis.XMLHttpRequest;
+  let restoreUploadRequestFactory: (() => void) | null = null;
 
   afterEach(() => {
     vi.restoreAllMocks();
-    globalThis.XMLHttpRequest = originalXhr;
+    restoreUploadRequestFactory?.();
+    restoreUploadRequestFactory = null;
     FakeXMLHttpRequest.latest = null;
     Reflect.deleteProperty(window, "showOpenFilePicker");
   });
@@ -69,7 +75,7 @@ describe("browser HTTP file transfer", () => {
       kind: "file",
       name: "demo.bin",
       getFile: vi.fn(async () => file),
-    } as unknown as FileSystemFileHandle;
+    };
     Object.defineProperty(window, "showOpenFilePicker", {
       configurable: true,
       value: vi.fn(async () => [handle]),
@@ -91,8 +97,12 @@ describe("browser HTTP file transfer", () => {
     expect(receiveCapability()).toBe("relay");
   });
 
+  test("supports HTTP relay receive through the Effect boundary", () => {
+    expect(Effect.runSync(receiveCapabilityEffect())).toBe("relay");
+  });
+
   test("uploads a bound selected file over HTTP", async () => {
-    globalThis.XMLHttpRequest = FakeXMLHttpRequest as unknown as typeof XMLHttpRequest;
+    restoreUploadRequestFactory = setUploadRequestFactoryForTest(() => new FakeXMLHttpRequest());
     const file = new File(["demo"], "demo.bin", { type: "application/octet-stream" });
     Object.defineProperty(window, "showOpenFilePicker", {
       configurable: true,
@@ -103,6 +113,7 @@ describe("browser HTTP file transfer", () => {
     });
 
     expect(bindSelectedFile(selection.client_offer_id, "transfer_1")).toBe(true);
+    expect(Effect.runSync(bindSelectedFileEffect(selection.client_offer_id, "transfer_2"))).toBe(false);
 
     let complete = false;
     uploadSelectedFile(
@@ -121,6 +132,7 @@ describe("browser HTTP file transfer", () => {
     expect(request?.body).toBe(file);
 
     request?.emit("load");
+    await flushMicrotasks();
     expect(complete).toBe(true);
   });
 
@@ -140,7 +152,7 @@ describe("browser HTTP file transfer", () => {
   });
 
   test("cancels an active upload", async () => {
-    globalThis.XMLHttpRequest = FakeXMLHttpRequest as unknown as typeof XMLHttpRequest;
+    restoreUploadRequestFactory = setUploadRequestFactoryForTest(() => new FakeXMLHttpRequest());
     const file = new File(["demo"], "demo.bin", { type: "application/octet-stream" });
     Object.defineProperty(window, "showOpenFilePicker", {
       configurable: true,
@@ -163,6 +175,7 @@ describe("browser HTTP file transfer", () => {
     );
 
     cancelUpload("transfer_1");
+    await flushMicrotasks();
     expect(reason).toBe("Upload cancelled.");
   });
 
@@ -179,3 +192,8 @@ describe("browser HTTP file transfer", () => {
     expect(assign).toHaveBeenCalledWith("/api/transfers/transfer_1/download?token=abc");
   });
 });
+
+async function flushMicrotasks(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
+}

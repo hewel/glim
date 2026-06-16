@@ -54,14 +54,15 @@ export function ChatPanel() {
     );
   }
 
-  const peer = knownPeers[selectedPeerId] ?? {
+  const fallbackPeer: Peer = {
     id: selectedPeerId,
     display_name: selectedPeerId,
-    device_kind: "unknown" as const,
-    os: "unknown" as const,
-    browser: "unknown" as const,
+    device_kind: "unknown",
+    os: "unknown",
+    browser: "unknown",
     model: null,
   };
+  const peer = knownPeers[selectedPeerId] ?? fallbackPeer;
   const online = peers.some((item) => item.id === selectedPeerId);
   const messages = messagesByPeer[selectedPeerId] ?? [];
   const threadTransfers = transfers.filter((transfer) => transfer.peer_id === selectedPeerId);

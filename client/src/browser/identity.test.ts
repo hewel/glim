@@ -1,5 +1,6 @@
-import { afterEach, describe, expect, test } from "vitest";
-import { loadIdentity } from "./identity";
+import { Effect } from "effect";
+import { afterEach, describe, expect, it, test } from "@effect/vitest";
+import { loadIdentity, loadIdentityEffect } from "./identity";
 
 describe("browser identity", () => {
   afterEach(() => {
@@ -28,4 +29,15 @@ describe("browser identity", () => {
     expect(first.device_id).toMatch(/^install-device:/);
     expect(second.device_id).toMatch(/^install-device:/);
   });
+
+  it.effect("loads identity through the Effect boundary", () =>
+    Effect.gen(function*() {
+      localStorage.setItem("glim.device_id", "install-device");
+
+      const identity = yield* loadIdentityEffect();
+
+      expect(identity.device_id).toMatch(/^install-device:/);
+      expect(identity.display_name).toBe("Glim Peer");
+      expect(identity.device_profile.kind).toBe("unknown");
+    }));
 });

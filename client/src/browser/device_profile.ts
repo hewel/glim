@@ -45,6 +45,12 @@ interface NavigatorUADataLike {
   ) => Promise<{ readonly model?: string }>;
 }
 
+declare global {
+  interface Navigator {
+    readonly userAgentData?: NavigatorUADataLike;
+  }
+}
+
 export function unknownDeviceProfile(): DeviceProfile {
   return {
     kind: "unknown",
@@ -244,7 +250,7 @@ function navigatorUAData(nav: Navigator): NavigatorUADataLike | null {
     return null;
   }
 
-  return (nav as Navigator & { readonly userAgentData?: NavigatorUADataLike }).userAgentData ?? null;
+  return nav.userAgentData ?? null;
 }
 
 async function highEntropyModel(uaData: NavigatorUADataLike | null): Promise<string | null> {
