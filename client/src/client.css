@@ -150,6 +150,66 @@
   line-height: 1.4;
 }
 
+.markdown-message {
+  overflow-wrap: anywhere;
+}
+
+.markdown-message > * + * {
+  margin-top: 0.75rem;
+}
+
+.markdown-message p {
+  margin: 0;
+}
+
+.markdown-message a {
+  color: currentColor;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+.markdown-message blockquote {
+  margin: 0;
+  border-left: 3px solid currentColor;
+  padding-left: 0.75rem;
+  opacity: 0.82;
+}
+
+.markdown-message ul,
+.markdown-message ol {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.markdown-message li + li {
+  margin-top: 0.25rem;
+}
+
+.markdown-message code {
+  border-radius: 0.25rem;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+  padding: 0.1rem 0.3rem;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 0.88em;
+}
+
+.markdown-message pre {
+  margin: 0;
+  max-width: 100%;
+  overflow-x: auto;
+  border-radius: 0.5rem;
+  background: rgba(27, 27, 35, 0.08);
+  padding: 0.75rem;
+}
+
+.markdown-message pre code {
+  display: block;
+  background: transparent;
+  padding: 0;
+  white-space: pre;
+}
+
 /* Material Symbols classes matching code.html requirements */
 .material-symbols-outlined {
   font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
@@ -254,4 +314,3 @@
 .animate-pulse-subtle {
   animation: pulseSubtle 2s ease-in-out infinite;
 }
-

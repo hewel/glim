@@ -14,6 +14,7 @@ import { useState } from "react";
 import { DeviceKindIcon, peerDeviceDetails } from "./devicePresentation";
 import { IconButton } from "./IconButton";
 import { formatBytes, formatTime, progressPercent } from "./format";
+import { MarkdownMessage } from "./MarkdownMessage";
 import { useAppStore } from "./store";
 import { isActiveTransferStatus, transferModeLabel, transferStatusLabel } from "./transferPresentation";
 import type { Peer, TextMessage, TransferItem } from "./types";
@@ -192,7 +193,7 @@ function MessageBubble({ message, deviceId }: { message: TextMessage; deviceId: 
               : "border-outline-variant bg-surface-container text-on-surface",
           ].join(" ")}
         >
-          {message.body}
+          <MarkdownMessage body={message.body} />
         </div>
         <time className="mt-2 block font-code-sm text-on-surface-variant">
           {formatTime(message.created_at_ms)}
